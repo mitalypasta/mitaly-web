@@ -774,3 +774,15 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
 
 .env-badge:hover { color: var(--text-primary); }
 .env-badge:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+
+/* 수집 요청의 '다시 받기' 체크박스 — 눈에 띄지 않게, 기본 동작을 방해 안 하게. */
+.recheck {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.recheck input { width: 16px; height: 16px; }

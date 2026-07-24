@@ -533,6 +533,7 @@ async function submitRequest() {
         return;
     }
 
+    const forceEl = $("r-force");
     const { data: { session } } = await db.auth.getSession();
     const { error } = await db.from("collect_requests").insert({
         requested_by: session?.user?.id,
@@ -541,6 +542,8 @@ async function submitRequest() {
         date_to: to,
         stores,
         profiles,
+        // 기본은 안 받은 것만. 체크하면 이미 받은 기간도 다시 받습니다.
+        force: forceEl ? forceEl.checked : false,
     });
 
     button.disabled = false;
