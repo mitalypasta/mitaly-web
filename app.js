@@ -230,6 +230,9 @@ async function initDashboard() {
         storeSelect.append(option);
     }
 
+    // 내보내기 기본 기간을 데이터 범위에 맞추는 데 씁니다.
+    filterRange = { min: info.ym_min, max: info.ym_max };
+
     for (const id of ["f-from", "f-to", "f-store", "f-channel"]) {
         $(id).addEventListener("change", load);
     }
@@ -252,6 +255,7 @@ async function initDashboard() {
     }).observe(document.querySelector(".grid"));
 
     initRequests();
+    initExport();
 
     await load();
     loadLastUpdated();
@@ -278,7 +282,13 @@ const STATUS_LABEL = {
 
 let requestTimer = null;
 let targets = [];              // 수집 대상 매장 카탈로그 (러너가 올려줌)
-let chosenStores = new Set();  // 비어 있으면 '전체'
+let chosenStores = new Set();  // 수집 요청용. 비어 있으면 '전체'
+let xStores = new Set();       // 엑셀 내보내기용. 비어 있으면 '전체'
+
+// 매장 선택창은 수집 요청과 내보내기가 함께 씁니다. 지금 어느 쪽이 열었는지에 따라
+// 다른 선택 집합을 만집니다. 이렇게 안 하면 두 기능이 같은 선택을 공유해 버립니다.
+let pickerCtx = "request";
+function curStoreSet() { return pickerCtx === "export" ? xStores : chosenStores; }
 
 function initRequests() {
     const box = $("r-plugins");
@@ -358,25 +368,37 @@ function refreshStoreButton() {
 
 function initStorePicker() {
     const modal = $("store-modal");
-    const open = () => { modal.hidden = false; renderStoreList(); };
+    const open = (ctx) => {
+        pickerCtx = ctx;
+        modal.hidden = false;
+        renderStoreList();
+    };
     const close = () => { modal.hidden = true; };
+    const applyRefresh = () => {
+        // 열었던 쪽의 버튼만 갱신합니다.
+        if (pickerCtx === "export") refreshExportStoreButton();
+        else refreshStoreButton();
+    };
 
-    $("r-store-open").addEventListener("click", open);
+    $("r-store-open").addEventListener("click", () => open("request"));
+    const xOpen = $("x-store-open");
+    if (xOpen) xOpen.addEventListener("click", () => open("export"));
+
     $("store-close").addEventListener("click", close);
-    $("store-apply").addEventListener("click", () => { close(); refreshStoreButton(); });
+    $("store-apply").addEventListener("click", () => { close(); applyRefresh(); });
     modal.addEventListener("click", (e) => { if (e.target === modal) close(); });
     $("store-search").addEventListener("input", renderStoreList);
 
     $("store-all").addEventListener("click", () => {
-        visibleTargets().forEach((t) => chosenStores.add(t.name));
+        visibleTargets().forEach((t) => curStoreSet().add(t.name));
         renderStoreList();
     });
     $("store-none").addEventListener("click", () => {
-        chosenStores.clear();
+        curStoreSet().clear();
         renderStoreList();
     });
     $("store-filtered").addEventListener("click", () => {
-        filteredTargets().forEach((t) => chosenStores.add(t.name));
+        filteredTargets().forEach((t) => curStoreSet().add(t.name));
         renderStoreList();
     });
 }
@@ -393,17 +415,19 @@ const PLUGIN_SHORT = {
 };
 
 function renderStoreList() {
+    const set = curStoreSet();
     const list = filteredTargets();
     const total = visibleTargets().length;
+    const tail = pickerCtx === "export" ? "전체 내보내기" : "전체 수집";
 
     $("store-count").textContent =
-        `${chosenStores.size}개 선택 · 검색결과 ${list.length}개 / 전체 ${total}개` +
-        (chosenStores.size === 0 ? "  (아무것도 안 고르면 전체 수집)" : "");
+        `${set.size}개 선택 · 검색결과 ${list.length}개 / 전체 ${total}개` +
+        (set.size === 0 ? `  (아무것도 안 고르면 ${tail})` : "");
 
     $("store-list").innerHTML = list.map((t) => `
         <label>
             <input type="checkbox" value="${escape(t.name)}"
-                   ${chosenStores.has(t.name) ? "checked" : ""}>
+                   ${set.has(t.name) ? "checked" : ""}>
             <span>${escape(t.name)}</span>
             <span class="chan">${(t.plugins || []).map((p) => PLUGIN_SHORT[p] || p).join("·")}</span>
         </label>`).join("")
@@ -411,12 +435,23 @@ function renderStoreList() {
 
     $("store-list").querySelectorAll("input").forEach((el) => {
         el.addEventListener("change", () => {
-            if (el.checked) chosenStores.add(el.value);
-            else chosenStores.delete(el.value);
+            if (el.checked) set.add(el.value);
+            else set.delete(el.value);
             $("store-count").textContent =
-                `${chosenStores.size}개 선택 · 검색결과 ${list.length}개 / 전체 ${total}개`;
+                `${set.size}개 선택 · 검색결과 ${list.length}개 / 전체 ${total}개`;
         });
     });
+}
+
+function refreshExportStoreButton() {
+    const btn = $("x-store-open");
+    if (!btn) return;
+    const total = targets.length;
+    const chosen = [...xStores].filter((name) =>
+        targets.some((t) => t.name === name)).length;
+    btn.textContent = chosen === 0
+        ? `전체 매장${total ? ` (${total}개)` : ""}`
+        : `${chosen}개 선택됨 / ${total}개`;
 }
 
 // ---- 러너 상태 --------------------------------------------------------
@@ -1326,5 +1361,269 @@ function debounce(fn, ms) {
         timer = setTimeout(() => fn(...args), ms);
     };
 }
+
+// ================================================================ 엑셀 내보내기
+//
+// 흐름 (담당자 결정: 월 단위 + 수집 안 된 곳은 전 채널 자동 수집)
+//   1. 선택한 매장 × 월 중 '수집 안 된 칸' 을 커버리지로 확인
+//   2. 있으면 → 그 매장·기간을 전 채널로 수집 요청 → 끝날 때까지 대기(진행 표시)
+//              → 대시보드까지 갱신되므로 웹 분석 화면도 같이 최신이 됨
+//   3. 없으면 → 바로 엑셀 생성·내려받기
+//
+// 클라우드 fact 는 월 단위라 기간도 월 단위입니다.
+
+// YYYY-MM (input[type=month]) → 202601 (integer)
+function ymToInt(value) {
+    if (!value) return null;
+    const [y, m] = value.split("-");
+    if (!y || !m) return null;
+    return parseInt(y, 10) * 100 + parseInt(m, 10);
+}
+
+// 202601 → "2026-01". input[type=month] 와 파일명에 쓰는 하이픈 형식.
+// (화면 표시용 ymLabel 은 '2026.01' 점 형식이라 별개입니다.)
+function ymDash(ymInt) {
+    const s = String(ymInt);
+    return `${s.slice(0, 4)}-${s.slice(4, 6)}`;
+}
+
+function initExport() {
+    const fromEl = $("x-from");
+    const toEl = $("x-to");
+    const submit = $("x-submit");
+    if (!fromEl || !toEl || !submit) return;
+
+    // 기본값: 데이터가 있는 최근 3개월. api_filters 가 준 범위를 씁니다.
+    if (filterRange && filterRange.max) {
+        toEl.value = ymDash(filterRange.max);
+        const maxS = String(filterRange.max);
+        let y = parseInt(maxS.slice(0, 4), 10);
+        let m = parseInt(maxS.slice(4, 6), 10) - 2;
+        while (m <= 0) { m += 12; y -= 1; }
+        fromEl.value = `${y}-${String(m).padStart(2, "0")}`;
+        if (filterRange.min && ymToInt(fromEl.value) < filterRange.min) {
+            fromEl.value = ymDash(filterRange.min);
+        }
+    }
+
+    submit.addEventListener("click", () => runExport());
+}
+
+async function runExport() {
+    const notice = $("x-notice");
+    const progress = $("x-progress");
+    const submit = $("x-submit");
+
+    const ymFrom = ymToInt($("x-from").value);
+    const ymTo = ymToInt($("x-to").value);
+    progress.innerHTML = "";
+
+    if (!ymFrom || !ymTo) {
+        notice.className = "notice error";
+        notice.textContent = "시작 월과 종료 월을 고르세요.";
+        return;
+    }
+    if (ymFrom > ymTo) {
+        notice.className = "notice error";
+        notice.textContent = "시작 월이 종료 월보다 늦습니다.";
+        return;
+    }
+
+    const stores = [...xStores];               // 비어 있으면 전 매장
+    const storeArg = stores.length ? stores : null;
+    submit.disabled = true;
+
+    try {
+        // 1. 수집 안 된 (매장, 월) 확인
+        notice.className = "notice";
+        notice.textContent = "수집 현황을 확인하는 중…";
+        const { data: cov, error: covErr } = await db.rpc("api_export_coverage", {
+            p_ym_from: ymFrom, p_ym_to: ymTo, p_stores: storeArg,
+        });
+        if (covErr) throw new Error("수집 현황 조회 실패: " + covErr.message);
+
+        const missing = (cov || []).filter((r) => !r.has_data);
+
+        // 2. 비어 있으면 자동 수집 (담당자 결정: 전 채널)
+        if (missing.length > 0) {
+            const ok = await exportCollectMissing(missing, notice, progress);
+            if (!ok) { submit.disabled = false; return; }
+        }
+
+        // 3. 엑셀 생성
+        notice.className = "notice";
+        notice.textContent = "엑셀을 만드는 중…";
+        await buildAndDownloadWorkbook(ymFrom, ymTo, storeArg, stores);
+
+        notice.className = "notice";
+        notice.textContent = "엑셀을 내려받았습니다.";
+    } catch (err) {
+        notice.className = "notice error";
+        notice.textContent = String(err.message || err);
+    } finally {
+        submit.disabled = false;
+    }
+}
+
+// 수집 안 된 매장·월을 전 채널로 수집 요청하고, 끝날 때까지 기다립니다.
+async function exportCollectMissing(missing, notice, progress) {
+    // 매장·월을 모읍니다. 요청은 '기간(연-월-01 ~ 연-월-말일)' 단위라
+    // 빠진 달의 최소~최대 월을 한 번에 겁니다.
+    const storeSet = [...new Set(missing.map((r) => r.store))];
+    const monthsMissing = [...new Set(missing.map((r) => r.ym))].sort();
+    const first = monthsMissing[0];
+    const last = monthsMissing[monthsMissing.length - 1];
+
+    const from = firstDayOf(first);
+    const to = lastDayOf(last);
+
+    progress.innerHTML =
+        `<p class="hint">수집이 안 된 매장 ${storeSet.length}곳 · `
+        + `${monthsMissing.map(ymDash).join(", ")} 을 먼저 모읍니다. `
+        + `전 채널을 수집하므로 시간이 걸립니다.</p>`
+        + `<div class="logbox" id="x-log"></div>`;
+
+    const { data: { session } } = await db.auth.getSession();
+    const { data: inserted, error } = await db.from("collect_requests").insert({
+        requested_by: session?.user?.id,
+        plugins: ["easypos", "baemin", "imu", "coupangeats", "yogiyo"],
+        date_from: from,
+        date_to: to,
+        stores: storeSet,     // 빠진 매장만
+        profiles: [],
+    }).select();
+    if (error) {
+        notice.className = "notice error";
+        notice.textContent = "수집 요청을 넣지 못했습니다: " + error.message;
+        return false;
+    }
+
+    const reqId = inserted[0].id;
+    return await waitForRequest(reqId, progress);
+}
+
+// 요청 하나가 끝날 때까지 상태를 지켜봅니다. 진행 상황을 화면에 보여줍니다.
+async function waitForRequest(reqId, progress) {
+    const log = $("x-log");
+    const started = Date.now();
+    // 수집은 오래 걸릴 수 있습니다. 최대 2시간까지 기다립니다.
+    const deadline = started + 2 * 60 * 60 * 1000;
+
+    while (Date.now() < deadline) {
+        await sleep(4000);
+        const { data, error } = await db
+            .from("collect_requests")
+            .select("status,progress,error")
+            .eq("id", reqId)
+            .single();
+        if (error) continue;
+
+        const mins = Math.floor((Date.now() - started) / 60000);
+        if (log) {
+            log.textContent =
+                `상태: ${data.status}\n` +
+                `진행: ${data.progress || "…"}\n` +
+                `경과: ${mins}분`;
+        }
+
+        if (data.status === "done") return true;
+        if (data.status === "failed") {
+            if (log) log.textContent += `\n\n실패: ${data.error || ""}`;
+            return false;
+        }
+    }
+    if (log) log.textContent += "\n\n시간이 너무 오래 걸립니다. 나중에 다시 시도하세요.";
+    return false;
+}
+
+function firstDayOf(ymInt) {
+    const s = String(ymInt);
+    return `${s.slice(0, 4)}${s.slice(4, 6)}01`;
+}
+function lastDayOf(ymInt) {
+    const s = String(ymInt);
+    const y = parseInt(s.slice(0, 4), 10);
+    const m = parseInt(s.slice(4, 6), 10);
+    const last = new Date(y, m, 0).getDate();   // m월의 말일
+    return `${s.slice(0, 4)}${s.slice(4, 6)}${String(last).padStart(2, "0")}`;
+}
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// 선택 범위의 집계를 받아 여러 시트짜리 엑셀을 만들고 내려받습니다.
+async function buildAndDownloadWorkbook(ymFrom, ymTo, storeArg, storeNames) {
+    const XLSX = await loadSheetJS();
+
+    const args = { p_ym_from: ymFrom, p_ym_to: ymTo, p_stores: storeArg };
+    const [summary, monthly, menu, coverage] = await Promise.all([
+        db.rpc("api_export_store_summary", args),
+        db.rpc("api_export_monthly", args),
+        db.rpc("api_export_menu", args),
+        db.rpc("api_export_coverage", args),
+    ]);
+    for (const r of [summary, monthly, menu, coverage]) {
+        if (r.error) throw new Error("집계 조회 실패: " + r.error.message);
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    // 표지 시트: 무엇을 뽑았는지
+    const cover = [
+        ["미태리 매출 내보내기"],
+        ["기간", `${ymDash(ymFrom)} ~ ${ymDash(ymTo)}`],
+        ["대상 매장", storeNames && storeNames.length ? storeNames.join(", ") : "전체 매장"],
+        ["만든 시각", new Date().toLocaleString("ko-KR")],
+        ["매출 기준", "배달=할인 전 / 홀=할인 후 (프로젝트 규칙)"],
+    ];
+    XLSX.utils.book_append_sheet(wb,
+        XLSX.utils.aoa_to_sheet(cover), "요약정보");
+
+    addSheet(XLSX, wb, "매장별", summary.data, [
+        ["store", "매장"], ["trade_area", "상권"], ["amount", "총매출"],
+        ["qty", "총수량"], ["avg_ticket", "객단가"], ["hall_amount", "홀매출"],
+        ["delivery_amount", "배달매출"], ["menu_count", "메뉴수"],
+        ["active_months", "활동월수"],
+    ]);
+    addSheet(XLSX, wb, "월별추이", monthly.data, [
+        ["ym", "연월"], ["amount", "총매출"], ["qty", "총수량"],
+        ["hall_amount", "홀매출"], ["delivery_amount", "배달매출"],
+        ["store_count", "매장수"],
+    ]);
+    addSheet(XLSX, wb, "품목별", menu.data, [
+        ["menu", "메뉴"], ["category", "대분류"], ["amount", "매출"],
+        ["qty", "수량"], ["store_count", "판매매장수"], ["is_giveaway", "증정품"],
+    ]);
+    addSheet(XLSX, wb, "수집현황", coverage.data, [
+        ["store", "매장"], ["ym", "연월"], ["amount", "매출"], ["has_data", "수집됨"],
+    ]);
+
+    const fname =
+        `미태리_매출_${ymDash(ymFrom)}_${ymDash(ymTo)}`
+        + `${storeNames && storeNames.length ? `_${storeNames.length}개매장` : "_전체"}.xlsx`;
+    XLSX.writeFile(wb, fname);
+}
+
+// 행 배열 + (키,헤더) 매핑 → 시트. 헤더를 한글로 바꿔 담당자가 바로 읽게 합니다.
+function addSheet(XLSX, wb, sheetName, rows, columns) {
+    const header = columns.map(([, label]) => label);
+    const body = (rows || []).map((r) => columns.map(([key]) => {
+        const v = r[key];
+        if (typeof v === "boolean") return v ? "O" : "";
+        return v;
+    }));
+    const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+}
+
+// SheetJS 를 필요할 때만 불러옵니다. supabase-js 처럼 CDN 에서 가져옵니다.
+let _sheetjs = null;
+async function loadSheetJS() {
+    if (_sheetjs) return _sheetjs;
+    _sheetjs = await import("https://esm.sh/xlsx@0.18.5");
+    return _sheetjs;
+}
+
+// api_filters 가 준 데이터 범위(최소/최대 연월). initExport 기본값에 씁니다.
+let filterRange = null;
 
 boot();

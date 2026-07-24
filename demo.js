@@ -105,12 +105,106 @@ function menuMatrix(args, field, buckets) {
     }).sort((a, b) => b.total - a.total);
 }
 
+// 내보내기용: 여러 매장(p_stores 배열)을 받는 행 생성. 비었으면 전 매장.
+function exportRows({ p_ym_from, p_ym_to, p_stores }) {
+    const wanted = p_stores && p_stores.length ? new Set(p_stores) : null;
+    const rows = [];
+    MONTHS.forEach((ym, mi) => {
+        if (!inRange(ym, p_ym_from, p_ym_to)) return;
+        const factor = monthFactor(ym, mi);
+        for (const store of STORES) {
+            if (wanted && !wanted.has(store.name)) continue;
+            for (const channel of ["홀", "배달"]) {
+                const share = channel === "홀" ? 0.66 : 0.34;
+                const amount = Math.round(38_000_000 * store.weight * factor * share / 30);
+                rows.push({ ym, channel, store, amount, qty: Math.round(amount / 13_500) });
+            }
+        }
+    });
+    return rows;
+}
+
 const HANDLERS = {
     api_filters: () => [{
         ym_min: MONTHS[0],
         ym_max: MONTHS[MONTHS.length - 1],
         stores: STORES.map((s) => s.name),
     }],
+
+    // 내보내기 — 데모에서는 모든 (매장,월)이 '수집됨' 으로 나옵니다.
+    api_export_coverage: (args) => {
+        const rows = exportRows(args);
+        const seen = new Set();
+        const out = [];
+        for (const r of rows) {
+            const key = `${r.store.name}|${r.ym}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push({ store: r.store.name, ym: r.ym, amount: 0, has_data: true });
+        }
+        // 매장×월 합계 채우기
+        const sum = group(rows, (r) => `${r.store.name}|${r.ym}`);
+        for (const o of out) o.amount = sum.get(`${o.store}|${o.ym}`).amount;
+        return out.sort((a, b) => a.store.localeCompare(b.store) || a.ym - b.ym);
+    },
+
+    api_export_store_summary: (args) => {
+        const rows = exportRows(args);
+        const map = new Map();
+        for (const r of rows) {
+            const m = map.get(r.store.name) || {
+                store: r.store.name, trade_area: r.store.trade_area,
+                amount: 0, qty: 0, hall_amount: 0, delivery_amount: 0,
+                months: new Set(),
+            };
+            m.amount += r.amount; m.qty += r.qty;
+            if (r.channel === "홀") m.hall_amount += r.amount;
+            else m.delivery_amount += r.amount;
+            m.months.add(r.ym);
+            map.set(r.store.name, m);
+        }
+        return [...map.values()].map((m) => ({
+            store: m.store, trade_area: m.trade_area,
+            amount: m.amount, qty: m.qty,
+            avg_ticket: m.qty ? Math.round(m.amount / m.qty) : 0,
+            hall_amount: m.hall_amount, delivery_amount: m.delivery_amount,
+            menu_count: MENUS.length, active_months: m.months.size,
+        })).sort((a, b) => b.amount - a.amount);
+    },
+
+    api_export_menu: (args) => {
+        const total = exportRows(args).reduce((a, r) => a + r.amount, 0);
+        return MENUS.map(([menu, category], mi) => {
+            const share = 1 / (mi + 1.6);
+            const amount = Math.round(total * share / 6);
+            return {
+                menu, category, amount,
+                qty: Math.round(amount / 13_500),
+                store_count: STORES.length, is_giveaway: false,
+            };
+        }).sort((a, b) => b.amount - a.amount);
+    },
+
+    api_export_monthly: (args) => {
+        const rows = exportRows(args);
+        const map = new Map();
+        for (const r of rows) {
+            const m = map.get(r.ym) || {
+                ym: r.ym, amount: 0, qty: 0,
+                hall_amount: 0, delivery_amount: 0, stores: new Set(),
+            };
+            m.amount += r.amount; m.qty += r.qty;
+            if (r.channel === "홀") m.hall_amount += r.amount;
+            else m.delivery_amount += r.amount;
+            m.stores.add(r.store.name);
+            map.set(r.ym, m);
+        }
+        return [...map.values()].map((m) => ({
+            ym: m.ym, amount: m.amount, qty: m.qty,
+            hall_amount: m.hall_amount, delivery_amount: m.delivery_amount,
+            store_count: m.stores.size,
+        })).sort((a, b) => a.ym - b.ym);
+    },
 
     api_summary: (args) => {
         const rows = baseRows(args);
