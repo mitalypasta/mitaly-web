@@ -263,13 +263,13 @@ async function initDashboard() {
 
 // ---------------------------------------------------------------- 수집 요청
 
-// 요기요는 아직 수집기가 없습니다. 목록에는 보이되 고르지 못하게 막습니다.
+// 5개 채널 전부 동작합니다. (요기요는 2026-07-23 완성)
 const PLUGIN_LIST = [
     { id: "easypos", name: "이지포스", ready: true },
     { id: "baemin", name: "배달의민족", ready: true },
     { id: "imu", name: "아임유", ready: true },
     { id: "coupangeats", name: "쿠팡이츠", ready: true },
-    { id: "yogiyo", name: "요기요 (준비 중)", ready: false },
+    { id: "yogiyo", name: "요기요", ready: true },
 ];
 
 const STATUS_LABEL = {
