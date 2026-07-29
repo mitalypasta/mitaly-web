@@ -781,25 +781,29 @@ async function load() {
                         p_channel: args.p_channel };
     const rangeArgs = { p_ym_from: args.p_ym_from, p_ym_to: args.p_ym_to };
 
+    // ⚠️ 함수 호출이 아니라 **호출을 만드는 함수**들입니다. 배열을 만드는 순간
+    //    18개가 전부 날아가면 서로 밀려 8초 제한(authenticated)을 넘깁니다.
+    //    2026-07-29 실측: 하나씩이면 1.5~4초인데 동시에 던지면 전부 9~10초.
+    //    아래 runLimited() 가 3개씩만 돌립니다.
     const calls = [
-        db.rpc("api_summary", args),
-        db.rpc("api_monthly", args),
-        db.rpc("api_by_store", args),
-        db.rpc("api_by_menu", args),
-        db.rpc("api_by_hour", args),
-        db.rpc("api_by_weekday", args),
-        db.rpc("api_coverage_by_source", rangeArgs),
-        db.rpc("api_coverage_matrix", { ...rangeArgs, p_store: args.p_store }),
-        db.rpc("api_nonstandard_stores", args),
-        db.rpc("api_store_metrics", storeArgs),
-        db.rpc("api_menu_matrix", { p_field: "trade_area", ...args }),
-        db.rpc("api_menu_matrix", { p_field: "weekday", ...args }),
-        db.rpc("api_menu_matrix", { p_field: "daypart", ...args }),
-        db.rpc("api_unmapped", {}),
-        db.rpc("api_by_category", args),
-        db.rpc("api_all_items", args),
-        db.rpc("api_review_summary", reviewArgs()),
-        db.rpc("api_reviews", { ...reviewArgs(), p_limit: 200 }),
+        () => db.rpc("api_summary", args),
+        () => db.rpc("api_monthly", args),
+        () => db.rpc("api_by_store", args),
+        () => db.rpc("api_by_menu", args),
+        () => db.rpc("api_by_hour", args),
+        () => db.rpc("api_by_weekday", args),
+        () => db.rpc("api_coverage_by_source", rangeArgs),
+        () => db.rpc("api_coverage_matrix", { ...rangeArgs, p_store: args.p_store }),
+        () => db.rpc("api_nonstandard_stores", args),
+        () => db.rpc("api_store_metrics", storeArgs),
+        () => db.rpc("api_menu_matrix", { p_field: "trade_area", ...args }),
+        () => db.rpc("api_menu_matrix", { p_field: "weekday", ...args }),
+        () => db.rpc("api_menu_matrix", { p_field: "daypart", ...args }),
+        () => db.rpc("api_unmapped", {}),
+        () => db.rpc("api_by_category", args),
+        () => db.rpc("api_all_items", args),
+        () => db.rpc("api_review_summary", reviewArgs()),
+        () => db.rpc("api_reviews", { ...reviewArgs(), p_limit: 200 }),
     ];
 
     // 초안 요약은 있으면 좋고 없어도 그만입니다. 위 묶음에 넣으면
@@ -814,7 +818,8 @@ async function load() {
         .then((r) => (r.error ? {} : ((r.data || [])[0] || {}).status || {}))
         .catch(() => ({}));
 
-    const results = await Promise.all(calls);
+    // 3개씩 나눠 부릅니다. 전체 걸리는 시간은 비슷한데 각 요청이 제한 안에 끝납니다.
+    const results = await runLimited(calls, 3);
     document.body.classList.remove("loading");
 
     const bad = results.find((r) => r.error);
@@ -1998,6 +2003,27 @@ function lastDayOf(ymInt) {
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// 동시에 도는 요청 수를 묶습니다.
+//
+// 왜 필요한가: Supabase 의 authenticated 역할은 쿼리 하나당 8초 제한이 있습니다.
+// 팩트가 80만 행이라 집계 하나에 1.5~4초가 걸리는데, 18개를 한꺼번에 던지면
+// 같은 CPU 를 나눠 쓰느라 전부 9~10초가 되어 **한 개도 못 받고 통째로 실패**합니다.
+// (2026-07-29 실측: 11개 동시 → 10개가 제한 초과)
+//
+// 순서는 그대로 유지합니다 — 호출하는 쪽이 results[3] 처럼 자리로 꺼내 씁니다.
+async function runLimited(thunks, limit) {
+    const results = new Array(thunks.length);
+    let next = 0;
+    async function worker() {
+        while (next < thunks.length) {
+            const i = next++;
+            results[i] = await thunks[i]();
+        }
+    }
+    await Promise.all(Array.from({ length: Math.min(limit, thunks.length) }, worker));
+    return results;
+}
 
 // 선택 범위의 집계를 받아 여러 시트짜리 엑셀을 만들고 내려받습니다.
 async function buildAndDownloadWorkbook(ymFrom, ymTo, storeArg, storeNames) {
