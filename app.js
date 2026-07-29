@@ -802,7 +802,11 @@ async function load() {
         () => db.rpc("api_unmapped", {}),
         () => db.rpc("api_by_category", args),
         () => db.rpc("api_all_items", args),
-        () => db.rpc("api_review_summary", reviewArgs()),
+        // ⚠️ 요약은 reviewArgs() 를 그대로 넘기면 안 됩니다. 별점·미답변 필터는
+        //    목록(api_reviews)에만 있고 요약 함수는 기간·매장·채널 4개만 받습니다.
+        //    7개를 넘기면 PostgREST 가 맞는 함수를 못 찾아 화면이 통째로 안 뜹니다.
+        //    요약이 '미답변 몇 건' 을 세는 지표라 미답변 필터를 걸면 뜻이 없기도 합니다.
+        () => db.rpc("api_review_summary", summaryArgs()),
         () => db.rpc("api_reviews", { ...reviewArgs(), p_limit: 200 }),
     ];
 
@@ -948,6 +952,12 @@ function draw(d) {
 //
 // 기간·매장은 위 필터를 그대로 따르고, 플랫폼·별점·미답변만 여기서 고릅니다.
 // 답글은 이 화면에서 달지 않습니다. 지금은 무엇이 와 있는지 보는 단계입니다.
+
+// 요약 함수(api_review_summary)가 받는 것만 추립니다.
+function summaryArgs() {
+    const { p_ym_from, p_ym_to, p_store, p_platform } = reviewArgs();
+    return { p_ym_from, p_ym_to, p_store, p_platform };
+}
 
 function reviewArgs() {
     const base = currentFilters();
