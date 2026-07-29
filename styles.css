@@ -958,3 +958,48 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
     cursor: pointer;
 }
 .recheck input { width: 16px; height: 16px; }
+
+
+/* ---- 왼쪽 업무 영역 메뉴 ---------------------------------------------- */
+/* 좁은 화면에서는 가로로 눕습니다. 담당자가 노트북·태블릿을 섞어 씁니다. */
+
+.sidenav {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin: 0 0 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.navitem {
+    appearance: none;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font: inherit;
+    font-size: 14px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 160ms ease-out, color 160ms ease-out;
+}
+
+.navitem:hover { background: var(--surface-1); color: var(--text-primary); }
+
+.navitem:focus-visible {
+    outline: 2px solid var(--series-1);
+    outline-offset: 2px;
+}
+
+.navitem.is-on {
+    /* 강조색은 시리즈 1(홀)과 같은 파랑입니다. 새 색을 만들면 색각이상
+       검증을 다시 돌려야 합니다. */
+    background: color-mix(in srgb, var(--series-1) 12%, transparent);
+    color: var(--series-1);
+    font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .navitem { transition: none; }
+}

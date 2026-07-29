@@ -91,6 +91,7 @@ function render(session) {
         $("who").textContent = session.user.email + " · ";
         if (!app.dataset.ready) {
             app.dataset.ready = "1";
+            initAreas();
             initDashboard();
         }
     } else {
@@ -2228,3 +2229,43 @@ async function loadSheetJS() {
 let filterRange = null;
 
 boot();
+
+
+// ---- 업무 영역 전환 -----------------------------------------------------
+//
+// 카드를 계속 아래로 붙이면 화면 하나가 끝없이 길어집니다. 앞으로 업무 영역이
+// 11개로 늘어나므로 왼쪽 메뉴로 갈라 놓습니다.
+//
+// 데이터는 이미 다 받아 둔 것을 쓰고 보이기만 바꿉니다 — 영역을 옮길 때마다
+// 다시 조회하면 지금도 느린 화면이 더 느려집니다.
+// 필터(기간·매장)는 매출 영역에서만 뜻이 있어 다른 영역에서는 숨깁니다.
+
+const AREA_KEY = "mitaly.area";
+
+function showArea(area) {
+    for (const el of document.querySelectorAll("[data-area]")) {
+        el.hidden = el.dataset.area !== area;
+    }
+    for (const b of document.querySelectorAll(".navitem")) {
+        b.classList.toggle("is-on", b.dataset.go === area);
+        b.setAttribute("aria-current", b.dataset.go === area ? "page" : "false");
+    }
+    const salesOnly = area === "sales";
+    const filters = document.querySelector(".filters");
+    const tiles = document.querySelector(".kpis");
+    if (filters) filters.hidden = !salesOnly;
+    if (tiles) tiles.hidden = !salesOnly;
+    try { localStorage.setItem(AREA_KEY, area); } catch (e) { /* 사생활 모드 */ }
+    window.scrollTo({ top: 0, behavior: "instant" });
+}
+
+function initAreas() {
+    for (const b of document.querySelectorAll(".navitem")) {
+        b.addEventListener("click", () => showArea(b.dataset.go));
+    }
+    let saved = "sales";
+    try { saved = localStorage.getItem(AREA_KEY) || "sales"; } catch (e) { /* 무시 */ }
+    // 저장된 값이 지금 없는 영역일 수 있습니다(영역 이름이 바뀐 뒤).
+    if (!document.querySelector(`.navitem[data-go="${saved}"]`)) saved = "sales";
+    showArea(saved);
+}

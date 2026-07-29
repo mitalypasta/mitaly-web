@@ -41,6 +41,16 @@
         </div>
     </header>
 
+
+    <!-- 왼쪽 메뉴. 화면이 11개 업무 영역으로 늘어날 자리입니다.
+         data-area 가 같은 카드만 보입니다 — 새 영역은 여기 한 줄과
+         카드의 data-area 만 더하면 됩니다. -->
+    <nav class="sidenav" id="sidenav" aria-label="업무 영역">
+        <button class="navitem is-on" data-go="sales" type="button">📊 매출</button>
+        <button class="navitem" data-go="reviews" type="button">⭐ 리뷰</button>
+        <button class="navitem" data-go="collect" type="button">🗂 수집·내보내기</button>
+    </nav>
+
     <!-- 필터는 한 줄로 맨 위에. 아래 모든 카드가 같은 조건으로 다시 그려집니다. -->
     <div class="filters">
         <div class="field">
@@ -91,7 +101,7 @@
 
     <div class="grid">
 
-        <section class="card full">
+        <section data-area="sales" class="card full">
             <header>
                 <h2>월별 매출 추이</h2>
                 <button class="linkish" data-toggle="t-monthly">표로 보기</button>
@@ -102,7 +112,7 @@
             <div class="tableview" id="t-monthly" hidden></div>
         </section>
 
-        <section class="card">
+        <section data-area="sales" class="card">
             <header>
                 <h2>매장별 매출 상위 15곳</h2>
                 <button class="linkish" data-toggle="t-store">표로 보기</button>
@@ -112,7 +122,7 @@
             <div class="tableview" id="t-store" hidden></div>
         </section>
 
-        <section class="card">
+        <section data-area="sales" class="card">
             <header>
                 <h2>메뉴별 매출 상위 15개</h2>
                 <button class="linkish" data-toggle="t-menu">표로 보기</button>
@@ -122,7 +132,7 @@
             <div class="tableview" id="t-menu" hidden></div>
         </section>
 
-        <section class="card">
+        <section data-area="sales" class="card">
             <header>
                 <h2>시간대별 매출</h2>
                 <button class="linkish" data-toggle="t-hour">표로 보기</button>
@@ -132,7 +142,7 @@
             <div class="tableview" id="t-hour" hidden></div>
         </section>
 
-        <section class="card">
+        <section data-area="sales" class="card">
             <header>
                 <h2>요일별 매출</h2>
                 <button class="linkish" data-toggle="t-weekday">표로 보기</button>
@@ -142,7 +152,7 @@
             <div class="tableview" id="t-weekday" hidden></div>
         </section>
 
-        <section class="card full">
+        <section data-area="sales" class="card full">
             <header>
                 <h2>수집 커버리지</h2>
                 <button class="linkish" data-toggle="t-coverage">매장별로 보기</button>
@@ -155,7 +165,7 @@
             <div class="tableview" id="t-coverage" hidden></div>
         </section>
 
-        <section class="card full">
+        <section data-area="sales" class="card full">
             <header>
                 <h2>비정규 메뉴 현황</h2>
                 <button class="linkish" data-toggle="t-nonstd">전체 매장 표</button>
@@ -167,7 +177,7 @@
             <div class="tableview" id="t-nonstd" hidden></div>
         </section>
 
-        <section class="card full">
+        <section data-area="sales" class="card full">
             <header>
                 <h2>매장 비교</h2>
                 <button class="linkish" data-toggle="t-stores">표 접기</button>
@@ -178,7 +188,7 @@
             <div class="tableview tall" id="t-stores"></div>
         </section>
 
-        <section class="card full">
+        <section data-area="sales" class="card full">
             <header>
                 <h2>메뉴 × 상권</h2>
                 <button class="linkish" data-toggle="t-area">표로 보기</button>
@@ -188,7 +198,7 @@
             <div class="tableview" id="t-area" hidden></div>
         </section>
 
-        <section class="card">
+        <section data-area="sales" class="card">
             <header>
                 <h2>메뉴 × 요일</h2>
                 <button class="linkish" data-toggle="t-mweek">표로 보기</button>
@@ -198,7 +208,7 @@
             <div class="tableview" id="t-mweek" hidden></div>
         </section>
 
-        <section class="card">
+        <section data-area="sales" class="card">
             <header>
                 <h2>메뉴 × 시간대</h2>
                 <button class="linkish" data-toggle="t-mpart">표로 보기</button>
@@ -208,7 +218,7 @@
             <div class="tableview" id="t-mpart" hidden></div>
         </section>
 
-        <section class="card full">
+        <section data-area="sales" class="card full">
             <header>
                 <h2>분류별 비중</h2>
                 <button class="linkish" data-toggle="t-category">표로 보기</button>
@@ -221,7 +231,7 @@
             <div class="tableview" id="t-category" hidden></div>
         </section>
 
-        <section class="card full">
+        <section data-area="sales" class="card full">
             <header>
                 <h2>전 품목</h2>
                 <span class="meta" id="allitems-count"></span>
@@ -237,7 +247,7 @@
             <div class="tableview tall" id="t-allitems"></div>
         </section>
 
-        <section class="card full" id="review-card">
+        <section data-area="sales" class="card full" id="review-card">
             <header>
                 <h2>리뷰 관리</h2>
                 <span class="meta" id="review-summary"></span>
@@ -271,7 +281,7 @@
             <div class="reviewlist" id="rv-list"></div>
         </section>
 
-        <section class="card full">
+        <section data-area="reviews" class="card full">
             <header>
                 <h2>미매핑 품목</h2>
                 <span class="meta" id="unmapped-count"></span>
@@ -286,7 +296,7 @@
     </div>
 
     <!-- 수집 요청 — 이 PC(수집용)에서 에이전트가 돌고 있어야 실행됩니다. -->
-    <section class="card full" id="request-card">
+    <section data-area="collect" class="card full" id="request-card">
         <header>
             <h2>수집 요청</h2>
             <span class="runner" id="runner-state">수집 PC 확인 중…</span>
@@ -346,7 +356,7 @@
     </section>
 
     <!-- 엑셀 내보내기 — 선택한 매장·월의 분석을 엑셀 파일로 -->
-    <section class="card full" id="export-card">
+    <section data-area="collect" class="card full" id="export-card">
         <header>
             <h2>엑셀 내보내기</h2>
             <span class="runner" id="export-hint">매장·월을 고르면 그 범위만 엑셀로 나갑니다</span>
