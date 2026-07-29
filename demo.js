@@ -220,6 +220,87 @@ const HANDLERS = {
         return out.sort((a, b) => a.store.localeCompare(b.store) || a.ym - b.ym);
     },
 
+    // 대시보드 시트 7종. 실제 함수와 같이 **jsonb 한 줄**로 돌려줍니다 —
+    // 데모가 행 배열을 주면 껍데기 벗기는 코드(oneRow)가 안 먹혀 빈 시트가 나옵니다.
+    api_export_menu_matrix: ({ p_field, ...args }) => {
+        const buckets = {
+            trade_area: ["미지정", "거주밀집", "오피스", "대학가"],
+            weekday: ["월", "화", "수", "목", "금", "토", "일"],
+            daypart: ["아침", "점심", "오후", "저녁"],
+        }[p_field] || ["미지정"];
+        const total = exportRows(args).reduce((a, r) => a + r.amount, 0);
+        const items = MENUS.map(([menu, category], mi) => {
+            const amount = Math.round(total / (mi + 1.6) / 6);
+            const share = {};
+            // 앞쪽 구간에 무게를 실어 분포가 평평해 보이지 않게 합니다.
+            const w = buckets.map((_, bi) => 1 / (bi + 1.3));
+            const sum = w.reduce((a, b) => a + b, 0);
+            buckets.forEach((b, bi) => { share[b] = Math.round(amount * w[bi] / sum); });
+            return { menu, category, total: amount, buckets: share };
+        }).sort((a, b) => b.total - a.total);
+        return [{ items }];
+    },
+
+    api_export_by_hour: (args) => {
+        const total = exportRows(args).reduce((a, r) => a + r.amount, 0);
+        const hours = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
+        // 점심·저녁 두 봉우리. 실제 매장 분포와 모양을 맞춥니다.
+        const w = [0.3, 0.7, 1.6, 1.4, 0.6, 0.4, 0.5, 0.8, 1.5, 1.3, 0.8, 0.4];
+        const sum = w.reduce((a, b) => a + b, 0);
+        const items = hours.map((hour, i) => {
+            const amount = Math.round(total * w[i] / sum);
+            return {
+                hour, amount, qty: Math.round(amount / 13_500),
+                hall_amount: Math.round(amount * 0.66),
+                delivery_amount: amount - Math.round(amount * 0.66),
+            };
+        });
+        return [{ items }];
+    },
+
+    api_export_nonstandard: (args) => {
+        const rows = exportRows(args);
+        const map = new Map();
+        for (const r of rows) {
+            const m = map.get(r.store.name)
+                || { store: r.store.name, trade_area: r.store.trade_area, total: 0 };
+            m.total += r.amount;
+            map.set(r.store.name, m);
+        }
+        const items = [...map.values()].map((m, i) => {
+            const ratio = [3.8, 1.2, 6.4, 0.4][i % 4];
+            return {
+                ...m,
+                nonstandard: Math.round(m.total * ratio / 100),
+                ratio,
+                nonstandard_menus: [4, 1, 7, 1][i % 4],
+            };
+        }).sort((a, b) => b.ratio - a.ratio);
+        return [{ items }];
+    },
+
+    api_export_store_detail: (args) => {
+        const items = HANDLERS.api_export_store_summary(args).map((s) => ({
+            ...s,
+            delivery_ratio: s.amount
+                ? Math.round(1000 * s.delivery_amount / s.amount) / 10 : 0,
+            source_count: 3,
+        }));
+        return [{ items }];
+    },
+
+    // 미매핑은 매장·기간 필터와 무관합니다(매핑표는 전사 공통).
+    api_export_unmapped: () => [{
+        items: [
+            { name: "신메뉴테스트A", first_ym: 202603, last_ym: 202606,
+              seen: 412, sources: "배민, 이지포스(굿모닝)" },
+            { name: "리뷰이벤트(사이다)", first_ym: 202601, last_ym: 202606,
+              seen: 288, sources: "쿠팡이츠" },
+            { name: "포장할인", first_ym: 202605, last_ym: 202606,
+              seen: 61, sources: "요기요" },
+        ],
+    }],
+
     api_export_store_summary: (args) => {
         const rows = exportRows(args);
         const map = new Map();

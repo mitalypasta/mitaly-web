@@ -353,7 +353,7 @@ function selectedPlugins() {
 
 // 리뷰 수집기가 실제로 있는 채널. 러너의 REVIEW_PLUGINS 와 같아야 합니다.
 // 조사는 배달 3사 다 끝났고(docs/reviews-api.md) 수집기는 배민·요기요까지입니다.
-const REVIEW_PLUGINS = ["baemin", "yogiyo"];
+const REVIEW_PLUGINS = ["baemin", "yogiyo", "coupangeats"];
 
 // 리뷰 요청 오류에 다음 행동을 붙입니다. 문구는 agent/mitaly_cloud_agent.py
 // handle_review_request() 가 실제로 내보내는 error 문자열에 맞춰 골랐습니다 —
@@ -2004,13 +2004,26 @@ async function buildAndDownloadWorkbook(ymFrom, ymTo, storeArg, storeNames) {
     const XLSX = await loadSheetJS();
 
     const args = { p_ym_from: ymFrom, p_ym_to: ymTo, p_stores: storeArg };
-    const [summary, monthly, menu, coverage] = await Promise.all([
-        db.rpc("api_export_store_summary", args),
-        db.rpc("api_export_monthly", args),
-        db.rpc("api_export_menu", args),
-        db.rpc("api_export_coverage", args),
-    ]);
-    for (const r of [summary, monthly, menu, coverage]) {
+    // 대시보드 시트(16_export_dashboard.sql)는 jsonb 한 줄로 옵니다 — 품목이
+    // 2,600종을 넘어 행으로 받으면 PostgREST 1,000행에서 조용히 잘립니다(D10).
+    const [summary, monthly, menu, coverage,
+           mArea, mWeek, mDay, byHour, nonstd, detail, unmapped] =
+        await Promise.all([
+            db.rpc("api_export_store_summary", args),
+            db.rpc("api_export_monthly", args),
+            db.rpc("api_export_menu", args),
+            db.rpc("api_export_coverage", args),
+            db.rpc("api_export_menu_matrix", { p_field: "trade_area", ...args }),
+            db.rpc("api_export_menu_matrix", { p_field: "weekday", ...args }),
+            db.rpc("api_export_menu_matrix", { p_field: "daypart", ...args }),
+            db.rpc("api_export_by_hour", args),
+            db.rpc("api_export_nonstandard", args),
+            db.rpc("api_export_store_detail", args),
+            db.rpc("api_export_unmapped",
+                   { p_ym_from: ymFrom, p_ym_to: ymTo }),
+        ]);
+    for (const r of [summary, monthly, menu, coverage, mArea, mWeek, mDay,
+                     byHour, nonstd, detail, unmapped]) {
         if (r.error) throw new Error("집계 조회 실패: " + r.error.message);
     }
 
@@ -2042,6 +2055,37 @@ async function buildAndDownloadWorkbook(ymFrom, ymTo, storeArg, storeNames) {
         ["menu", "메뉴"], ["category", "대분류"], ["amount", "매출"],
         ["qty", "수량"], ["store_count", "판매매장수"], ["is_giveaway", "증정품"],
     ]);
+    addSheet(XLSX, wb, "매장별상세", oneRow(detail), [
+        ["store", "매장"], ["trade_area", "상권"], ["amount", "총매출"],
+        ["qty", "총수량"], ["avg_ticket", "객단가"], ["hall_amount", "홀매출"],
+        ["delivery_amount", "배달매출"], ["delivery_ratio", "배달비중(%)"],
+        ["menu_count", "메뉴수"], ["active_months", "활동월수"],
+        ["source_count", "출처수"],
+    ]);
+
+    // 메뉴 × 축 3종. buckets 가 축마다 열이 달라져 시트를 그때그때 만듭니다.
+    addMatrixSheet(XLSX, wb, "상권별_메뉴", oneRow(mArea));
+    addMatrixSheet(XLSX, wb, "요일별_메뉴", oneRow(mWeek),
+                   ["월", "화", "수", "목", "금", "토", "일"]);
+    addMatrixSheet(XLSX, wb, "시간대별_메뉴", oneRow(mDay),
+                   ["아침", "점심", "오후", "저녁"]);
+
+    addSheet(XLSX, wb, "시간대", oneRow(byHour), [
+        ["hour", "시"], ["amount", "매출"], ["qty", "수량"],
+        ["hall_amount", "홀매출"], ["delivery_amount", "배달매출"],
+    ]);
+    // 비정규는 제외 대상이 아니라 감시 대상입니다(CLAUDE.md).
+    addSheet(XLSX, wb, "비정규현황", oneRow(nonstd), [
+        ["store", "매장"], ["trade_area", "상권"], ["total", "총매출"],
+        ["nonstandard", "비정규매출"], ["ratio", "비정규비율(%)"],
+        ["nonstandard_menus", "비정규품목수"],
+    ]);
+    // 미매핑은 보이기만 합니다. 담당자가 매핑표(엑셀)에서 직접 고칩니다.
+    addSheet(XLSX, wb, "미매핑", oneRow(unmapped), [
+        ["name", "품목명"], ["first_ym", "처음본달"], ["last_ym", "마지막달"],
+        ["seen", "나온횟수"], ["sources", "출처"],
+    ]);
+
     addSheet(XLSX, wb, "수집현황", coverage.data, [
         ["store", "매장"], ["ym", "연월"], ["amount", "매출"], ["has_data", "수집됨"],
     ]);
@@ -2050,6 +2094,30 @@ async function buildAndDownloadWorkbook(ymFrom, ymTo, storeArg, storeNames) {
         `미태리_매출_${ymDash(ymFrom)}_${ymDash(ymTo)}`
         + `${storeNames && storeNames.length ? `_${storeNames.length}개매장` : "_전체"}.xlsx`;
     XLSX.writeFile(wb, fname);
+}
+
+// jsonb 한 줄로 오는 응답의 껍데기를 벗깁니다.
+function oneRow(result) {
+    const first = (result.data || [])[0];
+    return (first && first.items) || [];
+}
+
+// 메뉴 × 축 시트. 축 값(상권·요일·시간대)이 데이터마다 달라 열을 먼저 모읍니다.
+// order 를 주면 그 순서로 고정합니다 — 요일이 '금목수월…' 로 섞이면 못 읽습니다.
+function addMatrixSheet(XLSX, wb, sheetName, rows, order) {
+    const keys = new Set();
+    for (const r of rows) for (const k of Object.keys(r.buckets || {})) keys.add(k);
+    const cols = order
+        ? order.filter((k) => keys.has(k)).concat([...keys].filter((k) => !order.includes(k)))
+        : [...keys].sort();
+
+    const header = ["메뉴", "대분류", "합계", ...cols];
+    const body = rows.map((r) => [
+        r.menu, r.category, r.total,
+        ...cols.map((k) => (r.buckets || {})[k] ?? 0),
+    ]);
+    XLSX.utils.book_append_sheet(wb,
+        XLSX.utils.aoa_to_sheet([header, ...body]), sheetName);
 }
 
 // 행 배열 + (키,헤더) 매핑 → 시트. 헤더를 한글로 바꿔 담당자가 바로 읽게 합니다.
