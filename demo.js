@@ -15,6 +15,55 @@ const MENUS = [
     ["미트볼", "사이드"], ["수프", "사이드"], ["티라미수", "디저트"],
 ];
 
+// 리뷰 데모. 실제 응답과 같은 필드 이름을 씁니다.
+// 낮은 별점·재주문·기존 답글이 화면에서 어떻게 보이는지 확인하려고 섞어 뒀습니다.
+const DEMO_REVIEWS = [
+    { id: 1, platform: "배민", store: "샘플01점", rating: 5,
+      contents: "면이 알덴테로 딱 좋았어요. 감바스도 마늘향이 진하고 좋습니다!",
+      author_name: "샘플닉네임1", written_at: "2026-07-24T12:10:00+09:00",
+      order_count: 7, menus: [{ name: "감바스 파스타" }, { name: "갈릭 브레드" }],
+      images: [], delivery_review: { recommendation: "GOOD", contents: [] },
+      can_reply: true, can_report: true, replies: [],
+      drafts: [{ id: 101, variant: 1, status: "draft",
+                 contents: "벌써 일곱 번째 주문이시네요. 감바스의 마늘향까지 좋게 봐주셔서"
+                     + " 감사합니다. 다음에도 면 삶는 시간 그대로 지켜서 보내드리겠습니다.",
+                 scheduled_at: null }] },
+    { id: 2, platform: "배민", store: "샘플01점", rating: 2,
+      contents: "면이 너무 불어서 왔어요. 배달이 40분 넘게 걸렸습니다.",
+      author_name: "샘플닉네임2", written_at: "2026-07-23T19:42:00+09:00",
+      order_count: 1, menus: [{ name: "로제 파스타" }],
+      images: [], delivery_review: { recommendation: "BAD", contents: [] },
+      can_reply: true, can_report: true, replies: [],
+      drafts: [{ id: 102, variant: 1, status: "draft",
+                 contents: "기다리시게 하고 면까지 불어 도착해 죄송합니다. 배달이 40분 넘게"
+                     + " 걸린 경위를 오늘 확인하고, 조리 순서를 다시 잡겠습니다.",
+                 scheduled_at: null }] },
+    { id: 3, platform: "쿠팡이츠", store: "샘플02점", rating: 5,
+      contents: "재주문입니다. 항상 맛있어요.",
+      author_name: "샘플닉네임3", written_at: "2026-07-22T13:05:00+09:00",
+      order_count: 12, menus: [{ name: "까르보나라" }],
+      images: [], delivery_review: null, can_reply: true, can_report: true,
+      replies: [{ id: 1, contents: "늘 찾아주셔서 감사합니다! 다음에도 정성껏 준비하겠습니다.",
+                  written_at: "2026-07-22T17:00:00+09:00", is_ours: false }],
+      drafts: [] },
+    { id: 4, platform: "요기요", store: "샘플03점", rating: 3,
+      contents: "맛은 괜찮은데 양이 적어요.",
+      author_name: "샘플닉네임4", written_at: "2026-07-21T20:15:00+09:00",
+      order_count: 2, menus: [{ name: "토마토 파스타" }, { name: "씨저 샐러드" }],
+      images: [], delivery_review: null, can_reply: true, can_report: true,
+      replies: [],
+      drafts: [{ id: 103, variant: 1, status: "approved",
+                 contents: "맛있게 드셨다니 감사합니다. 다만 양이 아쉬우셨다니 죄송합니다."
+                     + " 토마토 파스타 기본량을 다시 재보겠습니다.",
+                 scheduled_at: null }] },
+    { id: 5, platform: "배민", store: "샘플02점", rating: 5,
+      contents: "피자 도우가 쫄깃하고 좋아요. 사진 첨부합니다.",
+      author_name: "샘플닉네임5", written_at: "2026-07-20T18:30:00+09:00",
+      order_count: 3, menus: [{ name: "마르게리따 피자" }],
+      images: ["demo1.jpg"], delivery_review: { recommendation: "GOOD", contents: [] },
+      can_reply: true, can_report: true, replies: [], drafts: [] },
+];
+
 // 실행할 때마다 숫자가 바뀌면 헷갈리므로 고정 난수를 씁니다.
 function seeded(seed) {
     let state = seed >>> 0;
@@ -122,6 +171,29 @@ function exportRows({ p_ym_from, p_ym_to, p_stores }) {
         }
     });
     return rows;
+}
+
+// ---- 데모용 초안 조작 ---------------------------------------------------
+// 실제 SQL 함수와 같은 규칙을 따릅니다: draft/approved 에서만 상태가 바뀌고,
+// 이미 올라간(posted) 것은 건드리지 않습니다.
+
+function demoFindDraft(id) {
+    for (const review of DEMO_REVIEWS) {
+        const hit = (review.drafts || []).find((d) => d.id === Number(id));
+        if (hit) return hit;
+    }
+    return null;
+}
+
+function demoDraftMove(id, next) {
+    const draft = demoFindDraft(id);
+    if (!draft) return { ok: false, reason: "초안을 찾지 못했습니다" };
+    const allowed = next === "approved" ? ["draft"] : ["draft", "approved"];
+    if (!allowed.includes(draft.status)) {
+        return { ok: false, reason: `상태가 ${draft.status} 여서 바꿀 수 없습니다` };
+    }
+    draft.status = next;
+    return { ok: true, status: next };
 }
 
 const HANDLERS = {
@@ -356,6 +428,129 @@ const HANDLERS = {
         { name: "런치세트 A", source: "이지포스(굿모닝)", count: 7, ym: 202607 },
     ],
 
+    // 매출이 0이고 수량만 있는 품목. 실제 데이터에도 2,376행 있습니다.
+    // 이 줄들이 화면에서 안 사라지는지 보려고 데모에 넣습니다.
+    api_all_items: (args) => {
+        const rows = HANDLERS.api_by_menu(args).map((r, i) => ({
+            menu: r.menu,
+            category: r.category,
+            amount: r.amount,
+            qty: r.qty,
+            store_count: 94 - (i % 9),
+            is_giveaway: false,
+        }));
+        rows.push(
+            { menu: "리뷰이벤트 감자튀김", category: "사이드",
+              amount: 0, qty: 1840, store_count: 61, is_giveaway: true },
+            { menu: "서비스 음료", category: "음료",
+              amount: 0, qty: 962, store_count: 38, is_giveaway: true },
+        );
+        // 실제 함수와 같은 모양 — jsonb 배열을 담은 한 줄 (11_all_items_fix.sql).
+        return [{ items: rows }];
+    },
+
+    api_by_category: (args) => {
+        const map = new Map();
+        for (const r of HANDLERS.api_all_items(args)[0].items) {
+            const key = r.category || "미분류";
+            const acc = map.get(key) || { amount: 0, qty: 0, menu_count: 0 };
+            acc.amount += r.amount;
+            acc.qty += r.qty;
+            acc.menu_count += 1;
+            map.set(key, acc);
+        }
+        return [...map.entries()]
+            .map(([category, v]) => ({ category, ...v }))
+            .sort((a, b) => b.amount - a.amount);
+    },
+
+    // 리뷰 — 화면 배치 확인용 가짜 데이터입니다.
+    // 실제 응답과 같은 모양(jsonb 한 줄)으로 돌려줍니다.
+    api_reviews: (args) => {
+        let rows = DEMO_REVIEWS;
+        if (args.p_unanswered_only) rows = rows.filter((r) => !r.replies.length);
+        if (args.p_platform) rows = rows.filter((r) => r.platform === args.p_platform);
+        if (args.p_min_rating != null) rows = rows.filter((r) => r.rating >= args.p_min_rating);
+        if (args.p_max_rating != null) rows = rows.filter((r) => r.rating <= args.p_max_rating);
+        if (args.p_store) rows = rows.filter((r) => r.store === args.p_store);
+        // 실제 api_reviews 는 반려된 초안을 빼고 돌려줍니다(13_reviews_api.sql).
+        return [{ items: rows.map((r) => ({
+            ...r,
+            drafts: (r.drafts || []).filter((d) => d.status !== "rejected"),
+        })) }];
+    },
+
+    api_review_summary: (args) => {
+        const rows = HANDLERS.api_reviews({ ...args, p_unanswered_only: false })[0].items;
+        const byRating = new Map();
+        const byPlatform = new Map();
+        for (const r of rows) {
+            byRating.set(r.rating, (byRating.get(r.rating) || 0) + 1);
+            const p = byPlatform.get(r.platform) || { count: 0, unanswered: 0 };
+            p.count += 1;
+            if (!r.replies.length) p.unanswered += 1;
+            byPlatform.set(r.platform, p);
+        }
+        const total = rows.length;
+        const avg = total
+            ? Math.round((rows.reduce((a, r) => a + r.rating, 0) / total) * 100) / 100
+            : null;
+        return [{ summary: {
+            total,
+            unanswered: rows.filter((r) => !r.replies.length).length,
+            avg_rating: avg,
+            by_rating: [...byRating.entries()]
+                .map(([rating, count]) => ({ rating, count }))
+                .sort((a, b) => b.rating - a.rating),
+            by_platform: [...byPlatform.entries()]
+                .map(([platform, v]) => ({ platform, ...v }))
+                .sort((a, b) => b.count - a.count),
+        } }];
+    },
+
+    // 리뷰 수집 현황. 실제 api_review_sync_status() 와 같은 규칙으로
+    // DEMO_REVIEWS 에서 계산합니다(can_reply && 아직 답글 없음 = openable).
+    api_review_sync_status: () => {
+        const openable = DEMO_REVIEWS.filter(
+            (r) => r.can_reply && !r.replies.length,
+        ).length;
+        const lastDone = new Date(Date.now() - 5 * 3600_000).toISOString();
+        return [{ status: {
+            last_done_at: lastDone,
+            last_any_at: lastDone,
+            pending: 0,
+            reviews_total: DEMO_REVIEWS.length,
+            reviews_openable: openable,
+        } }];
+    },
+
+    // AI 답글 초안. 데모에서는 DEMO_REVIEWS 의 drafts 를 그대로 셉니다.
+    api_draft_summary: () => {
+        const all = DEMO_REVIEWS.flatMap((r) => r.drafts || []);
+        const count = (s) => all.filter((d) => d.status === s).length;
+        return [{ summary: {
+            draft: count("draft"),
+            approved: count("approved"),
+            rejected: count("rejected"),
+            posted: count("posted"),
+            tone: "기본(정중+온기)",
+        } }];
+    },
+
+    // 승인·반려·수정. 데모라 메모리에서만 바뀌고 새로고침하면 돌아옵니다.
+    // 실제와 같은 모양({ok, reason})으로 돌려줍니다.
+    approve_reply_draft: (args) => demoDraftMove(args.p_draft_id, "approved"),
+    reject_reply_draft: (args) => demoDraftMove(args.p_draft_id, "rejected"),
+    edit_reply_draft: (args) => {
+        const draft = demoFindDraft(args.p_draft_id);
+        if (!draft) return { ok: false, reason: "초안을 찾지 못했습니다" };
+        const clean = (args.p_contents || "").trim();
+        if (!clean) return { ok: false, reason: "내용이 비어 있습니다" };
+        draft.contents = clean;
+        draft.status = "draft";
+        return { ok: true, status: "draft" };
+    },
+
     api_by_weekday: (args) => {
         const total = HANDLERS.api_summary(args)[0].amount;
         const sum = Object.values(WEEKDAY_SHAPE).reduce((a, b) => a + b, 0);
@@ -385,6 +580,22 @@ export function demoClient() {
                 + "  완료 · 12,043행\n[2/2] imu 수집 중\n  완료 · 5,210행\n"
                 + "대시보드 갱신 완료\n클라우드 업로드 완료",
         },
+        // 리뷰 요청이 실패했을 때 화면에 다음 행동 안내가 붙는지 보는 픽스처(큐 #8).
+        // 에러 문구는 agent/mitaly_cloud_agent.py handle_review_request() 의
+        // "수집한 채널이 없습니다. 실패: ..." (전 채널 실패 → status=failed) 그대로.
+        {
+            id: 39,
+            kind: "reviews",
+            requested_at: new Date(Date.now() - 5400_000).toISOString(),
+            plugins: ["baemin", "yogiyo"],
+            date_from: "2026-07-14", date_to: "2026-07-27",
+            stores: [], profiles: [],
+            status: "failed", progress: null,
+            error: "RuntimeError: 수집한 채널이 없습니다. 실패: baemin, yogiyo",
+            finished_at: new Date(Date.now() - 5300_000).toISOString(),
+            log_tail: "[1/2] baemin 리뷰 수집\n  [경고] baemin 리뷰 실패(코드 1)\n"
+                + "[2/2] yogiyo 리뷰 수집\n  [경고] yogiyo 리뷰 실패(코드 1)",
+        },
     ];
 
     const builder = (table) => {
@@ -407,6 +618,7 @@ export function demoClient() {
                 requests.push({
                     id: nextId++,
                     requested_at: new Date().toISOString(),
+                    kind: row.kind || "sales",
                     plugins: row.plugins,
                     date_from: row.date_from,
                     date_to: row.date_to,

@@ -622,6 +622,176 @@ th.sortable[aria-sort]::after {
 
 th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
 
+/* 카드 안 검색줄 — 전 품목처럼 행이 많은 표에 답니다. */
+.cardsearch {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.cardsearch input[type="search"] {
+    font: inherit;
+    flex: 1 1 240px;
+    max-width: 320px;
+    padding: 7px 10px;
+    color: var(--text-primary);
+    background: var(--surface-1);
+    border: 1px solid var(--baseline);
+    border-radius: 6px;
+}
+
+.cardsearch input[type="search"]:focus-visible {
+    outline: 2px solid var(--series-1);
+    outline-offset: 1px;
+}
+
+/* ---------------------------------------------------------------- 리뷰 */
+
+.rvbars { margin: 4px 0 14px; }
+
+.rvbar {
+    display: grid;
+    grid-template-columns: 84px 1fr 44px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 3px;
+}
+
+.rvbar-label { font-size: 12px; color: var(--text-secondary); letter-spacing: -1px; }
+
+.rvbar-track {
+    height: 14px;
+    background: var(--surface-1);
+    border: 1px solid var(--gridline);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.rvbar-track i { display: block; height: 100%; }
+
+.rvbar-count {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.reviewlist { max-height: 620px; overflow: auto; }
+
+.rvitem {
+    padding: 12px 0;
+    border-top: 1px solid var(--gridline);
+}
+
+/* 낮은 별점은 왼쪽에 선을 그어 눈에 걸리게 합니다. 색만으로 알리지 않습니다. */
+.rvitem.low {
+    border-left: 3px solid var(--critical);
+    padding-left: 10px;
+}
+
+.rvhead {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.rvstars { color: #f0a500; letter-spacing: -1px; }
+
+.rvscore {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.rvmeta { font-size: 12px; color: var(--text-muted); }
+
+.rvbody {
+    margin: 0 0 6px;
+    white-space: pre-wrap;
+    line-height: 1.55;
+}
+
+.rvmenus { margin: 0; font-size: 12px; color: var(--text-secondary); }
+
+.rvreply {
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: var(--surface-1);
+    border-left: 3px solid var(--baseline);
+    border-radius: 0 6px 6px 0;
+    font-size: 13px;
+}
+
+.rvreply b { margin-right: 6px; color: var(--text-secondary); }
+
+/* ---- AI 답글 초안 ----
+   실제 답글(.rvreply)과 눈에 띄게 달라야 합니다. 초안은 아직 손님이 못 본
+   글이고, 승인해도 올라가지 않습니다. 점선 테두리로 '미확정' 을 표시합니다. */
+
+.rvdraft {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border: 1px dashed var(--gridline);
+    border-radius: 6px;
+    background: var(--surface-1);
+}
+
+/* 승인된 것은 실선으로 바꿔 검토가 끝났음을 보입니다. */
+.rvdraft.ok { border-style: solid; }
+
+.rvdraft-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.rvdraft-text {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border: 1px solid var(--gridline);
+    border-radius: 4px;
+    background: var(--page);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 13px;
+    line-height: 1.55;
+    resize: vertical;
+}
+
+.rvdraft-text[readonly] { color: var(--text-secondary); }
+
+.rvdraft-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+.rvdraft-actions button { padding: 4px 12px; font-size: 12px; }
+
+.rvdraft-msg { font-size: 12px; color: var(--text-muted); }
+.rvdraft-msg.ok { color: var(--text-secondary); }
+.rvdraft-msg.error { color: var(--critical); }
+
+.tag.warn { color: #fff; background: var(--critical); border-color: var(--critical); }
+
+/* 중립 표시 — .flag 는 빨강이라 증정품처럼 경고가 아닌 것에는 안 맞습니다. */
+.tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--surface-1);
+    border: 1px solid var(--baseline);
+}
+
 /* 경고 표시 — 색만으로 뜻을 전달하지 않고 글자를 함께 답니다. */
 .flag {
     display: inline-block;
@@ -714,6 +884,8 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
 }
 
 .notice.error { color: var(--critical); }
+
+.hint.warn { color: var(--critical); font-weight: 600; }
 
 .gate .alt {
     margin-top: 16px;

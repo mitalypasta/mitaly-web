@@ -245,6 +245,15 @@ async function initDashboard() {
         });
     });
 
+    // 전 품목 검색. 표만 다시 그리므로 데이터를 새로 받지 않습니다.
+    $("ai-search").addEventListener("input",
+        debounce(() => allItemsRender && allItemsRender(), 150));
+
+    // 리뷰 필터는 서버에서 걸러야 하므로 다시 받습니다.
+    for (const id of ["rv-unanswered", "rv-platform", "rv-rating"]) {
+        $(id).addEventListener("change", load);
+    }
+
     // 창 크기 대신 카드 영역의 실제 너비를 봅니다.
     // 창 크기가 안 바뀌어도 칸 배치가 달라질 수 있기 때문입니다.
     const redraw = debounce(() => lastData && draw(lastData), 150);
@@ -256,6 +265,7 @@ async function initDashboard() {
 
     initRequests();
     initExport();
+    initDrafts();
 
     await load();
     loadLastUpdated();
@@ -319,6 +329,9 @@ function initRequests() {
         el.addEventListener("change", syncProfileVisibility));
     syncProfileVisibility();
 
+    $("r-kind").addEventListener("change", () => syncKind(syncProfileVisibility));
+    syncKind(syncProfileVisibility);
+
     const today = new Date();
     const yesterday = new Date(today.getTime() - 86400000);
     const firstOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
@@ -336,6 +349,83 @@ function initRequests() {
 
 function selectedPlugins() {
     return [...document.querySelectorAll("#r-plugins input:checked")].map((el) => el.value);
+}
+
+// 리뷰 수집기가 실제로 있는 채널. 러너의 REVIEW_PLUGINS 와 같아야 합니다.
+// 조사는 배달 3사 다 끝났고(docs/reviews-api.md) 수집기는 배민·요기요까지입니다.
+const REVIEW_PLUGINS = ["baemin", "yogiyo"];
+
+// 리뷰 요청 오류에 다음 행동을 붙입니다. 문구는 agent/mitaly_cloud_agent.py
+// handle_review_request() 가 실제로 내보내는 error 문자열에 맞춰 골랐습니다 —
+// 러너 메시지가 바뀌면 이 매칭도 같이 손봐야 합니다.
+function reviewFailureHint(errorText) {
+    const msg = errorText || "";
+    if (msg.includes("리뷰 수집기가 있는 채널이 없습니다")) {
+        return "쿠팡이츠는 아직 리뷰 수집기가 없습니다. 배민 또는 요기요를 선택해 다시 요청하세요.";
+    }
+    if (msg.includes("수집하지 못했습니다") || msg.includes("실패:")) {
+        return "계정표(매장별_배달계정.xlsx)에 이 매장의 배민·요기요 계정 정보가 있는지 " +
+            "먼저 확인하세요. 계정이 맞다면 자리 PC가 켜져 있고 수집 프로그램이 " +
+            "정상 동작 중인지 확인하세요.";
+    }
+    if (msg.includes("업로드")) {
+        return "자리 PC가 켜져 있고 수집 프로그램이 정상 동작 중인지 확인하세요. " +
+            "이어지면 로그를 펼쳐 원인을 확인하세요.";
+    }
+    if (msg.includes("기간이 비어")) {
+        return "조회 기간을 채워 다시 요청하세요.";
+    }
+    return "계정표 확인 → 선택한 채널에 리뷰 수집기가 있는지 확인 → 자리 PC가 켜져 " +
+        "있는지 확인, 순서로 살펴보세요.";
+}
+
+// '매출' 과 '리뷰' 는 받는 방식이 달라 고를 수 있는 것도 다릅니다.
+// 리뷰는 (a) 수집기가 있는 채널만 (b) 이지포스 계정 구분이 없고
+// (c) '이미 받은 기간 다시 받기' 가 무의미합니다 — 리뷰는 늘 겹쳐 받습니다.
+// 매출 모드에서 무엇을 골라 뒀는지. 리뷰로 갔다 돌아올 때 되돌립니다.
+// 이게 없으면 리뷰를 한 번 보기만 해도 채널 선택이 날아갑니다.
+let salesChecked = null;
+
+function syncKind(syncProfileVisibility) {
+    const reviews = $("r-kind").value === "reviews";
+    const inputs = [...document.querySelectorAll("#r-plugins input")];
+
+    if (reviews && salesChecked === null) {
+        salesChecked = inputs.filter((el) => el.checked).map((el) => el.value);
+    }
+
+    for (const el of inputs) {
+        const ok = !reviews || REVIEW_PLUGINS.includes(el.value);
+        // 원래 상태(준비 안 된 채널)를 기억해 두었다가 되돌립니다.
+        if (el.dataset.ready === undefined) el.dataset.ready = String(!el.disabled);
+        el.disabled = !ok || el.dataset.ready === "false";
+
+        if (reviews) {
+            el.checked = ok;
+        } else if (salesChecked !== null) {
+            el.checked = salesChecked.includes(el.value);
+        }
+        // 흐림·취소선은 .checks input[disabled] + span 이 이미 해 줍니다.
+    }
+    if (!reviews) salesChecked = null;
+
+    $("r-force-wrap").hidden = reviews;
+    $("r-kind-note").hidden = !reviews;
+    // 채널 이름은 목록에서 만들어냅니다. 손으로 적어 두면 채널을 더할 때마다
+    // 문구가 낡습니다(실제로 요기요를 붙이고 한 번 어긋났습니다).
+    const names = inputs
+        .filter((el) => REVIEW_PLUGINS.includes(el.value))
+        .map((el) => el.closest("label").textContent.trim())
+        .join(" · ");
+    $("r-kind-note").textContent = reviews
+        ? "리뷰는 같은 기간을 겹쳐 받아도 중복이 쌓이지 않습니다. "
+          + "배민 답글에는 기한(대략 30일)이 있어 수집 PC 가 하루 한 번 스스로도 받습니다. "
+          + `지금 리뷰 수집기가 있는 채널: ${names}.`
+        : "";
+
+    if (reviews) $("r-profile-field").hidden = true;
+    else if (syncProfileVisibility) syncProfileVisibility();
+    refreshStoreButton();
 }
 
 async function loadTargets() {
@@ -534,16 +624,19 @@ async function submitRequest() {
     }
 
     const forceEl = $("r-force");
+    const kind = $("r-kind").value === "reviews" ? "reviews" : "sales";
     const { data: { session } } = await db.auth.getSession();
     const { error } = await db.from("collect_requests").insert({
         requested_by: session?.user?.id,
+        kind,
         plugins,
         date_from: from,
         date_to: to,
         stores,
-        profiles,
-        // 기본은 안 받은 것만. 체크하면 이미 받은 기간도 다시 받습니다.
-        force: forceEl ? forceEl.checked : false,
+        // 리뷰에는 이지포스 계정 구분도, '다시 받기' 도 해당이 없습니다.
+        profiles: kind === "reviews" ? [] : profiles,
+        force: kind === "reviews" ? false
+            : (forceEl ? forceEl.checked : false),
     });
 
     button.disabled = false;
@@ -561,7 +654,7 @@ async function submitRequest() {
 async function refreshRequests() {
     const { data, error } = await db
         .from("collect_requests")
-        .select("id,requested_at,plugins,date_from,date_to,stores,profiles," +
+        .select("id,kind,requested_at,plugins,date_from,date_to,stores,profiles," +
                 "status,progress,error,finished_at,log_tail")
         .order("id", { ascending: false })
         .limit(20);
@@ -584,7 +677,7 @@ async function refreshRequests() {
         return `
         <div class="runrow">
             <span class="dot st-${r.status}"></span>
-            <span><b>#${r.id}</b> ${escape(r.date_from)} ~ ${escape(r.date_to)}</span>
+            <span><b>#${r.id}</b>${r.kind === "reviews" ? " 리뷰" : ""} ${escape(r.date_from)} ~ ${escape(r.date_to)}</span>
             <span class="grow">${escape(
                 r.progress || (waiting ? "수집 PC를 기다리는 중" : STATUS_LABEL[r.status] || r.status)
             )}</span>
@@ -602,6 +695,10 @@ async function refreshRequests() {
             .toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" });
         const scope = (r.stores || []).length ? `매장 ${r.stores.length}개` : "전 매장";
         const prof = (r.profiles || []).length ? ` · ${r.profiles.join("+")}` : "";
+        // 리뷰 요청에서 오류가 나면(전체 실패든 일부 채널 실패든) 원인 문자열만
+        // 던지지 않고 사람이 바로 할 수 있는 다음 행동을 붙입니다.
+        const reviewHint = r.kind === "reviews" && r.error
+            ? reviewFailureHint(r.error) : null;
         return `
         <div class="runrow">
             <span class="dot st-${r.status}"></span>
@@ -613,6 +710,7 @@ async function refreshRequests() {
                 ${r.error ? `· <b>${escape(r.error)}</b>` : ""}</span>
             ${r.log_tail ? `<button class="linkish" data-log="${r.id}">로그</button>` : ""}
         </div>
+        ${reviewHint ? `<p class="hint">${escape(reviewHint)}</p>` : ""}
         <pre class="logbox" id="log-${r.id}" hidden>${escape(r.log_tail || "")}</pre>`;
     }).join("") || '<p class="hint">아직 요청이 없습니다.</p>';
 
@@ -698,7 +796,23 @@ async function load() {
         db.rpc("api_menu_matrix", { p_field: "weekday", ...args }),
         db.rpc("api_menu_matrix", { p_field: "daypart", ...args }),
         db.rpc("api_unmapped", {}),
+        db.rpc("api_by_category", args),
+        db.rpc("api_all_items", args),
+        db.rpc("api_review_summary", reviewArgs()),
+        db.rpc("api_reviews", { ...reviewArgs(), p_limit: 200 }),
     ];
+
+    // 초안 요약은 있으면 좋고 없어도 그만입니다. 위 묶음에 넣으면
+    // 14_reply_drafts.sql 적용 전에 화면이 통째로 안 뜹니다(기존 bad 검사).
+    const draftSummary = db.rpc("api_draft_summary", {})
+        .then((r) => (r.error ? {} : ((r.data || [])[0] || {}).summary || {}))
+        .catch(() => ({}));
+
+    // 리뷰 수집 현황도 같은 이유로 따로 뺍니다 —
+    // 15_review_collect.sql 적용 전에는 화면이 안 깨지고 그냥 안 보이면 됩니다.
+    const reviewSync = db.rpc("api_review_sync_status", {})
+        .then((r) => (r.error ? {} : ((r.data || [])[0] || {}).status || {}))
+        .catch(() => ({}));
 
     const results = await Promise.all(calls);
     document.body.classList.remove("loading");
@@ -722,8 +836,25 @@ async function load() {
         menuWeekday: results[11].data || [],
         menuDaypart: results[12].data || [],
         unmapped: results[13].data || [],
+        byCategory: results[14].data || [],
+        allItems: unwrapItems(results[15].data),
+        reviewSummary: ((results[16].data || [])[0] || {}).summary || {},
+        reviews: ((results[17].data || [])[0] || {}).items || [],
+        draftSummary: await draftSummary,
+        reviewSync: await reviewSync,
     };
     draw(lastData);
+}
+
+// api_all_items 는 11_all_items_fix.sql 이후 jsonb 배열 한 줄로 옵니다.
+// 품목이 2,612종이라 줄마다 보내면 1,000행에서 조용히 잘립니다(2026-07-27 실측).
+// SQL 적용 전 저장소를 보는 사람도 화면이 안 깨지게 옛 형태도 받습니다.
+function unwrapItems(rows) {
+    const first = (rows || [])[0];
+    if (first && Object.prototype.hasOwnProperty.call(first, "items")) {
+        return first.items || [];
+    }
+    return rows || [];
 }
 
 async function loadLastUpdated() {
@@ -802,7 +933,223 @@ function draw(d) {
     drawMenuMatrix($("c-mweek"), $("t-mweek"), d.menuWeekday, "weekday", WEEKDAY_ORDER);
     drawMenuMatrix($("c-mpart"), $("t-mpart"), d.menuDaypart, "daypart",
         ["아침", "점심", "오후", "저녁"]);
+    drawCategory(d, c);
+    drawAllItems(d);
+    drawReviews(d, c);
     drawUnmapped(d);
+}
+
+// ---- 리뷰 관리 --------------------------------------------------------
+//
+// 기간·매장은 위 필터를 그대로 따르고, 플랫폼·별점·미답변만 여기서 고릅니다.
+// 답글은 이 화면에서 달지 않습니다. 지금은 무엇이 와 있는지 보는 단계입니다.
+
+function reviewArgs() {
+    const base = currentFilters();
+    const rating = $("rv-rating").value;
+    return {
+        p_ym_from: base.p_ym_from,
+        p_ym_to: base.p_ym_to,
+        p_store: base.p_store,
+        p_platform: $("rv-platform").value || null,
+        p_unanswered_only: $("rv-unanswered").checked,
+        p_min_rating: rating === "high" ? 5 : null,
+        p_max_rating: rating === "low" ? 4 : null,
+    };
+}
+
+function ratingStars(value) {
+    const n = Math.round(Number(value) || 0);
+    return "★".repeat(n) + "☆".repeat(Math.max(0, 5 - n));
+}
+
+function drawReviews(d, c) {
+    const summary = d.reviewSummary || {};
+    const rows = d.reviews || [];
+
+    const total = Number(summary.total) || 0;
+    $("review-summary").textContent = total
+        ? `${int(total)}건 · 평균 ${summary.avg_rating ?? "—"}점 · `
+          + `미답변 ${int(summary.unanswered || 0)}건`
+        : "이 기간에 받아온 리뷰가 없습니다";
+
+    // 플랫폼 목록은 요약이 알려주는 대로 채웁니다(수집된 것만 보이게).
+    const select = $("rv-platform");
+    const chosen = select.value;
+    const names = (summary.by_platform || []).map((p) => p.platform);
+    if (names.join("|") !== select.dataset.names) {
+        select.dataset.names = names.join("|");
+        select.innerHTML = '<option value="">모든 플랫폼</option>'
+            + names.map((n) => `<option value="${escape(n)}">${escape(n)}</option>`).join("");
+        select.value = names.includes(chosen) ? chosen : "";
+    }
+
+    // 별점 분포
+    const byRating = summary.by_rating || [];
+    const max = Math.max(1, ...byRating.map((r) => Number(r.count) || 0));
+    $("rv-bars").innerHTML = byRating.length
+        ? '<div class="rvbars">' + byRating.map((r) => {
+            const n = Number(r.count) || 0;
+            return `<div class="rvbar"><span class="rvbar-label">${ratingStars(r.rating)}</span>`
+                + `<span class="rvbar-track"><i style="width:${(n / max) * 100}%;`
+                + `background:${c.s1}"></i></span>`
+                + `<span class="rvbar-count">${int(n)}</span></div>`;
+        }).join("") + "</div>"
+        : "";
+
+    $("rv-shown").textContent = rows.length ? `${int(rows.length)}건 표시` : "";
+
+    // 초안 현황. 없으면 줄 자체를 감춥니다.
+    const ds = d.draftSummary || {};
+    const pending = Number(ds.draft) || 0;
+    const approved = Number(ds.approved) || 0;
+    $("draft-note").textContent = (pending || approved)
+        ? `AI 답글 초안 — 검토 대기 ${int(pending)}건 · 승인됨 ${int(approved)}건`
+          + (ds.tone ? ` · 말투 '${ds.tone}'` : "")
+        : "";
+    $("draft-note").hidden = !(pending || approved);
+
+    // 리뷰 수집 현황. 배민 답글 기한이 대략 30일이라, 답글 달 수 있는 리뷰가
+    // 적은데 전체 리뷰는 많다면 수집이 늦었다는 신호입니다.
+    const sync = d.reviewSync || {};
+    const syncNote = $("review-sync-note");
+    if (sync.last_any_at || sync.reviews_total) {
+        const lastText = sync.last_done_at
+            ? new Date(sync.last_done_at).toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" })
+            : "아직 없음";
+        const openable = Number(sync.reviews_openable) || 0;
+        const totalReviews = Number(sync.reviews_total) || 0;
+        syncNote.textContent = `마지막 수집 ${lastText} · 지금 답글 달 수 있는 리뷰 ${int(openable)}건`
+            + (totalReviews ? ` (전체 ${int(totalReviews)}건)` : "");
+        syncNote.className = "hint" + (totalReviews && openable === 0 ? " warn" : "");
+        syncNote.hidden = false;
+    } else {
+        syncNote.hidden = true;
+    }
+
+    if (!rows.length) {
+        $("rv-list").innerHTML = '<p class="hint">조건에 맞는 리뷰가 없습니다.</p>';
+        return;
+    }
+
+    $("rv-list").innerHTML = rows.map((r) => {
+        const when = r.written_at
+            ? new Date(r.written_at).toLocaleDateString("ko-KR",
+                { year: "2-digit", month: "2-digit", day: "2-digit" })
+            : "";
+        const menus = (r.menus || []).map((m) => escape(m.name || "")).filter(Boolean);
+        const repeat = Number(r.order_count) || 0;
+        const replies = r.replies || [];
+        const low = Number(r.rating) <= 3;
+
+        return `<article class="rvitem${low ? " low" : ""}">
+            <div class="rvhead">
+              <span class="rvstars">${ratingStars(r.rating)}</span>
+              <span class="rvscore">${r.rating ?? "—"}</span>
+              <span class="rvmeta">${escape(r.store || "")} · ${escape(r.platform || "")} · ${when}</span>
+              ${repeat > 1 ? `<span class="tag">재주문 ${repeat}회</span>` : ""}
+              ${replies.length ? "" : '<span class="tag warn">미답변</span>'}
+            </div>
+            ${r.contents ? `<p class="rvbody">${escape(r.contents)}</p>` : ""}
+            ${menus.length ? `<p class="rvmenus">${menus.join(" · ")}</p>` : ""}
+            ${replies.map((x) => `<div class="rvreply"><b>답글</b> ${escape(x.contents || "")}</div>`).join("")}
+            ${(r.drafts || []).map(draftBox).join("")}
+          </article>`;
+    }).join("");
+}
+
+// ---- AI 답글 초안 ------------------------------------------------------
+//
+// ⚠️ 여기서 '승인' 은 배달앱에 올리는 것이 아닙니다. '올려도 좋다' 는 표시일
+//    뿐이고, 실제 등록을 하는 코드는 아직 어디에도 없습니다(DECISIONS.md D9).
+//    문구에서도 그렇게 읽히게 씁니다 — 눌렀는데 손님에게 갔다고 오해하면 안 됩니다.
+
+const DRAFT_STATUS = {
+    draft: "검토 대기",
+    approved: "승인됨 (등록은 아직 안 합니다)",
+    scheduled: "등록 예약",
+    posting: "등록 중",
+    posted: "등록 완료",
+    failed: "등록 실패",
+    rejected: "반려",
+};
+
+// 사람이 더는 못 건드리는 상태
+const DRAFT_LOCKED = ["scheduled", "posting", "posted", "failed"];
+
+function draftBox(draft) {
+    const status = draft.status || "draft";
+    const locked = DRAFT_LOCKED.includes(status);
+    const label = DRAFT_STATUS[status] || status;
+
+    return `<div class="rvdraft${status === "approved" ? " ok" : ""}" data-draft="${draft.id}">
+        <div class="rvdraft-head">
+          <span class="tag">AI 초안</span>
+          <span class="rvmeta">${escape(label)}</span>
+        </div>
+        <textarea class="rvdraft-text" rows="3"${locked ? " readonly" : ""}
+                  aria-label="답글 초안">${escape(draft.contents || "")}</textarea>
+        ${locked ? "" : `<div class="rvdraft-actions">
+          <button type="button" data-act="approve">승인</button>
+          <button type="button" class="ghost" data-act="save">수정 저장</button>
+          <button type="button" class="ghost" data-act="reject">반려</button>
+          <span class="rvdraft-msg"></span>
+        </div>`}
+      </div>`;
+}
+
+// 버튼은 다시 그릴 때마다 새로 생깁니다. 목록에 한 번만 걸어 둡니다.
+function initDrafts() {
+    $("rv-list").addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-act]");
+        if (!button) return;
+
+        const box = button.closest("[data-draft]");
+        const id = Number(box.dataset.draft);
+        const act = button.dataset.act;
+        const message = box.querySelector(".rvdraft-msg");
+        const buttons = [...box.querySelectorAll("button")];
+
+        let reason = null;
+        if (act === "reject") {
+            reason = window.prompt("반려 사유를 적어주세요 (비워도 됩니다).\n"
+                + "반려하면 이 리뷰는 다음 초안 생성 때 다시 씁니다.", "");
+            if (reason === null) return;   // 취소
+        }
+
+        buttons.forEach((b) => { b.disabled = true; });
+        message.className = "rvdraft-msg";
+        message.textContent = "처리 중…";
+
+        const call = act === "approve"
+            ? db.rpc("approve_reply_draft", { p_draft_id: id })
+            : act === "reject"
+                ? db.rpc("reject_reply_draft", { p_draft_id: id, p_reason: reason })
+                : db.rpc("edit_reply_draft", {
+                    p_draft_id: id,
+                    p_contents: box.querySelector(".rvdraft-text").value,
+                });
+
+        const { data, error } = await call;
+        buttons.forEach((b) => { b.disabled = false; });
+
+        if (error) {
+            message.className = "rvdraft-msg error";
+            message.textContent = error.message || "실패했습니다";
+            return;
+        }
+        // 함수는 {ok, reason} 을 돌려줍니다. 실패해도 HTTP 는 200 입니다.
+        if (data && data.ok === false) {
+            message.className = "rvdraft-msg error";
+            message.textContent = data.reason || "처리하지 못했습니다";
+            return;
+        }
+
+        message.className = "rvdraft-msg ok";
+        message.textContent = act === "approve" ? "승인했습니다"
+            : act === "reject" ? "반려했습니다" : "저장했습니다";
+        await load();     // 목록·요약을 다시 받습니다
+    });
 }
 
 // ---- 히트맵 ----------------------------------------------------------
@@ -1022,6 +1369,105 @@ function drawMenuMatrix(chartEl, tableEl, data, field, fixedOrder = null) {
             ...buckets.map((b) => wonFull(r.buckets[b] || 0)),
             wonFull(r.total),
         ]));
+}
+
+// ---- 분류별 비중 ------------------------------------------------------
+//
+// 07_all_items.sql 이후 매출에서 빠지는 품목이 없습니다. 그래서 음료·주류·
+// 비정규·미매핑이 전부 여기 잡힙니다. 비중의 분모는 표에 보이는 합계입니다.
+
+function drawCategory(d, c) {
+    const rows = (d.byCategory || []).map((r) => ({
+        category: r.category || "미분류",
+        amount: Number(r.amount) || 0,
+        qty: Number(r.qty) || 0,
+        menus: Number(r.menu_count) || 0,
+    }));
+    const total = rows.reduce((sum, r) => sum + r.amount, 0);
+    const share = (value) => (total ? value / total : 0);
+
+    drawBars($("c-category"), {
+        rows: rows.map((r) => ({
+            label: r.category,
+            value: Math.round(share(r.amount) * 1000) / 10,
+        })),
+        color: c.s1, horizontal: true, colors: c, unitSuffix: "%",
+    });
+
+    table($("t-category"), ["분류", "매출", "비중", "수량", "품목 수"],
+        rows.map((r) => [
+            r.category,
+            wonFull(r.amount),
+            `${(share(r.amount) * 100).toFixed(1)}%`,
+            int(r.qty),
+            `${r.menus}종`,
+        ]));
+}
+
+// ---- 전 품목 ----------------------------------------------------------
+//
+// 품목이 801종이라 한 화면에 다 보여주는 대신 검색과 정렬을 답니다.
+// 매출 0 · 수량만 있는 품목(리뷰이벤트 증정품 등)은 매출 정렬에서 맨 아래로
+// 밀리므로 '증정품' 표시를 달아 검색으로 찾을 수 있게 합니다.
+
+let allItemsSort = { key: 2, asc: false };
+let allItemsRender = null;
+
+function drawAllItems(d) {
+    const rows = (d.allItems || []).map((r) => [
+        r.menu,
+        r.category || "미분류",
+        Number(r.amount) || 0,
+        Number(r.qty) || 0,
+        Number(r.store_count) || 0,
+        r.is_giveaway === true,
+    ]);
+
+    $("allitems-count").textContent = rows.length ? `${int(rows.length)}종` : "없음";
+
+    const headers = ["품목", "분류", "매출", "수량", "판매 매장", "비고"];
+    const format = [
+        escape, escape, wonFull, int,
+        (v) => `${v}곳`,
+        (v) => (v ? '<span class="tag">증정품</span>' : ""),
+    ];
+
+    const render = () => {
+        const query = ($("ai-search").value || "").trim().toLowerCase();
+        const kept = query
+            ? rows.filter((r) => String(r[0]).toLowerCase().includes(query)
+                              || String(r[1]).toLowerCase().includes(query))
+            : rows;
+
+        $("allitems-shown").textContent =
+            query ? `${int(kept.length)}종 표시 중` : "";
+
+        const sorted = [...kept].sort((a, b) => {
+            const [x, y] = [a[allItemsSort.key], b[allItemsSort.key]];
+            const cmp = typeof x === "string"
+                ? x.localeCompare(y)
+                : Number(x) - Number(y);
+            return allItemsSort.asc ? cmp : -cmp;
+        });
+
+        // html:true 라 셀을 자동으로 이스케이프하지 않습니다. 품목명·분류는
+        // format 에서 escape 를 거칩니다(원본 품목명에 <> 가 섞여 들어옵니다).
+        table($("t-allitems"), headers,
+            sorted.map((r) => r.map((v, i) => format[i](v))),
+            { sortable: true, sortState: allItemsSort, html: true });
+
+        $("t-allitems").querySelectorAll("th.sortable").forEach((th, i) => {
+            th.addEventListener("click", () => {
+                allItemsSort = allItemsSort.key === i
+                    ? { key: i, asc: !allItemsSort.asc }
+                    : { key: i, asc: i === 0 || i === 1 };
+                render();
+            });
+        });
+    };
+
+    allItemsRender = render;
+    render();
 }
 
 // ---- 미매핑 -----------------------------------------------------------
