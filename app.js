@@ -822,38 +822,70 @@ async function load() {
         .then((r) => (r.error ? {} : ((r.data || [])[0] || {}).status || {}))
         .catch(() => ({}));
 
-    // 3개씩 나눠 부릅니다. 전체 걸리는 시간은 비슷한데 각 요청이 제한 안에 끝납니다.
-    const results = await runLimited(calls, 3);
+    // 화면 맨 위 4개(요약·월별추이·매장별·매장비교)를 먼저 받아 그리고,
+    // 나머지 14개는 그 뒤에 채웁니다.
+    //
+    // 왜: 카드가 15개인데 전부 기다렸다 한 번에 그리면 스크롤 한참 아래에 있는
+    // '전 품목'(2,600종) 때문에 맨 위 총매출까지 20초 넘게 못 봅니다. 사용자는
+    // 대개 위 몇 개만 보고 판단합니다. 받는 총량은 같지만 **보이기까지가 짧아집니다.**
+    // 이 둘은 없어도 화면이 떠야 하는 것들이라 위 묶음에 안 넣었습니다.
+    // 늦게 오면 2차 그리기에 반영됩니다.
+    const pending = { draftSummary: {}, reviewSync: {} };
+    draftSummary.then((v) => { pending.draftSummary = v; });
+    reviewSync.then((v) => { pending.reviewSync = v; });
+
+    const FIRST = [0, 1, 2, 9];
+    const results = new Array(calls.length);
+
+    const firstError = await runInto(results, calls, FIRST, 3);
     document.body.classList.remove("loading");
+    if (firstError) return fail(firstError);
 
-    const bad = results.find((r) => r.error);
-    if (bad) return fail(bad.error);
+    lastData = pack(results, args, pending);
+    draw(lastData);
 
-    lastData = {
-        args,
-        summary: (results[0].data || [])[0] || {},
-        monthly: results[1].data || [],
-        stores: results[2].data || [],
-        menus: results[3].data || [],
-        hours: results[4].data || [],
-        weekdays: results[5].data || [],
-        coverageBySource: results[6].data || [],
-        coverage: results[7].data || [],
-        nonstandard: results[8].data || [],
-        storeMetrics: results[9].data || [],
-        menuArea: results[10].data || [],
-        menuWeekday: results[11].data || [],
-        menuDaypart: results[12].data || [],
-        unmapped: results[13].data || [],
-        byCategory: results[14].data || [],
-        allItems: unwrapItems(results[15].data),
-        reviewSummary: ((results[16].data || [])[0] || {}).summary || {},
-        reviews: ((results[17].data || [])[0] || {}).items || [],
-        draftSummary: await draftSummary,
-        reviewSync: await reviewSync,
-    };
+    // 나머지. 여기서 실패해도 이미 그린 것은 지우지 않습니다 —
+    // 위쪽 숫자는 멀쩡한데 화면을 통째로 비우면 더 나쁩니다.
+    document.body.classList.add("loading-rest");
+    const restError = await runInto(
+        results, calls, calls.map((_, i) => i).filter((i) => !FIRST.includes(i)), 3);
+    document.body.classList.remove("loading-rest");
+    if (restError) return fail(restError);
+
+    lastData = pack(results, args, pending);
     draw(lastData);
 }
+
+// 받아 온 결과를 화면이 쓰는 모양으로 묶습니다.
+// 아직 안 온 칸은 빈 배열입니다 — 1차 그리기 때는 대부분이 비어 있습니다.
+function pack(results, args, pending) {
+    const d = (i) => (results[i] || {}).data || [];
+    return {
+        args,
+        summary: (d(0))[0] || {},
+        monthly: d(1),
+        stores: d(2),
+        menus: d(3),
+        hours: d(4),
+        weekdays: d(5),
+        coverageBySource: d(6),
+        coverage: d(7),
+        nonstandard: d(8),
+        storeMetrics: d(9),
+        menuArea: d(10),
+        menuWeekday: d(11),
+        menuDaypart: d(12),
+        unmapped: d(13),
+        byCategory: d(14),
+        allItems: unwrapItems(d(15)),
+        reviewSummary: ((d(16))[0] || {}).summary || {},
+        reviews: ((d(17))[0] || {}).items || [],
+        draftSummary: pending.draftSummary,
+        reviewSync: pending.reviewSync,
+    };
+}
+
+
 
 // api_all_items 는 11_all_items_fix.sql 이후 jsonb 배열 한 줄로 옵니다.
 // 품목이 2,612종이라 줄마다 보내면 1,000행에서 조용히 잘립니다(2026-07-27 실측).
@@ -2022,6 +2054,22 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 // (2026-07-29 실측: 11개 동시 → 10개가 제한 초과)
 //
 // 순서는 그대로 유지합니다 — 호출하는 쪽이 results[3] 처럼 자리로 꺼내 씁니다.
+// thunks 중 idxs 자리만 골라 results 에 채웁니다. 오류가 있으면 그 오류를 돌려줍니다.
+async function runInto(results, thunks, idxs, limit) {
+    let next = 0;
+    let error = null;
+    async function worker() {
+        while (next < idxs.length) {
+            const i = idxs[next++];
+            const r = await thunks[i]();
+            results[i] = r;
+            if (r && r.error && !error) error = r.error;
+        }
+    }
+    await Promise.all(Array.from({ length: Math.min(limit, idxs.length) }, worker));
+    return error;
+}
+
 async function runLimited(thunks, limit) {
     const results = new Array(thunks.length);
     let next = 0;
