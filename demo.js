@@ -583,6 +583,30 @@ const HANDLERS = {
 
     // 대시보드 시트 7종. 실제 함수와 같이 **jsonb 한 줄**로 돌려줍니다 —
     // 데모가 행 배열을 주면 껍데기 벗기는 코드(oneRow)가 안 먹혀 빈 시트가 나옵니다.
+    // 매장 계정. 데모 암호는 'demo1234' 입니다 — 실제 게이트와 같은 모양으로
+    // 틀린 암호를 거부해야 화면 검증이 의미가 있습니다.
+    api_store_credentials: ({ p_passcode }) => {
+        if (p_passcode !== "demo1234") {
+            throw new Error("접근 암호가 맞지 않습니다.");
+        }
+        const items = [];
+        for (const s of STORES.slice(0, 4)) {
+            for (const ch of ["배민", "쿠팡이츠", "요기요"]) {
+                items.push({
+                    store: s.name, trade_area: s.trade_area, channel: ch,
+                    login_id: `${ch === "배민" ? "bm" : ch === "쿠팡이츠" ? "ce" : "yg"}_${s.name}`,
+                    password: "demo!pw" + (s.name.length % 10),
+                    note: ch === "요기요" ? "2단계 인증 없음" : "",
+                    updated_at: "2026-07-28T10:12:00+09:00", updated_by: "demo@mitaly",
+                });
+            }
+        }
+        return [{ items }];
+    },
+
+    api_save_store_credential: ({ p_store, p_channel }) =>
+        ({ ok: true, store: p_store, channel: p_channel, changed: ["아이디 변경"] }),
+
     api_export_menu_matrix: ({ p_field, ...args }) => {
         const buckets = {
             trade_area: ["미지정", "거주밀집", "오피스", "대학가"],
