@@ -104,9 +104,21 @@
         </div>
     </div>
 
+
+    <!-- 매출 안의 두 번째 단. 카드가 15개라 한 줄로 늘어놓으면 못 읽습니다.
+         data-sub 이 같은 카드만 보입니다. 데이터는 이미 받아 둔 것을 쓰므로
+         전환은 즉시입니다. -->
+    <nav class="subnav" data-area="sales" id="salesnav" aria-label="매출 보기">
+        <button class="subitem is-on" data-sub-go="요약" type="button">요약</button>
+        <button class="subitem" data-sub-go="품목" type="button">품목</button>
+        <button class="subitem" data-sub-go="시간·요일" type="button">시간·요일</button>
+        <button class="subitem" data-sub-go="매장" type="button">매장</button>
+        <button class="subitem" data-sub-go="수집" type="button">수집 현황</button>
+    </nav>
+
     <div class="grid">
 
-        <section data-area="sales" class="card full">
+        <section data-area="sales" data-sub="요약" class="card full">
             <header>
                 <h2>월별 매출 추이</h2>
                 <button class="linkish" data-toggle="t-monthly">표로 보기</button>
@@ -117,7 +129,7 @@
             <div class="tableview" id="t-monthly" hidden></div>
         </section>
 
-        <section data-area="sales" class="card full" id="alerts-card">
+        <section data-area="sales" data-sub="요약" class="card full" id="alerts-card">
             <header>
                 <h2>급증·급감 매장 · 기간 대비</h2>
                 <span class="meta" id="alerts-summary"></span>
@@ -142,7 +154,7 @@
             <div class="tableview tall" id="t-alerts"></div>
         </section>
 
-        <section data-area="sales" class="card">
+        <section data-area="sales" data-sub="요약" class="card">
             <header>
                 <h2>매장별 매출 상위 15곳</h2>
                 <button class="linkish" data-toggle="t-store">표로 보기</button>
@@ -152,7 +164,7 @@
             <div class="tableview" id="t-store" hidden></div>
         </section>
 
-        <section data-area="sales" class="card">
+        <section data-area="sales" data-sub="품목" class="card">
             <header>
                 <h2>메뉴별 매출 상위 15개</h2>
                 <button class="linkish" data-toggle="t-menu">표로 보기</button>
@@ -162,7 +174,7 @@
             <div class="tableview" id="t-menu" hidden></div>
         </section>
 
-        <section data-area="sales" class="card">
+        <section data-area="sales" data-sub="시간·요일" class="card">
             <header>
                 <h2>시간대별 매출</h2>
                 <button class="linkish" data-toggle="t-hour">표로 보기</button>
@@ -172,7 +184,7 @@
             <div class="tableview" id="t-hour" hidden></div>
         </section>
 
-        <section data-area="sales" class="card">
+        <section data-area="sales" data-sub="시간·요일" class="card">
             <header>
                 <h2>요일별 매출</h2>
                 <button class="linkish" data-toggle="t-weekday">표로 보기</button>
@@ -182,7 +194,7 @@
             <div class="tableview" id="t-weekday" hidden></div>
         </section>
 
-        <section data-area="sales" class="card full">
+        <section data-area="sales" data-sub="수집" class="card full">
             <header>
                 <h2>수집 커버리지</h2>
                 <button class="linkish" data-toggle="t-coverage">매장별로 보기</button>
@@ -195,7 +207,7 @@
             <div class="tableview" id="t-coverage" hidden></div>
         </section>
 
-        <section data-area="sales" class="card full">
+        <section data-area="sales" data-sub="매장" class="card full">
             <header>
                 <h2>비정규 메뉴 현황</h2>
                 <button class="linkish" data-toggle="t-nonstd">전체 매장 표</button>
@@ -207,7 +219,7 @@
             <div class="tableview" id="t-nonstd" hidden></div>
         </section>
 
-        <section data-area="sales" class="card full">
+        <section data-area="sales" data-sub="매장" class="card full">
             <header>
                 <h2>매장 비교</h2>
                 <button class="linkish" data-toggle="t-stores">표 접기</button>
@@ -218,7 +230,7 @@
             <div class="tableview tall" id="t-stores"></div>
         </section>
 
-        <section data-area="sales" class="card full">
+        <section data-area="sales" data-sub="매장" class="card full">
             <header>
                 <h2>메뉴 × 상권</h2>
                 <button class="linkish" data-toggle="t-area">표로 보기</button>
@@ -228,7 +240,7 @@
             <div class="tableview" id="t-area" hidden></div>
         </section>
 
-        <section data-area="sales" class="card">
+        <section data-area="sales" data-sub="시간·요일" class="card">
             <header>
                 <h2>메뉴 × 요일</h2>
                 <button class="linkish" data-toggle="t-mweek">표로 보기</button>
@@ -238,7 +250,7 @@
             <div class="tableview" id="t-mweek" hidden></div>
         </section>
 
-        <section data-area="sales" class="card">
+        <section data-area="sales" data-sub="시간·요일" class="card">
             <header>
                 <h2>메뉴 × 시간대</h2>
                 <button class="linkish" data-toggle="t-mpart">표로 보기</button>
@@ -248,20 +260,20 @@
             <div class="tableview" id="t-mpart" hidden></div>
         </section>
 
-        <section data-area="sales" class="card full">
+        <section data-area="sales" data-sub="품목" class="card full">
             <header>
                 <h2>분류별 비중</h2>
                 <button class="linkish" data-toggle="t-category">표로 보기</button>
             </header>
             <p class="hint">
-                매출이 찍히는 모든 품목이 대상입니다. 음료·주류·비정규도 빼지 않습니다.
-                분류는 '빼는 기준'이 아니라 '나눠 보는 라벨'입니다.
+                
+                
             </p>
             <svg class="plot" id="c-category" role="img" aria-label="분류별 매출 비중"></svg>
             <div class="tableview" id="t-category" hidden></div>
         </section>
 
-        <section data-area="sales" class="card full">
+        <section data-area="sales" data-sub="요약" class="card full">
             <header>
                 <h2>전 품목</h2>
                 <span class="meta" id="allitems-count"></span>
@@ -311,7 +323,7 @@
             <div class="reviewlist" id="rv-list"></div>
         </section>
 
-        <section data-area="sales" class="card full">
+        <section data-area="sales" data-sub="품목" class="card full">
             <header>
                 <h2>미매핑 품목</h2>
                 <span class="meta" id="unmapped-count"></span>

@@ -971,7 +971,7 @@ function draw(d) {
         color: c.s1, horizontal: true, colors: c,
     });
     table($("t-menu"), ["메뉴", "분류", "매출", "수량"],
-        d.menus.map((r) => [r.menu, r.category || "—", wonFull(r.amount), int(r.qty)]));
+        d.menus.map((r) => [r.menu, catLabel(r.category), wonFull(r.amount), int(r.qty)]));
 
     const hours = Array.from({ length: 24 }, (_, h) => {
         const found = d.hours.find((r) => Number(r.hour) === h);
@@ -1447,7 +1447,7 @@ function drawMenuMatrix(chartEl, tableEl, data, field, fixedOrder = null) {
     // Supabase 의 1,000행 상한에 조용히 잘립니다. 그래서 묶어서 받습니다.
     const rows = (data || []).map((r) => ({
         menu: r.menu,
-        category: r.category,
+        category: catLabel(r.category),
         total: Number(r.total) || 0,
         buckets: r.buckets || {},
     })).sort((a, b) => b.total - a.total);
@@ -1469,7 +1469,7 @@ function drawMenuMatrix(chartEl, tableEl, data, field, fixedOrder = null) {
     table(tableEl, ["메뉴", "분류", ...buckets, "합계"],
         rows.map((r) => [
             r.menu,
-            r.category || "—",
+            catLabel(r.category),
             ...buckets.map((b) => wonFull(r.buckets[b] || 0)),
             wonFull(r.total),
         ]));
@@ -1482,7 +1482,7 @@ function drawMenuMatrix(chartEl, tableEl, data, field, fixedOrder = null) {
 
 function drawCategory(d, c) {
     const rows = (d.byCategory || []).map((r) => ({
-        category: r.category || "미분류",
+        category: catLabel(r.category),
         amount: Number(r.amount) || 0,
         qty: Number(r.qty) || 0,
         menus: Number(r.menu_count) || 0,
@@ -1492,7 +1492,7 @@ function drawCategory(d, c) {
 
     drawBars($("c-category"), {
         rows: rows.map((r) => ({
-            label: r.category,
+            label: catLabel(r.category),
             value: Math.round(share(r.amount) * 1000) / 10,
         })),
         color: c.s1, horizontal: true, colors: c, unitSuffix: "%",
@@ -1500,7 +1500,7 @@ function drawCategory(d, c) {
 
     table($("t-category"), ["분류", "매출", "비중", "수량", "품목 수"],
         rows.map((r) => [
-            r.category,
+            catLabel(r.category),
             wonFull(r.amount),
             `${(share(r.amount) * 100).toFixed(1)}%`,
             int(r.qty),
@@ -1520,7 +1520,7 @@ let allItemsRender = null;
 function drawAllItems(d) {
     const rows = (d.allItems || []).map((r) => [
         r.menu,
-        r.category || "미분류",
+        catLabel(r.category),
         Number(r.amount) || 0,
         Number(r.qty) || 0,
         Number(r.store_count) || 0,
@@ -1969,6 +1969,27 @@ function niceTicks(max, count) {
 const clip = (text, n) =>
     String(text).length > n ? String(text).slice(0, n - 1) + "…" : String(text);
 
+// 분류 이름을 화면용으로 바꿉니다.
+//
+// DB 값은 매핑표(엑셀)에서 오므로 여기서 고칩니다 — DB 를 고쳐도 다음 업로드에
+// 덮어써집니다. 이름만 바꾸는 것이고 분류 자체는 그대로입니다.
+//
+// 왜: '제외' 는 실제로 빼는 게 아니라 그냥 분류인데 이름이 오해를 줍니다.
+// 그래서 화면마다 "빼는 기준이 아닙니다" 라는 변명을 달아야 했습니다.
+// 이름이 나쁘니까 설명이 필요했던 것이고, 이름을 고치면 설명이 필요 없습니다.
+// (품목을 실제로 분류해 넣는 일은 본사 원천 품목명 조정과 맞물려 진행합니다 — D5)
+const CATEGORY_LABELS = {
+    "⚠️미매핑": "신규 품목",
+    "미매핑": "신규 품목",
+    "제외": "음료·부가",
+    "비정규": "메뉴판 외",
+};
+
+function catLabel(value) {
+    if (!value) return "미분류";
+    return CATEGORY_LABELS[value] || value;
+}
+
 function escape(value) {
     return String(value ?? "").replace(/[&<>"']/g,
         (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
@@ -2321,7 +2342,7 @@ function addMatrixSheet(XLSX, wb, sheetName, rows, order) {
 
     const header = ["메뉴", "대분류", "합계", ...cols];
     const body = rows.map((r) => [
-        r.menu, r.category, r.total,
+        r.menu, catLabel(r.category), r.total,
         ...cols.map((k) => (r.buckets || {})[k] ?? 0),
     ]);
     XLSX.utils.book_append_sheet(wb,
@@ -2972,6 +2993,21 @@ boot();
 
 const AREA_KEY = "mitaly.area";
 
+// 매출 안의 두 번째 단. 같은 방식으로 보이기만 바꿉니다.
+let salesSub = "요약";
+
+function showSalesSub(sub) {
+    salesSub = sub;
+    for (const el of document.querySelectorAll('[data-area="sales"][data-sub]')) {
+        el.hidden = el.dataset.sub !== sub;
+    }
+    for (const b of document.querySelectorAll(".subitem")) {
+        b.classList.toggle("is-on", b.dataset.subGo === sub);
+        b.setAttribute("aria-current", b.dataset.subGo === sub ? "true" : "false");
+    }
+    window.scrollTo({ top: 0, behavior: "instant" });
+}
+
 function showArea(area) {
     // 매장 정보에서 나가면 암호를 버립니다(위 credLock 주석 참조).
     if (area !== "stores" && typeof credPass !== "undefined" && credPass) credLock();
@@ -2983,6 +3019,8 @@ function showArea(area) {
         b.classList.toggle("is-on", b.dataset.go === area);
         b.setAttribute("aria-current", b.dataset.go === area ? "page" : "false");
     }
+    if (area === "sales") showSalesSub(salesSub);
+
     const salesOnly = area === "sales";
     // 홈 화면의 타일도 위 필터(기간·매장)를 따르므로 필터 줄은 같이 보여줍니다.
     // 리뷰 카드(api_review_summary)도 같은 f-from/f-to/f-store 를 그대로 쓰므로
@@ -2997,6 +3035,9 @@ function showArea(area) {
 }
 
 function initAreas() {
+    for (const b of document.querySelectorAll(".subitem")) {
+        b.addEventListener("click", () => showSalesSub(b.dataset.subGo));
+    }
     for (const b of document.querySelectorAll(".navitem")) {
         b.addEventListener("click", () => showArea(b.dataset.go));
     }
