@@ -46,9 +46,13 @@
          data-area 가 같은 카드만 보입니다 — 새 영역은 여기 한 줄과
          카드의 data-area 만 더하면 됩니다. -->
     <nav class="sidenav" id="sidenav" aria-label="업무 영역">
-        <button class="navitem is-on" data-go="sales" type="button">📊 매출</button>
+        <button class="navitem is-on" data-go="home" type="button">🏠 홈</button>
+        <button class="navitem" data-go="sales" type="button">📊 매출</button>
         <button class="navitem" data-go="reviews" type="button">⭐ 리뷰</button>
         <button class="navitem" data-go="collect" type="button">🗂 수집·내보내기</button>
+        <button class="navitem" data-go="notices" type="button">📋 위반·공문</button>
+        <button class="navitem" data-go="visits" type="button">🚶 방문·점검</button>
+        <button class="navitem" data-go="lifecycle" type="button">🏪 오픈·폐점</button>
     </nav>
 
     <!-- 필터는 한 줄로 맨 위에. 아래 모든 카드가 같은 조건으로 다시 그려집니다. -->
@@ -79,7 +83,7 @@
         </div>
     </div>
 
-    <div class="kpis">
+    <div class="kpis" id="sales-kpis">
         <div class="tile hero">
             <div class="label">선택 기간 매출</div>
             <div class="value" id="kpi-amount">—</div>
@@ -110,6 +114,31 @@
             <div class="legend" id="legend-monthly"></div>
             <svg class="plot" id="c-monthly" role="img" aria-label="월별 매출 추이"></svg>
             <div class="tableview" id="t-monthly" hidden></div>
+        </section>
+
+        <section data-area="sales" class="card full" id="alerts-card">
+            <header>
+                <h2>급증·급감 매장 · 기간 대비</h2>
+                <span class="meta" id="alerts-summary"></span>
+            </header>
+            <p class="hint">
+                기준월은 위 필터의 <b>종료</b> 월입니다. 전월(MoM)·전년 동월(YoY) 대비
+                설정된 임계값을 넘으면 급증·급감으로 표시합니다(본사가 값을 바꿀 수
+                있습니다). 전일·전주 대비는 아직 없습니다 — 원본 매출이 연월 단위로만
+                쌓여 있어 계산할 날짜 축이 없습니다.
+            </p>
+
+            <div class="kpis" id="compare-kpis"></div>
+
+            <div class="cardsearch">
+                <label class="recheck">
+                    <input type="checkbox" id="alerts-only">
+                    <span>급증·급감 매장만</span>
+                </label>
+                <span class="meta" id="alerts-shown"></span>
+            </div>
+
+            <div class="tableview tall" id="t-alerts"></div>
         </section>
 
         <section data-area="sales" class="card">
@@ -247,7 +276,7 @@
             <div class="tableview tall" id="t-allitems"></div>
         </section>
 
-        <section data-area="sales" class="card full" id="review-card">
+        <section data-area="reviews" class="card full" id="review-card">
             <header>
                 <h2>리뷰 관리</h2>
                 <span class="meta" id="review-summary"></span>
@@ -281,7 +310,7 @@
             <div class="reviewlist" id="rv-list"></div>
         </section>
 
-        <section data-area="reviews" class="card full">
+        <section data-area="sales" class="card full">
             <header>
                 <h2>미매핑 품목</h2>
                 <span class="meta" id="unmapped-count"></span>
@@ -294,6 +323,42 @@
         </section>
 
     </div>
+
+    <!-- 홈 — 매장에서 본사로 반복 접수되는 일 중 지금 담당자가 봐야 할 것만
+         모읍니다. 새 업무 영역이 늘어날 때 여기 타일도 하나씩 늘어날 자리입니다.
+         숫자는 이미 다른 카드가 받아 둔 것을 그대로 씁니다(추가 조회 없음) —
+         위 매출 필터(기간·매장)를 그대로 따릅니다. -->
+    <section data-area="home" class="card full" id="home-card">
+        <header>
+            <h2>오늘 할 일</h2>
+            <span class="meta" id="home-range"></span>
+        </header>
+        <p class="hint">
+            위쪽 매출 필터(기간·매장)를 기준으로 계산합니다. 숫자를 누르면 해당
+            화면으로 이동합니다.
+        </p>
+        <div class="kpis" id="home-tiles">
+            <button type="button" class="tile hometile" id="home-tile-drafts" data-go-target="reviews">
+                <div class="label">승인대기 답글</div>
+                <div class="value" id="home-drafts">—</div>
+                <div class="sub">AI 답글 초안 중 아직 검토하지 않은 건 (전체 기간)</div>
+            </button>
+            <button type="button" class="tile hometile" id="home-tile-negative" data-go-target="reviews">
+                <div class="label">부정 리뷰</div>
+                <div class="value" id="home-negative">—</div>
+                <div class="sub">별점 3점 이하</div>
+            </button>
+            <button type="button" class="tile hometile" id="home-tile-declining" data-go-target="sales">
+                <div class="label">급감 매장</div>
+                <div class="value" id="home-declining">—</div>
+                <div class="sub">전월 또는 전년동월 대비 급감 판정</div>
+            </button>
+        </div>
+        <p class="hint">
+            문의·클레임 자동응대, 정산·미수금, 공문·안내문 등 아직 만들지 않은
+            영역의 타일은 그 영역을 만들 때 여기 추가합니다.
+        </p>
+    </section>
 
     <!-- 수집 요청 — 이 PC(수집용)에서 에이전트가 돌고 있어야 실행됩니다. -->
     <section data-area="collect" class="card full" id="request-card">
@@ -382,6 +447,283 @@
         </div>
         <p class="notice" id="x-notice"></p>
         <div id="x-progress"></div>
+    </section>
+
+    <!-- 위반 기록 — 7번 영역(공문 및 안내문). 판정 함수(api_notice_stage_status,
+         23_notice_determination.sql)는 이미 있었지만 계산할 원본(violation_events)이
+         이 화면 전에는 아무 데도 입력할 곳이 없었습니다. -->
+    <section data-area="notices" class="card full" id="violation-form-card">
+        <header>
+            <h2>위반 기록 추가</h2>
+            <span class="meta">SV·운영지원팀이 확인한 위반을 남기면 아래 표에 단계가 계산됩니다</span>
+        </header>
+        <p class="hint">
+            내용증명 발송 기준표(<code>docs/hq-standards.md</code>)에 있는 10가지
+            위반유형만 고를 수 있습니다. <b>이 표는 계산만 합니다 — 내용증명을
+            자동으로 보내지 않습니다.</b> 자점매입·시정요구 불이행은 추가로 물어보는
+            항목이 있고, 확실하지 않으면 비워 두세요(담당자 확인 표시가 붙습니다).
+        </p>
+
+        <div class="reqform">
+            <div class="field">
+                <label for="v-store">매장</label>
+                <select id="v-store"><option value="">매장을 고르세요</option></select>
+            </div>
+            <div class="field">
+                <label for="v-type">위반유형</label>
+                <select id="v-type"><option value="">위반유형을 고르세요</option></select>
+            </div>
+            <div class="field">
+                <label for="v-occurred">발생일</label>
+                <input type="date" id="v-occurred">
+            </div>
+            <div class="field">
+                <label for="v-resolved">종료일</label>
+                <input type="date" id="v-resolved" placeholder="진행 중이면 비움">
+            </div>
+        </div>
+        <div class="reqform">
+            <div class="field" id="v-seq-field" hidden>
+                <label for="v-seq">몇 차 지적</label>
+                <input type="number" id="v-seq" min="1" step="1" placeholder="예: 2">
+            </div>
+            <div class="field" id="v-logo-field" hidden>
+                <label for="v-logo">레시피 직결 · 로고 포장재 품목인가요</label>
+                <select id="v-logo">
+                    <option value="">미확인 (담당자 확인으로 표시)</option>
+                    <option value="true">예 — 제재 대상 품목</option>
+                    <option value="false">아니오 — 로고 없는 범용품(제재 대상 아님)</option>
+                </select>
+            </div>
+            <div class="field grow">
+                <label for="v-note">메모</label>
+                <input type="text" id="v-note" placeholder="선택 입력">
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" id="v-submit">위반 기록 추가</button>
+            </div>
+        </div>
+        <p class="hint" id="v-type-note" hidden></p>
+        <p class="notice" id="v-notice"></p>
+    </section>
+
+    <section data-area="notices" class="card full" id="violation-list-card">
+        <header>
+            <h2>진행 중인 위반 · 내용증명 단계</h2>
+            <span class="meta" id="violation-summary"></span>
+        </header>
+        <p class="hint">
+            종료일이 없는(아직 진행 중인) 위반만 보여줍니다. <b>단계는 참고용 계산
+            결과이지 발송 승인이 아닙니다</b> — '담당자 확인' 표시가 붙은 건은
+            사유를 먼저 확인하세요. 위반이 끝났으면 '종료 처리'를 누르고 종료일을
+            입력하세요. 잘못 눌렀다면 아래 '최근 종료된 위반' 표에서 '다시 열기'로
+            되돌릴 수 있습니다.
+        </p>
+        <div class="tableview" id="t-violations"></div>
+    </section>
+
+    <!-- 종료 처리 되돌리기 — 26_violation_reopen.sql, 큐 #14. 24가 "종료 처리"만
+         만들고 되돌리기는 범위 밖으로 남긴 것(D28)을 잇습니다. -->
+    <section data-area="notices" class="card full" id="violation-resolved-card">
+        <header>
+            <h2>최근 종료된 위반</h2>
+            <span class="meta">최근 20건만 보여줍니다</span>
+        </header>
+        <p class="hint">
+            종료 처리를 잘못 눌렀거나 다시 확인이 필요해지면 '다시 열기'를
+            누르세요 — 위 '진행 중인 위반' 표에 다시 나타납니다.
+        </p>
+        <div class="tableview" id="t-violations-resolved"></div>
+    </section>
+
+    <!-- 방문·점검 기록 — 9번 영역(방문 및 점검 관리). SV·매장 배정 축은
+         아직 없어(scope-2026.md 9번) 방문자는 자유 텍스트입니다. 매장을
+         고르면 아래 이력 표가 그 매장 최근 방문만 자동으로 다시 불러옵니다
+         (재방문 시 이전 이력 자동 조회). -->
+    <section data-area="visits" class="card full" id="visit-form-card">
+        <header>
+            <h2>방문 기록 추가</h2>
+            <span class="meta">방문 보고를 남기면 아래 표에서 그 매장의 이전 이력을 바로 볼 수 있습니다</span>
+        </header>
+        <p class="hint">
+            항목 구성은 <code>docs/hq-standards.md</code> 9번 실제 방문보고서 예시를
+            그대로 따릅니다(위생점검·자점매입·조리점검·점주미팅·특이사항). 특이사항이
+            없으면 격월 1회 방문이 권장 주기입니다 — 이 화면은 기록만 남기고 주기
+            알림은 만들지 않았습니다.
+        </p>
+
+        <div class="reqform">
+            <div class="field">
+                <label for="vs-store">매장</label>
+                <select id="vs-store"><option value="">매장을 고르세요</option></select>
+            </div>
+            <div class="field">
+                <label for="vs-visited-on">방문일</label>
+                <input type="date" id="vs-visited-on">
+            </div>
+            <div class="field">
+                <label for="vs-visited-by">방문자</label>
+                <input type="text" id="vs-visited-by" placeholder="예: 김SV">
+            </div>
+        </div>
+
+        <!-- 방문 예정 매장 매출 사전 집계 — 새 SQL 없이 기존 api_store_metrics
+             (04_analysis.sql)의 결과에서 이 매장 행만 골라 보여줍니다. -->
+        <p class="hint" id="vsm-hint">매장을 고르면 방문 전 참고용으로 최근 매출을 보여줍니다.</p>
+        <div class="kpis" id="visit-store-kpis" hidden>
+            <div class="tile">
+                <div class="label">최근 매출</div>
+                <div class="value" id="vsm-amount">—</div>
+                <div class="sub" id="vsm-range"></div>
+            </div>
+            <div class="tile">
+                <div class="label">판매 수량</div>
+                <div class="value" id="vsm-qty">—</div>
+            </div>
+            <div class="tile">
+                <div class="label">홀 매출</div>
+                <div class="value" id="vsm-hall">—</div>
+            </div>
+            <div class="tile">
+                <div class="label">배달 매출</div>
+                <div class="value" id="vsm-delivery">—</div>
+            </div>
+        </div>
+
+        <div class="reqform">
+            <div class="field grow">
+                <label for="vs-hygiene">1. 위생점검</label>
+                <input type="text" id="vs-hygiene" placeholder="선택 입력">
+            </div>
+            <div class="field grow">
+                <label for="vs-self-purchase">2. 자점매입</label>
+                <input type="text" id="vs-self-purchase" placeholder="선택 입력">
+            </div>
+        </div>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="vs-cooking">3. 조리점검</label>
+                <input type="text" id="vs-cooking" placeholder="선택 입력">
+            </div>
+            <div class="field grow">
+                <label for="vs-owner-meeting">4. 점주미팅</label>
+                <input type="text" id="vs-owner-meeting" placeholder="선택 입력">
+            </div>
+        </div>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="vs-special">5. 특이사항</label>
+                <input type="text" id="vs-special" placeholder="선택 입력">
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" id="vs-submit">방문 기록 추가</button>
+            </div>
+        </div>
+        <p class="notice" id="vs-notice"></p>
+    </section>
+
+    <section data-area="visits" class="card full" id="visit-list-card">
+        <header>
+            <h2>방문 이력</h2>
+            <span class="meta" id="visit-summary"></span>
+        </header>
+        <p class="hint">
+            위 폼에서 매장을 고르면 그 매장의 이전 방문 이력만 최신순으로
+            보여줍니다. 매장을 고르지 않으면 전 매장 최근 방문을 보여줍니다.
+        </p>
+        <div class="tableview" id="t-visits"></div>
+    </section>
+
+    <!-- 오픈·폐점 관리 — 8번 영역. 27_store_lifecycle.sql, 큐 #15.
+         scope-2026.md 판정("매장에 생애주기 개념이 없다")만 좁혀서 채웁니다.
+         체크리스트 상세(구글시트, 비공개)와 폐점 시 계정 삭제 알림
+         (21_store_accounts.sql 게이트 확정 전)은 범위 밖입니다. -->
+    <section data-area="lifecycle" class="card full" id="lifecycle-summary-card">
+        <header>
+            <h2>오픈·폐점 현황</h2>
+            <span class="meta" id="lifecycle-summary-year"></span>
+        </header>
+        <p class="hint">
+            연 오픈·폐점 참고치는 <code>docs/hq-standards.md</code> 8번 영역(연 평균
+            각 10건)입니다 — 넘으면 안 되는 상한이 아니라 비교용 참고치입니다.
+        </p>
+        <div class="kpis">
+            <div class="tile">
+                <div class="label">올해 오픈</div>
+                <div class="value" id="ls-opens">—</div>
+                <div class="sub" id="ls-opens-baseline"></div>
+            </div>
+            <div class="tile">
+                <div class="label">올해 폐점</div>
+                <div class="value" id="ls-closes">—</div>
+                <div class="sub" id="ls-closes-baseline"></div>
+            </div>
+        </div>
+    </section>
+
+    <section data-area="lifecycle" class="card full" id="lifecycle-form-card">
+        <header>
+            <h2>오픈·폐점 기록 추가</h2>
+            <span class="meta">기록하면 아래 현재 상태·이력 표에 바로 반영됩니다</span>
+        </header>
+        <p class="hint">
+            아직 매출이 없는 신규 매장(오픈 예정)은 목록에 없습니다 — 매장은
+            매출이 한 번이라도 잡혀야 목록에 나타납니다. 잘못 기록했으면
+            반대 이벤트(예: 폐점을 다시 오픈)를 새로 남겨 바로잡으세요 —
+            이 표는 수정·삭제 기능이 없습니다.
+        </p>
+        <div class="reqform">
+            <div class="field">
+                <label for="la-store">매장</label>
+                <select id="la-store"><option value="">매장을 고르세요</option></select>
+            </div>
+            <div class="field">
+                <label for="la-type">구분</label>
+                <select id="la-type">
+                    <option value="open">오픈</option>
+                    <option value="close">폐점</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="la-date">일자</label>
+                <input type="date" id="la-date">
+            </div>
+            <div class="field grow">
+                <label for="la-note">메모</label>
+                <input type="text" id="la-note" placeholder="선택 입력">
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" id="la-submit">기록 추가</button>
+            </div>
+        </div>
+        <p class="notice" id="la-notice"></p>
+    </section>
+
+    <section data-area="lifecycle" class="card full" id="lifecycle-status-card">
+        <header>
+            <h2>현재 상태</h2>
+            <span class="meta" id="lifecycle-status-summary"></span>
+        </header>
+        <p class="hint">
+            기록이 하나라도 있는 매장의 가장 최근 이벤트만 보여줍니다. 기록이
+            없는 매장(대부분의 정상 운영 매장)은 여기 나타나지 않습니다.
+        </p>
+        <div class="tableview" id="t-lifecycle-status"></div>
+    </section>
+
+    <section data-area="lifecycle" class="card full" id="lifecycle-history-card">
+        <header>
+            <h2>오픈·폐점 이력</h2>
+            <span class="meta" id="lifecycle-history-summary"></span>
+        </header>
+        <p class="hint">
+            위 폼에서 매장을 고르면 그 매장의 이력만 보여줍니다. 매장을 고르지
+            않으면 전 매장 최근 기록을 보여줍니다.
+        </p>
+        <div class="tableview" id="t-lifecycle"></div>
     </section>
 
     <!-- 매장 선택창 — 기존 프로그램의 '수집 매장 선택'과 같은 역할 -->

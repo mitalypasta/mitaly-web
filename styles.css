@@ -204,6 +204,30 @@ header.top h1 {
     margin-top: 4px;
 }
 
+/* 홈 화면의 할 일 타일 — <div class="tile"> 와 같은 모양이지만
+   버튼이라 클릭·키보드 포커스가 되어야 합니다. */
+.tile.hometile {
+    appearance: none;
+    display: block;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    transition: border-color 160ms ease-out;
+}
+
+.tile.hometile:hover { border-color: var(--series-1); }
+
+.tile.hometile:focus-visible {
+    outline: 2px solid var(--series-1);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tile.hometile { transition: none; }
+}
+
 /* ---------------------------------------------------------------- 카드 */
 
 .grid {
@@ -803,6 +827,14 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
     color: #fff;
     background: var(--critical);
 }
+
+/* 급증·급감 판정 태그 — .tag 위에 색만 덧입힙니다(글자는 그대로 '급증'/'급감'). */
+.tag.up   { color: #fff; background: var(--good); border-color: var(--good); }
+.tag.down { color: #fff; background: var(--critical); border-color: var(--critical); }
+
+/* 증감률 숫자. 색 하나만으로 뜻을 전달하지 않도록 항상 +/- 부호와 같이 씁니다. */
+.pct-up   { color: var(--good); }
+.pct-down { color: var(--critical); }
 
 /* ---------------------------------------------------------------- 툴팁 */
 

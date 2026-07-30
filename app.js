@@ -250,6 +250,9 @@ async function initDashboard() {
     $("ai-search").addEventListener("input",
         debounce(() => allItemsRender && allItemsRender(), 150));
 
+    // 급증·급감 매장만 보기. 이미 받아 온 데이터를 다시 그리기만 합니다.
+    $("alerts-only").addEventListener("change", () => lastData && drawAlerts(lastData));
+
     // 리뷰 필터는 서버에서 걸러야 하므로 다시 받습니다.
     for (const id of ["rv-unanswered", "rv-platform", "rv-rating"]) {
         $(id).addEventListener("change", load);
@@ -267,6 +270,10 @@ async function initDashboard() {
     initRequests();
     initExport();
     initDrafts();
+    initHomeTiles();
+    initNotices();
+    initVisits();
+    initLifecycle();
 
     await load();
     loadLastUpdated();
@@ -809,6 +816,12 @@ async function load() {
         //    요약이 '미답변 몇 건' 을 세는 지표라 미답변 필터를 걸면 뜻이 없기도 합니다.
         () => db.rpc("api_review_summary", summaryArgs()),
         () => db.rpc("api_reviews", { ...reviewArgs(), p_limit: 200 }),
+        // 급증·급감·기간 대비(18_alerts.sql·19_compare.sql) — 기준월은 '종료'
+        // 필터(p_ym_to)입니다. 팩트가 연월 단위까지만 있어(D19) 전월·전년동월
+        // 두 가지만 비교합니다. p_store 는 알림 목록·매장별 대비에만 걸리고,
+        // 회사 전체·채널별 합계는 함수 안에서 항상 전 매장 기준입니다.
+        () => db.rpc("api_sales_alerts", { p_ym: args.p_ym_to, p_store: args.p_store }),
+        () => db.rpc("api_sales_compare", { p_ym: args.p_ym_to, p_store: args.p_store }),
     ];
 
     // 초안 요약은 있으면 좋고 없어도 그만입니다. 위 묶음에 넣으면
@@ -881,6 +894,8 @@ function pack(results, args, pending) {
         allItems: unwrapItems(d(15)),
         reviewSummary: ((d(16))[0] || {}).summary || {},
         reviews: ((d(17))[0] || {}).items || [],
+        alerts: ((d(18))[0] || {}).alerts || [],
+        compare: ((d(19))[0] || {}).compare || {},
         draftSummary: pending.draftSummary,
         reviewSync: pending.reviewSync,
     };
@@ -934,6 +949,7 @@ function draw(d) {
     $("kpi-menus").textContent = int(d.summary.menu_count);
 
     drawMonthly(d.monthly, c);
+    drawAlerts(d);
 
     drawBars($("c-store"), {
         rows: d.stores.slice(0, 15).map((r) => ({ label: r.store, value: Number(r.amount) })),
@@ -979,6 +995,38 @@ function draw(d) {
     drawAllItems(d);
     drawReviews(d, c);
     drawUnmapped(d);
+    drawHome(d);
+}
+
+// ---- 홈(할 일 타일) ----------------------------------------------------
+//
+// 이미 위에서 받아 온 draftSummary·reviewSummary·alerts 를 다시 세기만
+// 합니다 — 홈 화면 때문에 새 조회를 추가하지 않습니다.
+// 답글 초안(draftSummary)만 전체 기간 기준이고, 부정 리뷰·급감 매장은
+// 위 매출 필터(기간·매장)를 따릅니다 — 아래 sub 문구로 그 차이를 알립니다.
+
+function drawHome(d) {
+    $("home-range").textContent =
+        `${ymLabel(d.args.p_ym_from)} – ${ymLabel(d.args.p_ym_to)}` +
+        (d.args.p_store ? ` · ${d.args.p_store}` : "") + " 기준";
+
+    const draft = Number((d.draftSummary || {}).draft) || 0;
+    $("home-drafts").textContent = int(draft);
+
+    const byRating = (d.reviewSummary || {}).by_rating || [];
+    const negative = byRating
+        .filter((r) => Number(r.rating) <= 3)
+        .reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+    $("home-negative").textContent = int(negative);
+
+    const alerts = d.alerts || [];
+    const declining = new Set(
+        alerts
+            .filter((s) => (s.channels || []).some((c) =>
+                c.mom_direction === "급감" || c.yoy_direction === "급감"))
+            .map((s) => s.store),
+    ).size;
+    $("home-declining").textContent = int(declining);
 }
 
 // ---- 리뷰 관리 --------------------------------------------------------
@@ -1516,6 +1564,73 @@ function drawAllItems(d) {
 
     allItemsRender = render;
     render();
+}
+
+// ---- 급증·급감 · 기간 대비 ---------------------------------------------
+//
+// 18_alerts.sql(api_sales_alerts) + 19_compare.sql(api_sales_compare).
+// 임계값·판정 문구는 서버가 이미 계산해서 보내므로 여기선 그대로 표시만
+// 합니다(기준 숫자를 화면에 다시 박지 않습니다 — CLAUDE.md).
+
+function pctText(v) {
+    if (v == null) return "—";
+    return `${v > 0 ? "+" : ""}${v}%`;
+}
+
+function pctClass(v) {
+    if (v == null) return "";
+    return v > 0 ? "pct-up" : v < 0 ? "pct-down" : "";
+}
+
+function directionTag(direction) {
+    if (direction === "급증") return '<span class="tag up">급증</span>';
+    if (direction === "급감") return '<span class="tag down">급감</span>';
+    if (direction === "정상") return '<span class="tag">정상</span>';
+    return '<span class="meta">비교 대상 없음</span>';
+}
+
+function compareTile(label, block) {
+    const b = block || {};
+    return `<div class="tile">
+        <div class="label">${escape(label)}</div>
+        <div class="value">${won(b.amount)}</div>
+        <div class="sub">
+            전월 <span class="${pctClass(b.mom_pct_change)}">${pctText(b.mom_pct_change)}</span>
+            · 전년동월 <span class="${pctClass(b.yoy_pct_change)}">${pctText(b.yoy_pct_change)}</span>
+        </div>
+    </div>`;
+}
+
+function drawAlerts(d) {
+    const alerts = d.alerts || [];
+    const compare = d.compare || {};
+
+    $("alerts-summary").textContent = compare.ym
+        ? `${ymLabel(compare.ym)} 기준 · 전월 ${ymLabel(compare.prev_mom_ym)}` +
+          ` · 전년동월 ${ymLabel(compare.prev_yoy_ym)}`
+        : "";
+
+    $("compare-kpis").innerHTML =
+        compareTile("회사 전체", compare.company) +
+        (compare.by_channel || []).map((ch) => compareTile(ch.channel, ch)).join("");
+
+    const flagged = alerts.filter((s) => s.has_alert);
+    $("alerts-shown").textContent =
+        `급증·급감 ${flagged.length} / 전체 ${alerts.length}개 매장`;
+
+    const shown = $("alerts-only").checked ? flagged : alerts;
+    const rows = shown.flatMap((s) => (s.channels || []).map((c) => [
+        s.store, s.trade_area || "—", c.channel,
+        wonFull(c.amount),
+        `<span class="${pctClass(c.mom_pct_change)}">${pctText(c.mom_pct_change)}</span>`,
+        directionTag(c.mom_direction),
+        `<span class="${pctClass(c.yoy_pct_change)}">${pctText(c.yoy_pct_change)}</span>`,
+        directionTag(c.yoy_direction),
+    ]));
+
+    table($("t-alerts"),
+        ["매장", "상권", "채널", "매출", "전월 대비", "전월 판정", "전년동월 대비", "전년동월 판정"],
+        rows, { html: true });
 }
 
 // ---- 미매핑 -----------------------------------------------------------
@@ -2225,6 +2340,613 @@ async function loadSheetJS() {
     return _sheetjs;
 }
 
+// ================================================================ 위반 기록 (7번 영역)
+//
+// violation_events(23_notice_determination.sql)에 아무도 기록을 넣지 않으면
+// api_notice_stage_status() 는 항상 빈 배열입니다 — 이 화면이 그 첫 입력
+// 지점입니다. 날짜 필터(기간·매장)와 무관해 load() 묶음에 넣지 않고
+// initRequests·initExport처럼 한 번만 받습니다.
+//
+// ⚠️ 여기서 계산하는 '단계'는 참고용입니다. 실제 내용증명 문서 생성·발송은
+//    어디에도 없습니다 — 큐 #8 설계 그대로, 이 화면도 그 선을 넘지 않습니다.
+
+let noticeRules = [];   // api_notice_stage_rules() 결과. 위반유형 select와 힌트 문구에 씁니다.
+
+function ruleHasKind(rule, kind) {
+    return !!rule && [rule.stage1, rule.stage2, rule.stage3].some((s) => s && s.kind === kind);
+}
+
+async function initNotices() {
+    const storeSelect = $("v-store");
+    const { data: stores, error: storeErr } = await db.from("stores")
+        .select("id,name").order("name");
+    if (!storeErr) {
+        for (const s of stores || []) {
+            const opt = document.createElement("option");
+            opt.value = s.id;
+            opt.textContent = s.name;
+            storeSelect.append(opt);
+        }
+    }
+
+    const { data: rulesData, error: rulesErr } = await db.rpc("api_notice_stage_rules");
+    noticeRules = rulesErr ? [] : (((rulesData || [])[0] || {}).rules || []);
+    const typeSelect = $("v-type");
+    for (const r of noticeRules) {
+        const opt = document.createElement("option");
+        opt.value = r.violation_type;
+        opt.textContent = r.violation_type;
+        typeSelect.append(opt);
+    }
+
+    $("v-occurred").value = new Date().toISOString().slice(0, 10);
+
+    typeSelect.addEventListener("change", updateViolationFormFields);
+    $("v-submit").addEventListener("click", submitViolation);
+    initViolationResolve();
+    initViolationReopen();
+
+    await Promise.all([refreshViolations(), refreshResolvedViolations()]);
+}
+
+// 목록은 매번 새로 그려지므로(refreshViolations), 버튼 클릭은 컨테이너에
+// 한 번만 위임해 둡니다(초안 승인/반려와 같은 패턴, initDrafts 참고).
+function initViolationResolve() {
+    $("t-violations").addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-act='resolve']");
+        if (!button) return;
+
+        const eventId = Number(button.dataset.eventId);
+        const today = new Date().toISOString().slice(0, 10);
+        const resolvedOn = window.prompt(
+            "종료일을 입력하세요 (YYYY-MM-DD). 잘못 눌러도 아래 표에서 다시 열 수 있습니다.", today);
+        if (resolvedOn === null) return;   // 취소
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(resolvedOn.trim())) {
+            window.alert("날짜 형식이 올바르지 않습니다 (예: 2026-07-29).");
+            return;
+        }
+
+        button.disabled = true;
+        button.textContent = "처리 중…";
+
+        const { data, error } = await db.rpc("resolve_violation_event", {
+            p_event_id: eventId,
+            p_resolved_on: resolvedOn.trim(),
+        });
+
+        if (error) {
+            window.alert("종료 처리하지 못했습니다: " + error.message);
+            button.disabled = false;
+            button.textContent = "종료 처리";
+            return;
+        }
+        // 함수는 {ok, reason} 을 돌려줍니다. 실패해도 HTTP 는 200 입니다.
+        if (data && data.ok === false) {
+            window.alert(data.reason || "종료 처리하지 못했습니다");
+            button.disabled = false;
+            button.textContent = "종료 처리";
+            return;
+        }
+
+        await Promise.all([refreshViolations(), refreshResolvedViolations()]);
+    });
+}
+
+// 26_violation_reopen.sql — resolve_violation_event 와 대칭. 되돌린 건은
+// '진행 중인 위반' 표로 다시 옮겨가므로 두 표를 같이 갱신합니다.
+function initViolationReopen() {
+    $("t-violations-resolved").addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-act='reopen']");
+        if (!button) return;
+
+        const eventId = Number(button.dataset.eventId);
+        const ok = window.confirm(
+            "이 위반을 다시 진행 중 상태로 되돌릴까요? 위 '진행 중인 위반' 표에 다시 나타납니다.");
+        if (!ok) return;
+
+        button.disabled = true;
+        button.textContent = "처리 중…";
+
+        const { data, error } = await db.rpc("reopen_violation_event", { p_event_id: eventId });
+
+        if (error) {
+            window.alert("다시 열지 못했습니다: " + error.message);
+            button.disabled = false;
+            button.textContent = "다시 열기";
+            return;
+        }
+        if (data && data.ok === false) {
+            window.alert(data.reason || "다시 열지 못했습니다");
+            button.disabled = false;
+            button.textContent = "다시 열기";
+            return;
+        }
+
+        await Promise.all([refreshViolations(), refreshResolvedViolations()]);
+    });
+}
+
+// api_violation_events_resolved 도 api_notice_stage_status 와 같은 반환
+// 형태입니다(returns jsonb 스칼라, 배열을 그대로 돌려줌, D10).
+async function refreshResolvedViolations() {
+    const { data, error } = await db.rpc("api_violation_events_resolved", { p_store: null, p_limit: 20 });
+    if (error) {
+        $("t-violations-resolved").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
+        return;
+    }
+    const list = Array.isArray(data) ? data : [];
+
+    if (!list.length) {
+        $("t-violations-resolved").innerHTML =
+            '<p class="hint">종료 처리된 위반 기록이 없습니다.</p>';
+        return;
+    }
+
+    table($("t-violations-resolved"),
+        ["매장", "위반유형", "발생일", "종료일", "메모", "처리"],
+        list.map((v) => [
+            v.store_name,
+            v.violation_type,
+            v.occurred_on,
+            v.resolved_on,
+            v.note ? escape(v.note) : "—",
+            `<button type="button" class="ghost" data-act="reopen" data-event-id="${v.event_id}">다시 열기</button>`,
+        ]),
+        { html: true });
+}
+
+// 위반유형에 따라 '몇 차 지적'(sequential)·'로고 품목 여부'(자점매입 전용)
+// 입력칸을 보이거나 숨깁니다. hq-standards.md 예외 3(자점매입)은 여기서
+// 화면으로, 예외 1(무단 휴업 특약)은 rule.note 힌트로만 보여줍니다 — 실제
+// 판정은 서버(api_notice_stage_status)가 합니다.
+function updateViolationFormFields() {
+    const type = $("v-type").value;
+    const rule = noticeRules.find((r) => r.violation_type === type);
+
+    $("v-seq-field").hidden = !ruleHasKind(rule, "sequential");
+    $("v-logo-field").hidden = type !== "자점매입";
+
+    const note = $("v-type-note");
+    if (rule && rule.note) {
+        note.textContent = rule.note;
+        note.hidden = false;
+    } else {
+        note.hidden = true;
+    }
+}
+
+async function submitViolation() {
+    const notice = $("v-notice");
+    const button = $("v-submit");
+    const storeId = $("v-store").value;
+    const violationType = $("v-type").value;
+    const occurred = $("v-occurred").value;
+    const resolved = $("v-resolved").value || null;
+    const seqField = $("v-seq");
+    const logoField = $("v-logo");
+
+    if (!storeId || !violationType || !occurred) {
+        notice.className = "notice error";
+        notice.textContent = "매장·위반유형·발생일은 필수입니다.";
+        return;
+    }
+    if (resolved && resolved < occurred) {
+        notice.className = "notice error";
+        notice.textContent = "종료일이 발생일보다 앞설 수 없습니다.";
+        return;
+    }
+
+    const rule = noticeRules.find((r) => r.violation_type === violationType);
+    const isSequential = ruleHasKind(rule, "sequential");
+
+    button.disabled = true;
+    notice.className = "notice";
+    notice.textContent = "저장하는 중…";
+
+    const { data: { session } } = await db.auth.getSession();
+    const { error } = await db.from("violation_events").insert({
+        store_id: Number(storeId),
+        violation_type: violationType,
+        occurred_on: occurred,
+        resolved_on: resolved,
+        sequence_no: (isSequential && seqField.value) ? Number(seqField.value) : null,
+        applies_logo_required_item: (violationType === "자점매입" && logoField.value)
+            ? logoField.value === "true" : null,
+        note: $("v-note").value.trim() || null,
+        created_by: session?.user?.id,
+    });
+
+    button.disabled = false;
+    if (error) {
+        notice.className = "notice error";
+        notice.textContent = "저장하지 못했습니다: " + error.message;
+        return;
+    }
+
+    notice.className = "notice";
+    notice.textContent = "저장했습니다.";
+    $("v-note").value = "";
+    $("v-resolved").value = "";
+    seqField.value = "";
+    logoField.value = "";
+    await Promise.all([refreshViolations(), refreshResolvedViolations()]);
+}
+
+// api_notice_stage_status 는 `returns jsonb`(스칼라)라 다른 조회 함수들과
+// 달리 [{alerts:[...]}] 로 한 번 더 감싸지 않습니다 — data 자체가 배열입니다
+// (14_reply_drafts.sql 의 approve_reply_draft 등과 같은 모양, D10 조회 규칙은
+// 그대로 지키되 반환 형태만 다름).
+async function refreshViolations() {
+    const { data, error } = await db.rpc("api_notice_stage_status", { p_store: null });
+    if (error) {
+        $("t-violations").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
+        return;
+    }
+    const list = Array.isArray(data) ? data : [];
+    $("violation-summary").textContent = list.length ? `${int(list.length)}건 진행 중` : "";
+
+    if (!list.length) {
+        $("t-violations").innerHTML =
+            '<p class="hint">진행 중인 위반 기록이 없습니다. 위 폼에서 추가하면 여기 나타납니다.</p>';
+        return;
+    }
+
+    table($("t-violations"),
+        ["매장", "위반유형", "발생일", "경과일", "단계", "확인 필요", "메모", "처리"],
+        list.map((v) => [
+            v.store_name,
+            v.violation_type,
+            v.occurred_on,
+            int(v.days_elapsed),
+            stageTag(v.stage, v.stage_label, v.requires_legal_review),
+            v.needs_manual_review
+                ? `<span class="flag" title="${escape(v.manual_review_reason || "")}">담당자 확인</span>`
+                : "—",
+            v.note ? escape(v.note) : "—",
+            `<button type="button" class="ghost" data-act="resolve" data-event-id="${v.event_id}">종료 처리</button>`,
+        ]),
+        { html: true });
+}
+
+function stageTag(stage, label, requiresLegal) {
+    if (!stage) return '<span class="tag">해당 없음(제재 대상 아님)</span>';
+    const tag = `<span class="tag${stage >= 3 ? " down" : ""}">` +
+        `${escape(String(stage))}단계 · ${escape(label || "")}</span>`;
+    return tag + (requiresLegal ? ' <span class="flag">법무 검토</span>' : "");
+}
+
+// ================================================================ 방문·점검 (9번 영역)
+//
+// store_visits(25_store_visits.sql)에 아무도 기록을 넣지 않으면 목록은
+// 항상 빈 표입니다 — 이 화면이 그 첫 입력 지점입니다. 위반 기록(initNotices)
+// 과 같은 이유로 날짜 필터(기간·매장)와 무관해 load() 묶음에 넣지 않고
+// 한 번만 받습니다.
+//
+// "재방문 시 이전 이력 자동 조회"는 새 조회를 만들지 않고, 매장 select 를
+// 바꿀 때마다 같은 api_store_visits 를 p_store 만 바꿔 다시 부르는 것으로
+// 풉니다 — 서버가 이미 최신순으로 정렬해 주므로 맨 위가 직전 방문입니다.
+
+async function initVisits() {
+    const storeSelect = $("vs-store");
+    const { data: stores, error: storeErr } = await db.from("stores")
+        .select("id,name").order("name");
+    if (!storeErr) {
+        for (const s of stores || []) {
+            const opt = document.createElement("option");
+            opt.value = s.id;
+            opt.textContent = s.name;
+            storeSelect.append(opt);
+        }
+    }
+
+    $("vs-visited-on").value = new Date().toISOString().slice(0, 10);
+
+    storeSelect.addEventListener("change", refreshVisits);
+    storeSelect.addEventListener("change", refreshVisitStoreMetrics);
+    $("vs-submit").addEventListener("click", submitVisit);
+
+    await refreshVisits();
+    await refreshVisitStoreMetrics();
+}
+
+async function submitVisit() {
+    const notice = $("vs-notice");
+    const button = $("vs-submit");
+    const storeId = $("vs-store").value;
+    const visitedOn = $("vs-visited-on").value;
+
+    if (!storeId || !visitedOn) {
+        notice.className = "notice error";
+        notice.textContent = "매장·방문일은 필수입니다.";
+        return;
+    }
+
+    button.disabled = true;
+    notice.className = "notice";
+    notice.textContent = "저장하는 중…";
+
+    const { data: { session } } = await db.auth.getSession();
+    const { error } = await db.from("store_visits").insert({
+        store_id: Number(storeId),
+        visited_on: visitedOn,
+        visited_by: $("vs-visited-by").value.trim() || null,
+        hygiene_note: $("vs-hygiene").value.trim() || null,
+        self_purchase_note: $("vs-self-purchase").value.trim() || null,
+        cooking_note: $("vs-cooking").value.trim() || null,
+        owner_meeting_note: $("vs-owner-meeting").value.trim() || null,
+        special_note: $("vs-special").value.trim() || null,
+        created_by: session?.user?.id,
+    });
+
+    button.disabled = false;
+    if (error) {
+        notice.className = "notice error";
+        notice.textContent = "저장하지 못했습니다: " + error.message;
+        return;
+    }
+
+    notice.className = "notice";
+    notice.textContent = "저장했습니다.";
+    for (const id of ["vs-visited-by", "vs-hygiene", "vs-self-purchase",
+                       "vs-cooking", "vs-owner-meeting", "vs-special"]) {
+        $(id).value = "";
+    }
+    await refreshVisits();
+}
+
+// vs-store 를 고르면 그 매장만, 비워 두면 전 매장 최근 방문을 보여줍니다
+// (재방문 시 이전 이력 자동 조회 요구사항 — 새 조회가 아니라 p_store 필터).
+async function refreshVisits() {
+    const storeId = $("vs-store").value;
+    const storeName = storeId
+        ? ($("vs-store").selectedOptions[0]?.textContent || null)
+        : null;
+
+    const { data, error } = await db.rpc("api_store_visits", { p_store: storeName });
+    if (error) {
+        $("t-visits").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
+        return;
+    }
+    const list = Array.isArray(data) ? data : [];
+    $("visit-summary").textContent = storeName
+        ? `${escape(storeName)} · ${int(list.length)}건`
+        : `전 매장 최근 ${int(list.length)}건`;
+
+    if (!list.length) {
+        $("t-visits").innerHTML =
+            '<p class="hint">방문 기록이 없습니다. 위 폼에서 추가하면 여기 나타납니다.</p>';
+        return;
+    }
+
+    table($("t-visits"),
+        ["매장", "방문일", "방문자", "위생점검", "자점매입", "조리점검", "점주미팅", "특이사항"],
+        list.map((v) => [
+            v.store_name,
+            v.visited_on,
+            v.visited_by || "—",
+            v.hygiene_note || "—",
+            v.self_purchase_note || "—",
+            v.cooking_note || "—",
+            v.owner_meeting_note || "—",
+            v.special_note || "—",
+        ]));
+}
+
+// 방문 예정 매장의 매출 사전 집계 — 새 조회를 만들지 않고 기존
+// api_store_metrics(04_analysis.sql, 전 매장 비교표)를 그대로 불러서
+// 이 매장 행만 골라 보여줍니다. 그 함수엔 매장 필터 인자가 없어(전 매장
+// 비교가 목적) 서버가 아니라 여기서 이름으로 골라냅니다.
+async function refreshVisitStoreMetrics() {
+    const storeSelect = $("vs-store");
+    const storeName = storeSelect.value
+        ? (storeSelect.selectedOptions[0]?.textContent || null)
+        : null;
+    const kpis = $("visit-store-kpis");
+    const hint = $("vsm-hint");
+
+    if (!storeName) {
+        kpis.hidden = true;
+        hint.hidden = false;
+        hint.textContent = "매장을 고르면 방문 전 참고용으로 최근 매출을 보여줍니다.";
+        return;
+    }
+
+    const ymTo = filterRange?.max;
+    if (!ymTo) {
+        kpis.hidden = true;
+        hint.hidden = false;
+        hint.textContent = "매출 데이터를 아직 불러오지 못했습니다.";
+        return;
+    }
+    const ymFrom = shiftYm(ymTo, -2); // 최근 3개월(당월 포함)
+
+    const { data, error } = await db.rpc("api_store_metrics",
+        { p_ym_from: ymFrom, p_ym_to: ymTo, p_channel: null });
+    if (error) {
+        kpis.hidden = true;
+        hint.hidden = false;
+        hint.textContent = "매출을 불러오지 못했습니다: " + error.message;
+        return;
+    }
+
+    const row = (Array.isArray(data) ? data : []).find((r) => r.store === storeName);
+    if (!row) {
+        kpis.hidden = true;
+        hint.hidden = false;
+        hint.textContent = `${storeName}의 최근 매출 데이터가 없습니다(수집 전이거나 신규 매장).`;
+        return;
+    }
+
+    hint.hidden = true;
+    kpis.hidden = false;
+    $("vsm-amount").textContent = won(row.amount);
+    $("vsm-range").textContent = `${ymLabel(ymFrom)} ~ ${ymLabel(ymTo)}`;
+    $("vsm-qty").textContent = int(row.qty);
+    $("vsm-hall").textContent = won(row.hall_amount);
+    $("vsm-delivery").textContent = won(row.delivery_amount);
+}
+
+// ym(YYYYMM 정수)를 개월 수만큼 이동합니다. offset 은 음수 가능.
+function shiftYm(ym, offset) {
+    let year = Math.floor(ym / 100);
+    let month = (ym % 100) + offset;
+    while (month < 1) { month += 12; year -= 1; }
+    while (month > 12) { month -= 12; year += 1; }
+    return year * 100 + month;
+}
+
+// ================================================================ 오픈·폐점 (8번 영역)
+//
+// 27_store_lifecycle.sql. 방문·점검(initVisits)과 같은 이유로 날짜 필터
+// (기간·매장)와 무관해 load() 묶음에 넣지 않고 한 번만 받습니다. 매장을
+// 고르면 이력 표만 그 매장으로 좁힙니다(store_visits 와 같은 방식).
+
+async function initLifecycle() {
+    const storeSelect = $("la-store");
+    const { data: stores, error: storeErr } = await db.from("stores")
+        .select("id,name").order("name");
+    if (!storeErr) {
+        for (const s of stores || []) {
+            const opt = document.createElement("option");
+            opt.value = s.id;
+            opt.textContent = s.name;
+            storeSelect.append(opt);
+        }
+    }
+
+    $("la-date").value = new Date().toISOString().slice(0, 10);
+
+    storeSelect.addEventListener("change", refreshLifecycleHistory);
+    $("la-submit").addEventListener("click", submitLifecycleEvent);
+
+    await Promise.all([
+        refreshLifecycleSummary(),
+        refreshLifecycleStatus(),
+        refreshLifecycleHistory(),
+    ]);
+}
+
+async function submitLifecycleEvent() {
+    const notice = $("la-notice");
+    const button = $("la-submit");
+    const storeId = $("la-store").value;
+    const eventDate = $("la-date").value;
+
+    if (!storeId || !eventDate) {
+        notice.className = "notice error";
+        notice.textContent = "매장·일자는 필수입니다.";
+        return;
+    }
+
+    button.disabled = true;
+    notice.className = "notice";
+    notice.textContent = "저장하는 중…";
+
+    const { data: { session } } = await db.auth.getSession();
+    const { error } = await db.from("store_lifecycle_events").insert({
+        store_id: Number(storeId),
+        event_type: $("la-type").value,
+        event_date: eventDate,
+        note: $("la-note").value.trim() || null,
+        created_by: session?.user?.id,
+    });
+
+    button.disabled = false;
+    if (error) {
+        notice.className = "notice error";
+        notice.textContent = "저장하지 못했습니다: " + error.message;
+        return;
+    }
+
+    notice.className = "notice";
+    notice.textContent = "저장했습니다.";
+    $("la-note").value = "";
+    await Promise.all([
+        refreshLifecycleSummary(),
+        refreshLifecycleStatus(),
+        refreshLifecycleHistory(),
+    ]);
+}
+
+async function refreshLifecycleSummary() {
+    const { data, error } = await db.rpc("api_store_lifecycle_summary");
+    if (error) {
+        $("lifecycle-summary-year").textContent = "불러오지 못했습니다: " + error.message;
+        return;
+    }
+    $("lifecycle-summary-year").textContent = `${data.year}년`;
+    $("ls-opens").textContent = int(data.opens);
+    $("ls-opens-baseline").textContent = `참고: 연 평균 ${int(data.opens_baseline)}건`;
+    $("ls-closes").textContent = int(data.closes);
+    $("ls-closes-baseline").textContent = `참고: 연 평균 ${int(data.closes_baseline)}건`;
+}
+
+async function refreshLifecycleStatus() {
+    const { data, error } = await db.rpc("api_store_lifecycle_status");
+    if (error) {
+        $("t-lifecycle-status").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
+        return;
+    }
+    const list = Array.isArray(data) ? data : [];
+    $("lifecycle-status-summary").textContent = `기록 있는 매장 ${int(list.length)}곳`;
+
+    if (!list.length) {
+        $("t-lifecycle-status").innerHTML =
+            '<p class="hint">아직 기록이 없습니다. 위 폼에서 추가하면 여기 나타납니다.</p>';
+        return;
+    }
+
+    table($("t-lifecycle-status"),
+        ["매장", "상태", "최근 이벤트일", "경과일"],
+        list.map((v) => [
+            v.store_name,
+            v.status === "open"
+                ? '<span class="tag">오픈</span>'
+                : '<span class="tag down">폐점</span>',
+            v.since,
+            `${int(v.days_since)}일`,
+        ]),
+        { html: true });
+}
+
+// la-store 를 고르면 그 매장만, 비워 두면 전 매장 최근 기록을 보여줍니다.
+async function refreshLifecycleHistory() {
+    const storeId = $("la-store").value;
+    const storeName = storeId
+        ? ($("la-store").selectedOptions[0]?.textContent || null)
+        : null;
+
+    const { data, error } = await db.rpc("api_store_lifecycle", { p_store: storeName });
+    if (error) {
+        $("t-lifecycle").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
+        return;
+    }
+    const list = Array.isArray(data) ? data : [];
+    $("lifecycle-history-summary").textContent = storeName
+        ? `${escape(storeName)} · ${int(list.length)}건`
+        : `전 매장 최근 ${int(list.length)}건`;
+
+    if (!list.length) {
+        $("t-lifecycle").innerHTML =
+            '<p class="hint">이력이 없습니다. 위 폼에서 추가하면 여기 나타납니다.</p>';
+        return;
+    }
+
+    table($("t-lifecycle"),
+        ["매장", "구분", "일자", "메모"],
+        list.map((v) => [
+            v.store_name,
+            v.event_type === "open" ? "오픈" : "폐점",
+            v.event_date,
+            v.note || "—",
+        ]));
+}
+
 // api_filters 가 준 데이터 범위(최소/최대 연월). initExport 기본값에 씁니다.
 let filterRange = null;
 
@@ -2251,9 +2973,13 @@ function showArea(area) {
         b.setAttribute("aria-current", b.dataset.go === area ? "page" : "false");
     }
     const salesOnly = area === "sales";
+    // 홈 화면의 타일도 위 필터(기간·매장)를 따르므로 필터 줄은 같이 보여줍니다.
+    // 리뷰 카드(api_review_summary)도 같은 f-from/f-to/f-store 를 그대로 쓰므로
+    // 리뷰 영역에서도 필터 줄이 필요합니다.
+    // 맨 위 매출 4칸(총매출 등)은 매출 화면에서만 뜻이 있어 그대로 숨깁니다.
     const filters = document.querySelector(".filters");
-    const tiles = document.querySelector(".kpis");
-    if (filters) filters.hidden = !salesOnly;
+    const tiles = $("sales-kpis");
+    if (filters) filters.hidden = !(salesOnly || area === "home" || area === "reviews");
     if (tiles) tiles.hidden = !salesOnly;
     try { localStorage.setItem(AREA_KEY, area); } catch (e) { /* 사생활 모드 */ }
     window.scrollTo({ top: 0, behavior: "instant" });
@@ -2263,9 +2989,41 @@ function initAreas() {
     for (const b of document.querySelectorAll(".navitem")) {
         b.addEventListener("click", () => showArea(b.dataset.go));
     }
-    let saved = "sales";
-    try { saved = localStorage.getItem(AREA_KEY) || "sales"; } catch (e) { /* 무시 */ }
+    let saved = "home";
+    try { saved = localStorage.getItem(AREA_KEY) || "home"; } catch (e) { /* 무시 */ }
     // 저장된 값이 지금 없는 영역일 수 있습니다(영역 이름이 바뀐 뒤).
-    if (!document.querySelector(`.navitem[data-go="${saved}"]`)) saved = "sales";
+    if (!document.querySelector(`.navitem[data-go="${saved}"]`)) saved = "home";
     showArea(saved);
+}
+
+// 홈 화면의 할 일 타일 → 관련 카드로 이동. 답글·부정 리뷰 타일은 리뷰
+// 영역(review-card), 급감 매장 타일은 매출 영역(alerts-card)을 가리킵니다
+// — 어느 영역으로 이동할지는 각 타일의 data-go-target(index.html)이 정합니다.
+// 필터를 바꿀 때는 그 필터가 이미 쓰고 있는 이벤트를 그대로 흉내 냅니다
+// (rv-rating 은 change 시 서버에 다시 묻고, alerts-only 는 이미 받아 둔
+// 데이터를 다시 그리기만 합니다) — 홈 화면이 그 규칙을 새로 만들지 않습니다.
+function initHomeTiles() {
+    const targets = {
+        "home-tile-drafts": "review-card",
+        "home-tile-negative": "review-card",
+        "home-tile-declining": "alerts-card",
+    };
+    for (const [tileId, cardId] of Object.entries(targets)) {
+        const tile = document.getElementById(tileId);
+        if (!tile) continue;
+        tile.addEventListener("click", () => {
+            showArea(tile.dataset.goTarget || "sales");
+            if (tileId === "home-tile-negative") {
+                $("rv-rating").value = "low";
+                $("rv-rating").dispatchEvent(new Event("change"));
+            }
+            if (tileId === "home-tile-declining") {
+                $("alerts-only").checked = true;
+                $("alerts-only").dispatchEvent(new Event("change"));
+            }
+            requestAnimationFrame(() => {
+                document.getElementById(cardId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+            });
+        });
+    }
 }
