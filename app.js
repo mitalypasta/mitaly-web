@@ -92,6 +92,7 @@ function render(session) {
         if (!app.dataset.ready) {
             app.dataset.ready = "1";
             initAreas();
+            initReport();
             initDashboard();
         }
     } else {
@@ -958,6 +959,7 @@ function draw(d) {
 
     drawMonthly(d.monthly, c);
     drawAlerts(d);
+    drawReport(d);
 
     drawBars($("c-store"), {
         rows: d.stores.slice(0, 15).map((r) => ({ label: r.store, value: Number(r.amount) })),
@@ -3250,4 +3252,100 @@ function fillStoreSelect(select, names, allLabel) {
         o.value = name; o.textContent = name;
         select.appendChild(o);
     }
+}
+
+
+// ---- 월간 보고서 --------------------------------------------------------
+//
+// 본사가 형식을 PDF, 받는 사람을 SV 로 확정했습니다(hq-standards.md 2번).
+// SV 가 받아 점주에게 전달하거나 상부 보고에 씁니다.
+//
+// 화면에 이미 있는 lastData 만 씁니다 — 보고서 때문에 조회를 또 하지 않습니다.
+// 급증·급감 기준은 본사 값(±10%)이고 설정 테이블에 있습니다. 여기서 다시
+// 판정하지 않고 api_sales_alerts 가 준 판정을 그대로 씁니다.
+
+function drawReport(d) {
+    const sheet = $("report-sheet");
+    if (!sheet || !d) return;
+
+    const s = d.summary || {};
+    const stores = d.args && d.args.p_store ? d.args.p_store : "전체 매장";
+    const span = `${ymDash(d.args.p_ym_from)} ~ ${ymDash(d.args.p_ym_to)}`;
+
+    // 급증·급감은 판정이 붙은 것만 싣습니다. 전부 실으면 SV 가 읽지 않습니다.
+    const alerts = (d.alerts || []).filter(
+        (a) => (a.channels || []).some((c) => c.mom_direction || c.yoy_direction));
+
+    const top = (d.menus || []).slice(0, 10);
+    const months = d.monthly || [];
+
+    sheet.innerHTML = `
+      <div class="report">
+        <div class="report-head">
+          <h1>미태리 매출 보고</h1>
+          <div class="report-meta">
+            <div>기간 <b>${escape(span)}</b></div>
+            <div>대상 <b>${escape(stores)}</b></div>
+            <div>작성 ${escape(new Date().toLocaleString("ko-KR",
+                  { dateStyle: "long", timeStyle: "short" }))}</div>
+          </div>
+        </div>
+
+        <h2>1. 요약</h2>
+        <table class="report-kpi"><tbody>
+          <tr><th>총매출</th><td>${wonFull(s.amount)}</td>
+              <th>총수량</th><td>${int(s.qty)}</td></tr>
+          <tr><th>홀</th><td>${wonFull(s.hall_amount)}</td>
+              <th>배달</th><td>${wonFull(s.delivery_amount)}</td></tr>
+          <tr><th>객단가</th><td>${wonFull(s.avg_ticket)}</td>
+              <th>매장 수</th><td>${int(s.store_count)}곳</td></tr>
+        </tbody></table>
+
+        <h2>2. 급증·급감 매장</h2>
+        ${alerts.length ? `<table class="report-table"><thead><tr>
+            <th>매장</th><th>채널</th><th>매출</th><th>전월 대비</th><th>전년 대비</th>
+          </tr></thead><tbody>${alerts.flatMap((a) =>
+            (a.channels || []).filter((c) => c.mom_direction || c.yoy_direction)
+              .map((c) => `<tr>
+                <td>${escape(a.store)}</td><td>${escape(c.channel)}</td>
+                <td>${wonFull(c.amount)}</td>
+                <td>${escape(c.mom_direction || "—")} ${pct(c.mom_rate)}</td>
+                <td>${escape(c.yoy_direction || "—")} ${pct(c.yoy_rate)}</td>
+              </tr>`)).join("")}</tbody></table>`
+          : '<p>기준(±10%)을 넘은 매장이 없습니다.</p>'}
+
+        <h2>3. 월별 추이</h2>
+        ${months.length ? `<table class="report-table"><thead><tr>
+            <th>연월</th><th>총매출</th><th>홀</th><th>배달</th><th>매장 수</th>
+          </tr></thead><tbody>${months.map((m) => `<tr>
+            <td>${escape(ymDash(m.ym))}</td><td>${wonFull(m.amount)}</td>
+            <td>${wonFull(m.hall_amount)}</td><td>${wonFull(m.delivery_amount)}</td>
+            <td>${int(m.store_count)}</td></tr>`).join("")}</tbody></table>`
+          : "<p>자료가 없습니다.</p>"}
+
+        <h2>4. 상위 품목 10</h2>
+        ${top.length ? `<table class="report-table"><thead><tr>
+            <th>품목</th><th>분류</th><th>매출</th><th>수량</th>
+          </tr></thead><tbody>${top.map((m) => `<tr>
+            <td>${escape(m.menu)}</td><td>${escape(catLabel(m.category))}</td>
+            <td>${wonFull(m.amount)}</td><td>${int(m.qty)}</td></tr>`).join("")}
+          </tbody></table>` : "<p>자료가 없습니다.</p>"}
+
+        <p class="report-foot">
+          배달은 할인 전, 홀은 할인 후 금액입니다. 급증·급감 기준 ±10%.
+        </p>
+      </div>`;
+}
+
+// 비율은 소수 한 자리로 통일합니다. 없으면 줄표.
+function pct(rate) {
+    if (rate === null || rate === undefined) return "—";
+    const n = Number(rate);
+    if (!Number.isFinite(n)) return "—";
+    return `${n > 0 ? "+" : ""}${n.toFixed(1)}%`;
+}
+
+function initReport() {
+    const button = $("report-print");
+    if (button) button.addEventListener("click", () => window.print());
 }

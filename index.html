@@ -113,6 +113,7 @@
         <button class="subitem" data-sub-go="품목" type="button">품목</button>
         <button class="subitem" data-sub-go="시간·요일" type="button">시간·요일</button>
         <button class="subitem" data-sub-go="매장" type="button">매장</button>
+        <button class="subitem" data-sub-go="보고서" type="button">보고서</button>
         <button class="subitem" data-sub-go="수집" type="button">수집 현황</button>
     </nav>
 
@@ -194,7 +195,27 @@
             <div class="tableview" id="t-weekday" hidden></div>
         </section>
 
-        <section data-area="sales" data-sub="수집" class="card full">
+    
+    <!-- SV 에게 보내는 월간 보고서. 본사가 형식을 PDF, 대상을 SV 로 확정했습니다
+         (docs/hq-standards.md 2번).
+
+         PDF 라이브러리를 쓰지 않고 브라우저 인쇄를 씁니다. jsPDF 류는 한글을
+         쓰려면 폰트를 몇 MB 끼워 넣어야 하고, 안 넣으면 글자가 □□□ 로 나옵니다.
+         브라우저 인쇄는 한글을 그냥 처리하고 '대상: PDF 로 저장' 이 기본으로
+         들어 있습니다. 인쇄용 규칙은 styles.css 맨 아래에 있습니다. -->
+    <section data-area="sales" data-sub="보고서" class="card full" id="report-card">
+        <header>
+            <h2>월간 보고서</h2>
+            <button class="primary" id="report-print" type="button">PDF 로 저장</button>
+        </header>
+        <p class="hint">
+            위 필터의 기간·매장이 그대로 들어갑니다.
+            누르면 인쇄 창이 열립니다 — 대상에서 <b>PDF 로 저장</b>을 고르세요.
+        </p>
+        <div id="report-sheet"></div>
+    </section>
+
+    <section data-area="sales" data-sub="수집" class="card full">
             <header>
                 <h2>수집 커버리지</h2>
                 <button class="linkish" data-toggle="t-coverage">매장별로 보기</button>

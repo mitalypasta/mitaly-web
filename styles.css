@@ -1077,3 +1077,91 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
 @media (prefers-reduced-motion: reduce) {
     .subitem { transition: none; }
 }
+
+
+/* ---- 월간 보고서 ------------------------------------------------------ */
+/* 화면에서도 종이처럼 보이게 해서, 인쇄 결과를 미리 짐작할 수 있게 합니다. */
+
+.report { max-width: 780px; }
+
+.report-head {
+    border-bottom: 2px solid var(--text-primary);
+    padding-bottom: 10px;
+    margin-bottom: 18px;
+}
+
+.report h1 { font-size: 22px; margin: 0 0 8px; }
+.report h2 { font-size: 15px; margin: 22px 0 8px; }
+
+.report-meta {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.report table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+.report-kpi th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--text-secondary);
+    width: 15%;
+    padding: 7px 4px;
+}
+
+.report-kpi td {
+    /* 금액은 자리가 흔들리지 않게 고정폭 숫자를 씁니다. */
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    padding: 7px 4px;
+    width: 35%;
+}
+
+.report-table th, .report-table td {
+    padding: 6px 4px;
+    border-bottom: 1px solid var(--gridline);
+    text-align: left;
+}
+
+.report-table td:not(:first-child):not(:nth-child(2)) {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.report-foot {
+    margin-top: 20px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* ---- 인쇄 ------------------------------------------------------------- */
+/*
+ * PDF 는 브라우저 인쇄로 만듭니다(대상: PDF 로 저장).
+ * PDF 라이브러리를 쓰면 한글 폰트를 몇 MB 끼워 넣어야 하고 안 넣으면 □□□ 가
+ * 나옵니다. 브라우저는 한글을 그냥 처리합니다.
+ *
+ * 그래서 인쇄할 때는 보고서만 남기고 나머지는 전부 숨깁니다.
+ */
+@media print {
+    .sidenav, .subnav, .filters, .kpis, .top,
+    [data-area]:not(#report-card),
+    #report-card > header, #report-card > .hint { display: none !important; }
+
+    #report-card {
+        border: none;
+        box-shadow: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .report { max-width: none; }
+
+    /* 표가 페이지 경계에서 잘리지 않게. */
+    .report h2 { break-after: avoid; }
+    .report table { break-inside: auto; }
+    .report tr { break-inside: avoid; }
+
+    @page { margin: 16mm; }
+}
