@@ -219,8 +219,14 @@ async function initDashboard() {
     fillSelect($("f-from"), months, ymLabel);
     fillSelect($("f-to"), months, ymLabel);
 
-    // 기본값: 최근 12개월
-    $("f-from").value = String(months[Math.max(0, months.length - 12)]);
+    // 기본값: **최근 한 달**(지난달~이번달). 담당자 요구(2026-07-30).
+    //
+    // 12개월이 기본이면 화면을 열 때마다 팩트 80만 행을 통째로 훑어 느립니다.
+    // 그리고 담당자가 화면을 여는 대부분의 이유는 '요즘 어떤가' 이지
+    // '작년까지 통틀어 어떤가' 가 아닙니다. 길게 볼 때는 직접 늘리면 됩니다.
+    //
+    // 데이터가 한 달치뿐이면 그 한 달만 잡습니다(months.length - 2 가 음수).
+    $("f-from").value = String(months[Math.max(0, months.length - 2)]);
     $("f-to").value = String(info.ym_max);
 
     const storeSelect = $("f-store");
