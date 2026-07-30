@@ -369,13 +369,10 @@
     <section data-area="stores" class="card full" id="cred-card">
         <header>
             <h2>매장 정보 · 배달앱 계정</h2>
-            <span class="runner" id="cred-hint">보려면 접근 암호가 필요합니다</span>
+            <span class="runner" id="cred-hint"></span>
         </header>
 
         <div id="cred-gate">
-            <p class="note">
-                점주 개인 계정입니다. 필요한 때만 열고, 화면을 켜 둔 채 자리를 비우지 마세요.
-            </p>
             <div class="filters">
                 <div class="field">
                     <label for="cred-pass">접근 암호</label>
@@ -399,7 +396,7 @@
 
             <h3>계정 추가·수정</h3>
             <p class="note">
-                아이디만 고치고 비밀번호 칸을 비워 두면 <strong>비밀번호는 그대로</strong> 남습니다.
+                비밀번호 칸을 비우면 기존 비밀번호가 유지됩니다.
             </p>
             <div class="filters">
                 <div class="field">
@@ -432,7 +429,6 @@
             <p class="notice" id="cred-save-msg" hidden></p>
 
             <h3>최근 수정 이력</h3>
-            <p class="note">열람은 남기지 않습니다. 값이 틀어졌을 때 되짚을 수 있게 수정만 남깁니다.</p>
             <div class="tableview" id="cred-changes"></div>
         </div>
     </section>
@@ -534,10 +530,9 @@
             <span class="meta">SV·운영지원팀이 확인한 위반을 남기면 아래 표에 단계가 계산됩니다</span>
         </header>
         <p class="hint">
-            내용증명 발송 기준표(<code>docs/hq-standards.md</code>)에 있는 10가지
-            위반유형만 고를 수 있습니다. <b>이 표는 계산만 합니다 — 내용증명을
-            자동으로 보내지 않습니다.</b> 자점매입·시정요구 불이행은 추가로 물어보는
-            항목이 있고, 확실하지 않으면 비워 두세요(담당자 확인 표시가 붙습니다).
+            본사 발송 기준표의 10가지 위반유형 중에서 고릅니다.
+            자점매입·시정요구 불이행은 추가로 물어보는 항목이 있고,
+            확실하지 않으면 비워 두세요 — 담당자 확인 표시가 붙습니다.
         </p>
 
         <div class="reqform">

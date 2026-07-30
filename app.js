@@ -3083,7 +3083,7 @@ async function credOpen() {
         $("cred-pass").value = "";
         $("cred-gate").hidden = true;
         $("cred-body").hidden = false;
-        $("cred-hint").textContent = `계정 ${credRows.length}건 · 자리를 비울 때는 '닫기'`;
+        $("cred-hint").textContent = `계정 ${credRows.length}건`;
         drawCredentials();
         await loadCredChanges();
     } finally {
@@ -3096,7 +3096,7 @@ function credLock() {
     credRows = [];
     $("cred-body").hidden = true;
     $("cred-gate").hidden = false;
-    $("cred-hint").textContent = "보려면 접근 암호가 필요합니다";
+    $("cred-hint").textContent = "";
     $("cred-table").innerHTML = "";
     $("cred-changes").innerHTML = "";
 }
