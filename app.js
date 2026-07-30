@@ -857,10 +857,19 @@ async function load() {
     draftSummary.then((v) => { pending.draftSummary = v; });
     reviewSync.then((v) => { pending.reviewSync = v; });
 
+    // ⚠️ 필터를 연달아 바꾸면 load() 가 여러 번 겹칩니다. 2단계로 나눈 뒤로는
+    //    옛 조회의 2차가 새 조회보다 늦게 끝나 **옛 결과가 화면을 덮어쓰는**
+    //    일이 생겼습니다(2026-07-30: 종료를 2025.04 로 바꿨는데 보고서 기간이
+    //    2026.07 로 남음). 표는 그려지므로 조용히 틀립니다.
+    //    내 차례가 아니면 그리지 않습니다.
+    const myTurn = ++loadSeq;
+    const stillMine = () => myTurn === loadSeq;
+
     const FIRST = [0, 1, 2, 9];
     const results = new Array(calls.length);
 
     const firstError = await runInto(results, calls, FIRST, 3);
+    if (!stillMine()) return;
     document.body.classList.remove("loading");
     if (firstError) return fail(firstError);
 
@@ -872,6 +881,7 @@ async function load() {
     document.body.classList.add("loading-rest");
     const restError = await runInto(
         results, calls, calls.map((_, i) => i).filter((i) => !FIRST.includes(i)), 3);
+    if (!stillMine()) return;
     document.body.classList.remove("loading-rest");
     if (restError) return fail(restError);
 
@@ -2998,6 +3008,9 @@ const AREA_KEY = "mitaly.area";
 // 매출 안의 두 번째 단. 같은 방식으로 보이기만 바꿉니다.
 let salesSub = "요약";
 
+// load() 차례표. 늦게 끝난 옛 조회를 버리는 데 씁니다.
+let loadSeq = 0;
+
 function showSalesSub(sub) {
     salesSub = sub;
     for (const el of document.querySelectorAll('[data-area="sales"][data-sub]')) {
@@ -3322,7 +3335,7 @@ function drawReport(d) {
               <th>매장 수</th><td>${int(s.store_count)}곳</td></tr>
         </tbody></table>
 
-        <h2>2. 급증·급감 매장</h2>
+        <h2>2. 급증·급감 매장 <span class="report-sub">${escape(ymDash(d.args.p_ym_to))} 기준</span></h2>
         ${alertRows.length ? `<table class="report-table"><thead><tr>
             <th>매장</th><th>채널</th><th>매출</th><th>전월 대비</th><th>전년 대비</th>
           </tr></thead><tbody>${alertRows.map((c) => `<tr>
@@ -3332,6 +3345,10 @@ function drawReport(d) {
                 <td>${escape(c.yoy_direction || "—")} ${pct(c.yoy_pct_change)}</td>
               </tr>`).join("")}</tbody></table>`
           : "<p>기준(±10%)을 넘은 매장이 없습니다.</p>"}
+        <p class="report-note">
+          기간의 마지막 달 실적을 전월·전년 동월과 비교합니다.
+          그 달에 매출이 없는 매장은 비교 대상이 아닙니다.
+        </p>
 
         <h2>3. 월별 추이</h2>
         ${months.length ? `<table class="report-table"><thead><tr>

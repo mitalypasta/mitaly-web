@@ -1125,9 +1125,28 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
     text-align: left;
 }
 
-.report-table td:not(:first-child):not(:nth-child(2)) {
+/* 숫자 칸은 머리글까지 같이 오른쪽으로 붙입니다. 머리글만 왼쪽이면
+   '홀' 이 자기 숫자와 한참 떨어져 보여 어느 열인지 헷갈립니다. */
+.report-table td:not(:first-child):not(:nth-child(2)),
+.report-table th:not(:first-child):not(:nth-child(2)) {
     text-align: right;
     font-variant-numeric: tabular-nums;
+}
+
+/* 급증·급감 표는 2·3열이 채널·금액이라 규칙이 다릅니다. */
+.report-table.wide td:nth-child(2),
+.report-table.wide th:nth-child(2) { text-align: left; }
+
+.report-sub {
+    font-weight: 400;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.report-note {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--text-muted);
 }
 
 .report-foot {
