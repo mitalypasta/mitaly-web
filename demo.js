@@ -562,6 +562,152 @@ function computeLifecycleSummary(pYear) {
     };
 }
 
+// ---- 업무 흐름 데모 (30_tasks.sql) ---------------------------------------
+//
+// 픽스처는 화면에서 확인해야 하는 것들이 한 번에 다 보이게 골랐습니다.
+//   · 미처리(접수 후 기준일 초과) 건 — 홈 타일 숫자와 빨간 배지
+//   · 승인 필요 종류(보상·감면)가 승인 대기에 걸려 있는 건 — D18
+//   · 이관된 건 — "판단 불가 건은 담당 SV 이관"(운영 원칙)
+// advance_task 의 거절 규칙도 여기 그대로 옮겨 뒀습니다. 화면이 규칙을
+// 흉내내지 않고 함수의 사유를 그대로 보여주는지 확인하려면 데모 쪽도
+// 똑같이 거절해야 하기 때문입니다.
+function tsOffset(days) {
+    return new Date(Date.now() + days * 86400_000).toISOString();
+}
+
+const DEMO_TASK_KINDS = [
+    { kind: "inquiry", name: "가맹점 문의", needs_approval: false, enabled: true },
+    { kind: "visit_followup", name: "방문·점검 후속", needs_approval: false, enabled: true },
+    { kind: "compensation", name: "보상·감면", needs_approval: true, enabled: true },
+];
+
+const DEMO_OVERDUE_DAYS = 7;   // task_settings 의 데모용 미러(실제 값은 표에 있음)
+
+let demoTasks = [
+    { id: 1, kind: "inquiry", title: "포스 영수증 출력 불량 문의", body: "용지를 갈아도 흐리게 나옵니다.",
+      store: "샘플02점", source: "phone", status: "in_progress", assigned_to: "김SV",
+      created_at: tsOffset(-11) },
+    { id: 2, kind: "compensation", title: "배달 지연 보상 요청", body: "라이더 배차 지연 40분.",
+      store: "샘플05점", source: "kakao", status: "waiting_approval", assigned_to: "박매니저",
+      created_at: tsOffset(-9) },
+    { id: 3, kind: "inquiry", title: "메뉴판 교체 일정 문의", body: null,
+      store: "샘플11점", source: "web", status: "escalated", assigned_to: null,
+      created_at: tsOffset(-3) },
+    { id: 4, kind: "visit_followup", title: "냉장고 온도계 교체 필요", body: "방문점검 특이사항에서 이어짐.",
+      store: "샘플07점", source: "auto", status: "received", assigned_to: null,
+      created_at: tsOffset(-1) },
+    { id: 5, kind: "inquiry", title: "영업시간 변경 신고", body: null,
+      store: "샘플03점", source: "web", status: "done", assigned_to: "김SV",
+      created_at: tsOffset(-20) },
+];
+let nextTaskId = 6;
+
+let demoTaskEvents = [
+    { id: 1, task_id: 1, from: "received", to: "in_progress", note: null,
+      approval_kind: null, preauth_id: null, created_at: tsOffset(-10) },
+    { id: 2, task_id: 2, from: "received", to: "waiting_approval", note: "금액 3만원",
+      approval_kind: null, preauth_id: null, created_at: tsOffset(-8) },
+    { id: 3, task_id: 3, from: "received", to: "escalated", note: "본사 기준 확인 필요 — 최SV",
+      approval_kind: null, preauth_id: null, created_at: tsOffset(-2) },
+    { id: 4, task_id: 5, from: "received", to: "done", note: null,
+      approval_kind: null, preauth_id: null, created_at: tsOffset(-19) },
+];
+let nextTaskEventId = 5;
+
+let demoPreauths = [
+    { id: 1, kind: "compensation", scope: "배달 지연 보상 3만원 이하",
+      note: "3만원 이하 지연 보상은 승인된 내용입니다. 바로 처리하세요.",
+      created_at: tsOffset(-5), revoked_at: null },
+    { id: 2, kind: null, scope: "여름 성수기 위생용품 지원 (7월분)",
+      note: "7월 한정 승인 건. 8월부터는 다시 결재.",
+      created_at: tsOffset(-30), revoked_at: tsOffset(-2) },
+];
+let nextPreauthId = 3;
+
+function taskIsOverdue(t) {
+    return !["done", "rejected"].includes(t.status)
+        && Date.now() - new Date(t.created_at).getTime() > DEMO_OVERDUE_DAYS * 86400_000;
+}
+
+function computeTasks({ p_status, p_store, p_limit }) {
+    return demoTasks
+        .filter((t) => (!p_status || t.status === p_status)
+            && (!p_store || t.store === p_store))
+        .sort((a, b) => b.created_at.localeCompare(a.created_at) || (b.id - a.id))
+        .slice(0, p_limit || 200)
+        .map((t) => ({
+            task_id: t.id, kind: t.kind,
+            kind_name: DEMO_TASK_KINDS.find((k) => k.kind === t.kind)?.name || t.kind,
+            title: t.title, body: t.body,
+            store_id: null, store_name: t.store,
+            source: t.source, visit_id: null, status: t.status,
+            assigned_to: t.assigned_to,
+            created_at: t.created_at, updated_at: t.created_at,
+            age_days: Math.floor((Date.now() - new Date(t.created_at).getTime()) / 86400_000),
+            overdue: taskIsOverdue(t),
+        }));
+}
+
+function computeTasksSummary() {
+    const byStatus = {};
+    for (const t of demoTasks) byStatus[t.status] = (byStatus[t.status] || 0) + 1;
+    return {
+        by_status: byStatus,
+        overdue: demoTasks.filter(taskIsOverdue).length,
+        overdue_days: DEMO_OVERDUE_DAYS,
+    };
+}
+
+const TASK_STATUSES = {
+    received: 1, in_progress: 1, waiting_approval: 1, escalated: 1, done: 1, rejected: 1,
+};
+
+// 30_tasks.sql advance_task() 의 거절 규칙을 그대로 옮긴 것입니다.
+function demoAdvanceTask({ p_task_id, p_to_status, p_note, p_preauth_id }) {
+    const task = demoTasks.find((t) => t.id === Number(p_task_id));
+    if (!task) return { ok: false, reason: "업무를 찾지 못했습니다" };
+    if (["done", "rejected"].includes(task.status)) {
+        return { ok: false, reason: "이미 끝난 업무입니다" };
+    }
+    if (!Object.prototype.hasOwnProperty.call(TASK_STATUSES, p_to_status)) {
+        return { ok: false, reason: "모르는 상태입니다: " + (p_to_status || "(없음)") };
+    }
+    if (p_to_status === task.status) return { ok: false, reason: "이미 그 상태입니다" };
+
+    if (p_preauth_id != null) {
+        const preauth = demoPreauths.find((p) => p.id === Number(p_preauth_id));
+        if (!preauth) return { ok: false, reason: "사전 고지를 찾지 못했습니다" };
+        if (preauth.revoked_at) return { ok: false, reason: "이미 철회된 고지입니다" };
+        if (preauth.kind && preauth.kind !== task.kind) {
+            return { ok: false, reason: "이 업무 종류에 해당하는 고지가 아닙니다" };
+        }
+    }
+
+    let approvalKind = null;
+    if (p_to_status === "done"
+        && DEMO_TASK_KINDS.find((k) => k.kind === task.kind)?.needs_approval) {
+        if (task.status === "waiting_approval") {
+            approvalKind = p_preauth_id == null ? "manual" : "preauthorized";
+        } else if (p_preauth_id != null) {
+            approvalKind = "preauthorized";
+        } else {
+            return { ok: false, reason:
+                "승인이 필요한 업무입니다 — 승인 대기로 보내거나 사전 고지(D35)를 대세요" };
+        }
+    }
+
+    const from = task.status;
+    task.status = p_to_status;
+    demoTaskEvents.push({
+        id: nextTaskEventId++, task_id: task.id, from, to: p_to_status,
+        note: (p_note || "").trim() || null,
+        approval_kind: approvalKind,
+        preauth_id: p_preauth_id == null ? null : Number(p_preauth_id),
+        created_at: new Date().toISOString(),
+    });
+    return { ok: true, task_id: task.id, from, to: p_to_status, approval_kind: approvalKind };
+}
+
 const HANDLERS = {
     api_filters: () => [{
         ym_min: MONTHS[0],
@@ -1191,6 +1337,26 @@ const HANDLERS = {
     api_store_lifecycle: ({ p_store, p_limit }) => computeStoreLifecycle(p_store || null, p_limit),
     api_store_lifecycle_status: ({ p_status }) => computeLifecycleStatus(p_status || null),
     api_store_lifecycle_summary: ({ p_year }) => computeLifecycleSummary(p_year || null),
+
+    api_tasks: (args) => computeTasks(args),
+    api_tasks_summary: () => computeTasksSummary(),
+    api_task_events: ({ p_task_id }) => demoTaskEvents
+        .filter((e) => e.task_id === Number(p_task_id))
+        .sort((a, b) => a.id - b.id)
+        .map((e) => ({
+            event_id: e.id, from: e.from, to: e.to, note: e.note,
+            approval_kind: e.approval_kind, preauth_id: e.preauth_id,
+            preauth_scope: demoPreauths.find((p) => p.id === e.preauth_id)?.scope || null,
+            created_at: e.created_at,
+        })),
+    advance_task: (args) => demoAdvanceTask(args),
+    revoke_task_preauthorization: ({ p_preauth_id }) => {
+        const preauth = demoPreauths.find((p) => p.id === Number(p_preauth_id));
+        if (!preauth) return { ok: false, reason: "고지를 찾지 못했습니다" };
+        if (preauth.revoked_at) return { ok: false, reason: "이미 철회된 고지입니다" };
+        preauth.revoked_at = new Date().toISOString();
+        return { ok: true, preauth_id: preauth.id };
+    },
 };
 
 export function demoClient() {
@@ -1229,24 +1395,34 @@ export function demoClient() {
         },
     ];
 
+    // 표를 그대로 읽는 화면들이 쓰는 픽스처. 이름이 안 걸리면 마지막 업로드
+    // 시각(가장 흔한 용도)을 돌려주던 원래 동작을 그대로 뒀습니다.
+    const demoTableRows = (table) => {
+        switch (table) {
+            case "collect_requests":
+                return [...requests].sort((a, b) => b.id - a.id);
+            case "runner_status":
+                return [{
+                    last_seen_at: new Date().toISOString(),
+                    hostname: "DEMO-PC", busy: false, current_note: "대기 중",
+                }];
+            case "stores":
+                return STORES.map((s) => ({ id: s.id, name: s.name }))
+                    .sort((a, b) => a.name.localeCompare(b.name));
+            case "task_kinds":
+                return DEMO_TASK_KINDS;
+            case "task_preauthorizations":
+                return [...demoPreauths];
+            default:
+                return [{ uploaded_at: new Date().toISOString() }];
+        }
+    };
+
     const builder = (table) => {
         const chain = {
             select: () => chain,
             order: () => chain,
-            limit: () => Promise.resolve({
-                data: table === "collect_requests"
-                    ? [...requests].sort((a, b) => b.id - a.id)
-                    : table === "runner_status"
-                        ? [{
-                            last_seen_at: new Date().toISOString(),
-                            hostname: "DEMO-PC", busy: false, current_note: "대기 중",
-                        }]
-                        : table === "stores"
-                            ? STORES.map((s) => ({ id: s.id, name: s.name }))
-                                .sort((a, b) => a.name.localeCompare(b.name))
-                            : [{ uploaded_at: new Date().toISOString() }],
-                error: null,
-            }),
+            limit: () => Promise.resolve({ data: demoTableRows(table), error: null }),
             insert: async (row) => {
                 if (table === "violation_events") {
                     const store = STORES.find((s) => s.id === Number(row.store_id));
@@ -1285,6 +1461,32 @@ export function demoClient() {
                         event_type: row.event_type,
                         event_date: row.event_date,
                         note: row.note || null,
+                    });
+                    return { data: null, error: null };
+                }
+                if (table === "tasks") {
+                    const store = STORES.find((s) => s.id === Number(row.store_id));
+                    demoTasks.push({
+                        id: nextTaskId++,
+                        kind: row.kind,
+                        title: row.title,
+                        body: row.body || null,
+                        store: store ? store.name : null,
+                        source: row.source || "web",
+                        status: "received",
+                        assigned_to: row.assigned_to || null,
+                        created_at: new Date().toISOString(),
+                    });
+                    return { data: null, error: null };
+                }
+                if (table === "task_preauthorizations") {
+                    demoPreauths.push({
+                        id: nextPreauthId++,
+                        kind: row.kind || null,
+                        scope: row.scope,
+                        note: row.note || null,
+                        created_at: new Date().toISOString(),
+                        revoked_at: null,
                     });
                     return { data: null, error: null };
                 }

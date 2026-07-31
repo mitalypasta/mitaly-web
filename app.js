@@ -283,6 +283,7 @@ async function initDashboard() {
     initNotices();
     initVisits();
     initLifecycle();
+    initTasks();
     loadAccountHealth();
 
     await load();
@@ -3051,6 +3052,463 @@ async function refreshLifecycleHistory() {
         ]));
 }
 
+// ================================================================ 업무 (11번 영역)
+//
+// 30_tasks.sql 위의 화면입니다. 매출 축과 그레인이 달라(접수 건 단위) 위쪽
+// 기간·매장 필터를 따르지 않습니다 — initVisits·initLifecycle 과 같은 이유로
+// load() 묶음에 넣지 않고 한 번만 받은 뒤, 무언가를 바꿨을 때만 다시 받습니다.
+//
+// [상태를 왜 함수로만 옮기는가]
+//   advance_task() 가 유일한 통로입니다(30_tasks 설계 판단 [3]). 화면에서
+//   tasks 를 직접 update 하면 이력 없이 상태만 바뀐 행이 생깁니다 — 이 축의
+//   존재 이유가 이력이라 그 구멍을 만들지 않습니다.
+//
+// [승인 강제(D18)를 화면이 흉내내지 않습니다]
+//   '완료' 를 눌러 거절당하면 그 사유를 그대로 보여줍니다. 화면이 미리 막으면
+//   규칙이 두 군데(SQL·JS)에 생기고, 본사가 task_kinds 를 고쳐도 화면은
+//   옛 규칙으로 막습니다. 판정은 한 곳에서만 합니다.
+
+const TASK_STATUS_LABEL = {
+    received: "접수",
+    in_progress: "처리 중",
+    waiting_approval: "승인 대기",
+    escalated: "이관",
+    done: "완료",
+    rejected: "반려",
+};
+
+const TASK_SOURCE_LABEL = {
+    web: "웹", kakao: "카카오", phone: "전화", sms: "문자", auto: "자동",
+};
+
+let taskKinds = [];        // task_kinds 표. 종류 select 와 승인 필요 여부에 씁니다.
+let taskPreauths = [];     // task_preauthorizations 표(철회된 것 포함 — 표에 같이 보입니다).
+let taskRows = [];         // 마지막으로 받은 목록. 필터는 이것만 다시 그립니다.
+
+// 어느 버튼을 보여줄지. '승인 요청' 은 승인이 필요한 종류에서만 뜻이 있습니다.
+function taskActions(status, needsApproval) {
+    switch (status) {
+        case "received":
+            return [["in_progress", "처리 시작"], ["escalated", "이관"], ["rejected", "반려"]];
+        case "in_progress":
+            return [
+                ...(needsApproval ? [["waiting_approval", "승인 요청"]] : []),
+                ["done", "완료"], ["escalated", "이관"], ["rejected", "반려"]];
+        case "waiting_approval":
+            return [["done", "승인·완료"], ["rejected", "반려"]];
+        case "escalated":
+            return [["in_progress", "처리 시작"], ["done", "완료"], ["rejected", "반려"]];
+        default:
+            return [];   // done · rejected 는 끝난 업무입니다
+    }
+}
+
+function taskNeedsApproval(kind) {
+    return !!taskKinds.find((k) => k.kind === kind)?.needs_approval;
+}
+
+// 이 업무에 댈 수 있는 살아 있는 고지. 종류를 콕 집은 고지를 먼저 봅니다
+// (종류 무관 고지보다 좁아서 근거로 더 정확합니다).
+function applicablePreauth(kind) {
+    const alive = taskPreauths.filter((p) => !p.revoked_at);
+    return alive.find((p) => p.kind === kind) || alive.find((p) => !p.kind) || null;
+}
+
+async function initTasks() {
+    const { data: kinds } = await db.from("task_kinds").select("kind,name,needs_approval,enabled");
+    taskKinds = (kinds || []).filter((k) => k.enabled !== false);
+    for (const k of taskKinds) {
+        const opt = document.createElement("option");
+        opt.value = k.kind;
+        opt.textContent = k.needs_approval ? `${k.name} (승인 필요)` : k.name;
+        $("tk-kind").append(opt);
+
+        const paOpt = document.createElement("option");
+        paOpt.value = k.kind;
+        paOpt.textContent = k.name;
+        $("pa-kind").append(paOpt);
+    }
+
+    const { data: stores } = await db.from("stores").select("id,name").order("name");
+    for (const s of stores || []) {
+        const opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = s.name;
+        $("tk-store").append(opt);
+
+        const filterOpt = document.createElement("option");
+        filterOpt.value = s.name;      // api_tasks 의 p_store 는 매장 이름입니다
+        filterOpt.textContent = s.name;
+        $("tk-filter-store").append(filterOpt);
+    }
+
+    $("tk-submit").addEventListener("click", submitTask);
+    $("pa-submit").addEventListener("click", submitPreauth);
+    // 상태·매장은 서버에서 걸러야 하고(200건 상한 안쪽으로 좁히려고),
+    // '미처리만' 은 이미 받아 둔 것을 다시 그리기만 합니다.
+    $("tk-filter-status").addEventListener("change", refreshTaskList);
+    $("tk-filter-store").addEventListener("change", refreshTaskList);
+    $("tk-filter-overdue").addEventListener("change", drawTaskList);
+    initTaskActions();
+    initPreauthActions();
+
+    await Promise.all([refreshTasksSummary(), refreshTaskList(), refreshPreauths()]);
+}
+
+async function refreshTasksSummary() {
+    const { data, error } = await db.rpc("api_tasks_summary");
+    if (error) {
+        $("tasks-summary-meta").textContent = "불러오지 못했습니다: " + error.message;
+        return;
+    }
+    const by = data.by_status || {};
+    $("tk-overdue").textContent = int(data.overdue);
+    $("tk-overdue-sub").textContent = `접수 후 ${int(data.overdue_days)}일이 지나도록 끝나지 않은 건`;
+    $("tk-received").textContent = int(by.received);
+    $("tk-in-progress").textContent = int(by.in_progress);
+    $("tk-waiting").textContent = int(by.waiting_approval);
+    $("tk-escalated").textContent = int(by.escalated);
+    $("tasks-summary-meta").textContent =
+        `미처리 기준 ${int(data.overdue_days)}일 — 본사가 정합니다`;
+
+    // 홈 '오늘 할 일' 타일. 같은 숫자를 두 번 묻지 않으려고 여기서 같이 채웁니다.
+    const homeTasks = $("home-tasks");
+    if (homeTasks) {
+        homeTasks.textContent = int(data.overdue);
+        $("home-tasks-sub").textContent =
+            `접수 후 ${int(data.overdue_days)}일이 지난 건 (전체 기간)`;
+    }
+}
+
+async function refreshTaskList() {
+    const status = $("tk-filter-status").value;
+    const store = $("tk-filter-store").value;
+    const { data, error } = await db.rpc("api_tasks", {
+        // 'open'(진행 중)은 한 상태가 아니라 묶음이라 서버에 넘기지 않고
+        // 아래에서 걸러냅니다. api_tasks 는 상태 하나만 받습니다.
+        p_status: status && status !== "open" ? status : null,
+        p_store: store || null,
+        p_limit: 200,
+    });
+    if (error) {
+        taskRows = [];
+        $("t-tasks").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
+        return;
+    }
+    taskRows = Array.isArray(data) ? data : [];
+    drawTaskList();
+}
+
+function drawTaskList() {
+    const openOnly = $("tk-filter-status").value === "open";
+    const overdueOnly = $("tk-filter-overdue").checked;
+    const rows = taskRows.filter((t) =>
+        (!openOnly || !["done", "rejected"].includes(t.status)) &&
+        (!overdueOnly || t.overdue));
+
+    $("task-list-summary").textContent = `${int(rows.length)}건`;
+    $("tk-shown").textContent = rows.length === taskRows.length
+        ? "" : `전체 ${int(taskRows.length)}건 중 ${int(rows.length)}건`;
+
+    if (!rows.length) {
+        $("t-tasks").innerHTML =
+            '<p class="hint">해당하는 업무가 없습니다. 위 폼에서 접수하면 여기 나타납니다.</p>';
+        return;
+    }
+
+    table($("t-tasks"),
+        ["상태", "종류", "제목", "매장", "담당자", "접수", "경과", "처리"],
+        rows.map((t) => [
+            taskStatusTag(t.status),
+            escape(t.kind_name || t.kind),
+            escape(t.title) + (t.body ? `<div class="meta">${escape(clip(t.body, 60))}</div>` : ""),
+            escape(t.store_name || "—"),
+            escape(t.assigned_to || "—"),
+            `${escape(String(t.created_at).slice(0, 10))}`
+                + `<div class="meta">${escape(TASK_SOURCE_LABEL[t.source] || t.source)}</div>`,
+            t.overdue
+                ? `<span class="tag warn">미처리 ${int(t.age_days)}일</span>`
+                : `${int(t.age_days)}일`,
+            taskActionButtons(t),
+        ]),
+        { html: true });
+}
+
+function taskStatusTag(status) {
+    const label = escape(TASK_STATUS_LABEL[status] || status);
+    if (status === "done") return `<span class="tag up">${label}</span>`;
+    if (status === "waiting_approval" || status === "escalated") {
+        return `<span class="tag h-warn">${label}</span>`;
+    }
+    return `<span class="tag">${label}</span>`;
+}
+
+function taskActionButtons(t) {
+    const needsApproval = taskNeedsApproval(t.kind);
+    const buttons = taskActions(t.status, needsApproval).map(([to, label]) =>
+        `<button class="ghost" data-act="task-advance" data-task-id="${t.task_id}"`
+        + ` data-to="${to}">${escape(label)}</button>`);
+
+    // D35 — 승인이 필요한 건을 살아 있는 고지로 바로 완료. 승인 대기 상태는
+    // 이미 '승인·완료' 가 있으므로 그때는 붙이지 않습니다.
+    if (needsApproval && !["done", "rejected", "waiting_approval"].includes(t.status)) {
+        const preauth = applicablePreauth(t.kind);
+        if (preauth) {
+            buttons.push(
+                `<button class="ghost" data-act="task-advance" data-task-id="${t.task_id}"`
+                + ` data-to="done" data-preauth-id="${preauth.id}">고지로 완료</button>`);
+        }
+    }
+
+    buttons.push(`<button class="ghost" data-act="task-events" data-task-id="${t.task_id}"`
+        + ` data-task-title="${escape(t.title)}">이력</button>`);
+    return buttons.join(" ");
+}
+
+// 목록은 매번 새로 그려지므로 컨테이너에 한 번만 위임합니다
+// (initViolationResolve·initDrafts 와 같은 패턴).
+function initTaskActions() {
+    $("t-tasks").addEventListener("click", async (event) => {
+        const historyButton = event.target.closest("button[data-act='task-events']");
+        if (historyButton) {
+            await showTaskEvents(Number(historyButton.dataset.taskId),
+                historyButton.dataset.taskTitle);
+            return;
+        }
+
+        const button = event.target.closest("button[data-act='task-advance']");
+        if (!button) return;
+
+        const taskId = Number(button.dataset.taskId);
+        const to = button.dataset.to;
+        const preauthId = button.dataset.preauthId ? Number(button.dataset.preauthId) : null;
+
+        // 이관·반려는 사유가 곧 다음 사람이 읽을 내용이라 받아 둡니다.
+        let note = null;
+        if (to === "escalated") {
+            note = window.prompt("누구에게 왜 넘기는지 적어 주세요. 이력에 남습니다.", "");
+            if (note === null) return;
+        } else if (to === "rejected") {
+            note = window.prompt("반려 사유를 적어 주세요. 이력에 남습니다.", "");
+            if (note === null) return;
+        }
+
+        if (preauthId) {
+            const preauth = taskPreauths.find((p) => p.id === preauthId);
+            const ok = window.confirm(
+                `사전 고지 「${preauth?.scope || preauthId}」를 근거로 완료 처리합니다.`);
+            if (!ok) return;
+        }
+
+        const label = button.textContent;
+        button.disabled = true;
+        button.textContent = "처리 중…";
+
+        const { data, error } = await db.rpc("advance_task", {
+            p_task_id: taskId,
+            p_to_status: to,
+            p_note: note && note.trim() ? note.trim() : null,
+            p_preauth_id: preauthId,
+        });
+
+        if (error || (data && data.ok === false)) {
+            // 승인 강제(D18)에 걸린 경우도 여기로 옵니다 — 함수가 준 사유를
+            // 그대로 보여줍니다. 무엇을 해야 하는지가 사유 안에 있습니다.
+            window.alert(error ? error.message : (data.reason || "옮기지 못했습니다"));
+            button.disabled = false;
+            button.textContent = label;
+            return;
+        }
+
+        await Promise.all([refreshTasksSummary(), refreshTaskList()]);
+        if (!$("task-events-panel").hidden
+            && Number($("task-events-panel").dataset.taskId) === taskId) {
+            await showTaskEvents(taskId, $("task-events-panel").dataset.taskTitle);
+        }
+    });
+}
+
+async function showTaskEvents(taskId, title) {
+    const panel = $("task-events-panel");
+    panel.hidden = false;
+    panel.dataset.taskId = String(taskId);
+    panel.dataset.taskTitle = title || "";
+    $("task-events-title").textContent = `이력 — ${title || `#${taskId}`}`;
+
+    const { data, error } = await db.rpc("api_task_events", { p_task_id: taskId });
+    if (error) {
+        $("t-task-events").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
+        return;
+    }
+    const list = Array.isArray(data) ? data : [];
+    if (!list.length) {
+        $("t-task-events").innerHTML =
+            '<p class="hint">접수 이후 아직 상태가 바뀌지 않았습니다.</p>';
+        return;
+    }
+
+    table($("t-task-events"),
+        ["시각", "전이", "승인 근거", "메모"],
+        list.map((e) => [
+            String(e.created_at).slice(0, 16).replace("T", " "),
+            `${TASK_STATUS_LABEL[e.from] || e.from} → ${TASK_STATUS_LABEL[e.to] || e.to}`,
+            e.approval_kind === "preauthorized"
+                ? `사전 고지: ${e.preauth_scope || `#${e.preauth_id}`}`
+                : (e.approval_kind === "manual" ? "승인 대기를 거침" : "—"),
+            e.note || "—",
+        ]));
+    panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function submitTask() {
+    const notice = $("tk-notice");
+    const button = $("tk-submit");
+    const title = $("tk-title").value.trim();
+
+    if (!title) {
+        notice.className = "notice error";
+        notice.textContent = "제목은 필수입니다.";
+        return;
+    }
+
+    button.disabled = true;
+    notice.className = "notice";
+    notice.textContent = "접수하는 중…";
+
+    const { data: { session } } = await db.auth.getSession();
+    const storeId = $("tk-store").value;
+    const { error } = await db.from("tasks").insert({
+        kind: $("tk-kind").value,
+        title,
+        body: $("tk-body").value.trim() || null,
+        store_id: storeId ? Number(storeId) : null,
+        source: $("tk-source").value,
+        assigned_to: $("tk-assigned").value.trim() || null,
+        created_by: session?.user?.id,
+    });
+
+    button.disabled = false;
+    if (error) {
+        notice.className = "notice error";
+        notice.textContent = "접수하지 못했습니다: " + error.message;
+        return;
+    }
+
+    notice.className = "notice";
+    notice.textContent = "접수했습니다.";
+    $("tk-title").value = "";
+    $("tk-body").value = "";
+    await Promise.all([refreshTasksSummary(), refreshTaskList()]);
+}
+
+// 고지는 건수가 적어(담당자가 직접 남기는 문장) jsonb 조회 함수를 따로 두지
+// 않고 표를 그대로 읽습니다. RLS 는 읽기 허용, 철회는 함수로만입니다.
+async function refreshPreauths() {
+    const { data, error } = await db.from("task_preauthorizations")
+        .select("id,kind,scope,note,created_at,revoked_at").order("id").limit(50);
+    if (error) {
+        $("t-preauths").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
+        return;
+    }
+    taskPreauths = (Array.isArray(data) ? data : [])
+        .slice().sort((a, b) => b.id - a.id);
+
+    const alive = taskPreauths.filter((p) => !p.revoked_at).length;
+    $("preauth-summary").textContent = `사용 중 ${int(alive)}건 · 전체 ${int(taskPreauths.length)}건`;
+
+    if (!taskPreauths.length) {
+        $("t-preauths").innerHTML =
+            '<p class="hint">등록된 고지가 없습니다. 지금은 승인이 필요한 업무가 모두 승인 대기를 거칩니다.</p>';
+        return;
+    }
+
+    const kindName = (kind) =>
+        kind ? (taskKinds.find((k) => k.kind === kind)?.name || kind) : "종류 무관";
+
+    table($("t-preauths"),
+        ["범위", "적용 종류", "고지 원문", "등록", "상태"],
+        taskPreauths.map((p) => [
+            escape(p.scope),
+            escape(kindName(p.kind)),
+            escape(p.note || "—"),
+            escape(String(p.created_at).slice(0, 10)),
+            p.revoked_at
+                ? `<span class="tag">철회됨 ${escape(String(p.revoked_at).slice(0, 10))}</span>`
+                : '<span class="tag up">사용 중</span> '
+                  + `<button class="ghost" data-act="revoke-preauth" data-preauth-id="${p.id}">철회</button>`,
+        ]),
+        { html: true });
+}
+
+function initPreauthActions() {
+    $("t-preauths").addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-act='revoke-preauth']");
+        if (!button) return;
+
+        const preauthId = Number(button.dataset.preauthId);
+        const ok = window.confirm(
+            "이 고지를 철회하면 해당 업무는 다시 승인 대기를 거칩니다. 철회할까요?");
+        if (!ok) return;
+
+        button.disabled = true;
+        button.textContent = "처리 중…";
+
+        const { data, error } = await db.rpc("revoke_task_preauthorization",
+            { p_preauth_id: preauthId });
+        if (error || (data && data.ok === false)) {
+            window.alert(error ? error.message : (data.reason || "철회하지 못했습니다"));
+            button.disabled = false;
+            button.textContent = "철회";
+            return;
+        }
+
+        // 철회하면 '고지로 완료' 버튼이 사라져야 하므로 목록도 다시 그립니다.
+        await refreshPreauths();
+        drawTaskList();
+    });
+}
+
+async function submitPreauth() {
+    const notice = $("pa-notice");
+    const button = $("pa-submit");
+    const scope = $("pa-scope").value.trim();
+
+    if (!scope) {
+        notice.className = "notice error";
+        notice.textContent = "승인 범위는 필수입니다 — 무엇이 승인됐는지 한 줄로 적어 주세요.";
+        return;
+    }
+
+    button.disabled = true;
+    notice.className = "notice";
+    notice.textContent = "등록하는 중…";
+
+    const { data: { session } } = await db.auth.getSession();
+    const { error } = await db.from("task_preauthorizations").insert({
+        kind: $("pa-kind").value || null,
+        scope,
+        note: $("pa-note").value.trim() || null,
+        created_by: session?.user?.id,
+    });
+
+    button.disabled = false;
+    if (error) {
+        notice.className = "notice error";
+        notice.textContent = "등록하지 못했습니다: " + error.message;
+        return;
+    }
+
+    notice.className = "notice";
+    notice.textContent = "등록했습니다.";
+    $("pa-scope").value = "";
+    $("pa-note").value = "";
+    await refreshPreauths();
+    drawTaskList();
+}
+
 // api_filters 가 준 데이터 범위(최소/최대 연월). initExport 기본값에 씁니다.
 let filterRange = null;
 
@@ -3134,6 +3592,7 @@ function initAreas() {
 // 데이터를 다시 그리기만 합니다) — 홈 화면이 그 규칙을 새로 만들지 않습니다.
 function initHomeTiles() {
     const targets = {
+        "home-tile-tasks": "task-list-card",
         "home-tile-drafts": "review-card",
         "home-tile-negative": "review-card",
         "home-tile-declining": "alerts-card",
@@ -3150,6 +3609,10 @@ function initHomeTiles() {
             if (tileId === "home-tile-declining") {
                 $("alerts-only").checked = true;
                 $("alerts-only").dispatchEvent(new Event("change"));
+            }
+            if (tileId === "home-tile-tasks") {
+                $("tk-filter-overdue").checked = true;
+                $("tk-filter-overdue").dispatchEvent(new Event("change"));
             }
             requestAnimationFrame(() => {
                 document.getElementById(cardId)?.scrollIntoView({ behavior: "smooth", block: "start" });

@@ -47,6 +47,7 @@
          카드의 data-area 만 더하면 됩니다. -->
     <nav class="sidenav" id="sidenav" aria-label="업무 영역">
         <button class="navitem is-on" data-go="home" type="button">🏠 홈</button>
+        <button class="navitem" data-go="tasks" type="button">✅ 업무</button>
         <button class="navitem" data-go="sales" type="button">📊 매출</button>
         <button class="navitem" data-go="reviews" type="button">⭐ 리뷰</button>
         <button class="navitem" data-go="stores" type="button">🏪 매장 정보</button>
@@ -378,6 +379,11 @@
             화면으로 이동합니다.
         </p>
         <div class="kpis" id="home-tiles">
+            <button type="button" class="tile hometile" id="home-tile-tasks" data-go-target="tasks">
+                <div class="label">미처리 업무</div>
+                <div class="value" id="home-tasks">—</div>
+                <div class="sub" id="home-tasks-sub">접수 후 기준일이 지나도록 끝나지 않은 건 (전체 기간)</div>
+            </button>
             <button type="button" class="tile hometile" id="home-tile-drafts" data-go-target="reviews">
                 <div class="label">승인대기 답글</div>
                 <div class="value" id="home-drafts">—</div>
@@ -846,6 +852,165 @@
             않으면 전 매장 최근 기록을 보여줍니다.
         </p>
         <div class="tableview" id="t-lifecycle"></div>
+    </section>
+
+    <!-- 업무 — 11번 영역(업무 및 보고 자동화). 30_tasks.sql 위에 얹는 화면입니다.
+         이 축은 매출과 그레인이 다릅니다(접수 건 단위). 그래서 위쪽 기간·매장
+         필터를 따르지 않습니다 — 방문·점검, 오픈·폐점과 같은 이유입니다.
+         1번(문의 응대)이 만들어지면 판단 불가 건이 '이관' 상태로 여기 들어옵니다. -->
+    <section data-area="tasks" class="card full" id="tasks-summary-card">
+        <header>
+            <h2>업무 현황</h2>
+            <span class="meta" id="tasks-summary-meta"></span>
+        </header>
+        <div class="kpis">
+            <div class="tile hero">
+                <div class="label">미처리</div>
+                <div class="value" id="tk-overdue">—</div>
+                <div class="sub" id="tk-overdue-sub"></div>
+            </div>
+            <div class="tile">
+                <div class="label">접수</div>
+                <div class="value" id="tk-received">—</div>
+                <div class="sub">아직 아무도 잡지 않은 건</div>
+            </div>
+            <div class="tile">
+                <div class="label">처리 중</div>
+                <div class="value" id="tk-in-progress">—</div>
+            </div>
+            <div class="tile">
+                <div class="label">승인 대기</div>
+                <div class="value" id="tk-waiting">—</div>
+                <div class="sub">금전·계약·법무·보상 건</div>
+            </div>
+            <div class="tile">
+                <div class="label">이관</div>
+                <div class="value" id="tk-escalated">—</div>
+                <div class="sub">판단 불가로 담당 SV에게 넘긴 건</div>
+            </div>
+        </div>
+    </section>
+
+    <section data-area="tasks" class="card full" id="task-form-card">
+        <header>
+            <h2>업무 접수</h2>
+            <span class="meta">접수하면 아래 목록 맨 위에 나타납니다</span>
+        </header>
+        <p class="hint">
+            업무 종류와 '승인 필요' 여부는 본사가 정합니다. 승인이 필요한 종류는
+            완료로 보낼 때 승인 대기를 거치거나, 아래 사전 고지를 근거로 댑니다.
+        </p>
+        <div class="reqform">
+            <div class="field">
+                <label for="tk-kind">종류</label>
+                <select id="tk-kind"></select>
+            </div>
+            <div class="field">
+                <label for="tk-store">매장</label>
+                <select id="tk-store"><option value="">매장 무관</option></select>
+            </div>
+            <div class="field">
+                <label for="tk-source">접수 창구</label>
+                <select id="tk-source">
+                    <option value="web">웹</option>
+                    <option value="phone">전화</option>
+                    <option value="kakao">카카오</option>
+                    <option value="sms">문자</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="tk-assigned">담당자</label>
+                <input type="text" id="tk-assigned" placeholder="예: 김SV">
+            </div>
+        </div>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="tk-title">제목</label>
+                <input type="text" id="tk-title" placeholder="예: 포스 영수증 출력 불량 문의">
+            </div>
+        </div>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="tk-body">내용</label>
+                <input type="text" id="tk-body" placeholder="선택 입력">
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" id="tk-submit">업무 접수</button>
+            </div>
+        </div>
+        <p class="notice" id="tk-notice"></p>
+    </section>
+
+    <section data-area="tasks" class="card full" id="task-list-card">
+        <header>
+            <h2>업무 목록</h2>
+            <span class="meta" id="task-list-summary"></span>
+        </header>
+        <p class="hint">
+            상태 버튼을 누르면 그 전이가 이력으로 남습니다. '이력' 을 누르면
+            그 업무가 지금까지 거쳐 온 상태와 승인 근거를 볼 수 있습니다.
+        </p>
+        <div class="cardsearch">
+            <select id="tk-filter-status">
+                <option value="open">진행 중인 업무</option>
+                <option value="">전체</option>
+                <option value="received">접수</option>
+                <option value="in_progress">처리 중</option>
+                <option value="waiting_approval">승인 대기</option>
+                <option value="escalated">이관</option>
+                <option value="done">완료</option>
+                <option value="rejected">반려</option>
+            </select>
+            <select id="tk-filter-store"><option value="">모든 매장</option></select>
+            <label class="recheck">
+                <input type="checkbox" id="tk-filter-overdue">
+                <span>미처리만</span>
+            </label>
+            <span class="meta" id="tk-shown"></span>
+        </div>
+        <div class="tableview" id="t-tasks"></div>
+        <div id="task-events-panel" hidden>
+            <h3 id="task-events-title"></h3>
+            <div class="tableview" id="t-task-events"></div>
+        </div>
+    </section>
+
+    <!-- 승인 사전 고지 (D35) — 담당자가 '승인된 내용' 이라고 고지한 범위를
+         행으로 남깁니다. 자유 텍스트로 흘리면 어떤 건이 언제 승인됐는지
+         나중에 셀 수 없어 표로 뒀습니다(30_tasks.sql 설계 판단 [2]). -->
+    <section data-area="tasks" class="card full" id="task-preauth-card">
+        <header>
+            <h2>승인 사전 고지</h2>
+            <span class="meta" id="preauth-summary"></span>
+        </header>
+        <p class="hint">
+            고지가 살아 있는 동안에는 승인이 필요한 업무도 승인 대기를 건너뛰고
+            완료로 보낼 수 있으며, 어느 고지를 근거로 삼았는지가 이력에 남습니다.
+            철회하면 그 시점부터 종전대로 승인 대기를 거칩니다.
+        </p>
+        <div class="reqform">
+            <div class="field">
+                <label for="pa-kind">적용 종류</label>
+                <select id="pa-kind"><option value="">종류 무관</option></select>
+            </div>
+            <div class="field grow">
+                <label for="pa-scope">승인 범위</label>
+                <input type="text" id="pa-scope" placeholder="예: 배달 지연 보상 3만원 이하">
+            </div>
+        </div>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="pa-note">고지 원문</label>
+                <input type="text" id="pa-note" placeholder="담당자가 말한 문장 그대로">
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" id="pa-submit">고지 등록</button>
+            </div>
+        </div>
+        <p class="notice" id="pa-notice"></p>
+        <div class="tableview" id="t-preauths"></div>
     </section>
 
     <!-- 매장 선택창 — 기존 프로그램의 '수집 매장 선택'과 같은 역할 -->
