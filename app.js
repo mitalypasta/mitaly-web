@@ -263,7 +263,7 @@ async function initDashboard() {
     $("alerts-only").addEventListener("change", () => lastData && drawAlerts(lastData));
 
     // 리뷰 필터는 서버에서 걸러야 하므로 다시 받습니다.
-    for (const id of ["rv-unanswered", "rv-platform", "rv-rating"]) {
+    for (const id of ["rv-unanswered", "rv-drafts-only", "rv-platform", "rv-rating"]) {
         $(id).addEventListener("change", load);
     }
 
@@ -824,7 +824,12 @@ async function load() {
         //    7개를 넘기면 PostgREST 가 맞는 함수를 못 찾아 화면이 통째로 안 뜹니다.
         //    요약이 '미답변 몇 건' 을 세는 지표라 미답변 필터를 걸면 뜻이 없기도 합니다.
         () => db.rpc("api_review_summary", summaryArgs()),
-        () => db.rpc("api_reviews", { ...reviewArgs(), p_limit: 200 }),
+        // '초안만' 필터가 켜지면 더 넓게 가져옵니다 — 하루 수집이 1,000건을
+        // 넘던 날(2026-07-30)엔 초안 달린 리뷰가 최신 200건 밖에 있었습니다.
+        () => db.rpc("api_reviews", {
+            ...reviewArgs(),
+            p_limit: $("rv-drafts-only").checked ? 1000 : 200,
+        }),
         // 급증·급감·기간 대비(18_alerts.sql·19_compare.sql) — 기준월은 '종료'
         // 필터(p_ym_to)입니다. 팩트가 연월 단위까지만 있어(D19) 전월·전년동월
         // 두 가지만 비교합니다. p_store 는 알림 목록·매장별 대비에만 걸리고,
@@ -1081,7 +1086,11 @@ function ratingStars(value) {
 
 function drawReviews(d, c) {
     const summary = d.reviewSummary || {};
-    const rows = d.reviews || [];
+    let rows = d.reviews || [];
+    // 'AI 초안만' — 초안이 붙은 리뷰만 남깁니다 (검토가 목적일 때 매몰 방지)
+    if ($("rv-drafts-only").checked) {
+        rows = rows.filter((r) => (r.drafts || []).length);
+    }
 
     const total = Number(summary.total) || 0;
     $("review-summary").textContent = total
