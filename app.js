@@ -283,6 +283,7 @@ async function initDashboard() {
     initNotices();
     initVisits();
     initLifecycle();
+    loadAccountHealth();
 
     await load();
     loadLastUpdated();
@@ -592,6 +593,59 @@ function timeAgo(seconds) {
     if (seconds < 3600) return `${Math.round(seconds / 60)}분 전`;
     if (seconds < 86400) return `${Math.round(seconds / 3600)}시간 전`;
     return `${Math.round(seconds / 86400)}일 전`;
+}
+
+// ---- 계정 상태 (34_account_health.sql) -------------------------------
+//
+// 러너가 매일 새벽 5채널 로그인만 찔러 본 마지막 결과를 보여줍니다.
+// 하루 한 번 바뀌는 데이터라 화면을 열 때 한 번만 받습니다.
+
+const HEALTH_STATUS = {
+    ok:   { label: "정상", cls: "h-ok" },
+    warn: { label: "주의", cls: "h-warn" },
+    fail: { label: "실패", cls: "h-fail" },
+};
+
+async function loadAccountHealth() {
+    const meta = $("health-meta");
+    const { data, error } = await db.rpc("api_account_health");
+    if (error) {
+        meta.textContent = "불러오지 못했습니다";
+        $("t-health").innerHTML =
+            '<p class="hint">' + escape(error.message) + "</p>";
+        return;
+    }
+    if (!data || !data.run_id) {
+        meta.textContent = "점검 전";
+        $("t-health").innerHTML =
+            '<p class="hint">아직 점검 이력이 없습니다. 수집 PC가 매일 새벽 한 번 ' +
+            "5채널 로그인을 확인해 여기 표시합니다.</p>";
+        return;
+    }
+
+    const results = data.results || [];
+    const count = (s) => results.filter((r) => r.status === s).length;
+    const when = new Date(data.finished_at || data.started_at);
+    meta.textContent =
+        `마지막 점검 ${when.getMonth() + 1}/${when.getDate()} ` +
+        `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}` +
+        ` · 정상 ${count("ok")} · 주의 ${count("warn")} · 실패 ${count("fail")}`;
+
+    const channelName = (id) =>
+        (PLUGIN_LIST.find((p) => p.id === id) || { name: id }).name;
+
+    table($("t-health"),
+        ["채널", "계정", "상태", "내용"],
+        results.map((r) => {
+            const st = HEALTH_STATUS[r.status] || HEALTH_STATUS.fail;
+            return [
+                escape(channelName(r.channel)),
+                escape(r.account || r.store || "—"),
+                `<span class="tag ${st.cls}">${st.label}</span>`,
+                escape(r.detail || ""),
+            ];
+        }),
+        { html: true });
 }
 
 const isoDate = (d) =>

@@ -832,6 +832,12 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
 .tag.up   { color: #fff; background: var(--good); border-color: var(--good); }
 .tag.down { color: #fff; background: var(--critical); border-color: var(--critical); }
 
+/* 계정 상태 점검 — 정상/주의/실패. '주의' 는 로그인은 되지만 조치가 필요한
+   상태(이지포스 5636 등)라 실패의 빨강과 구분되는 호박색을 씁니다. */
+.tag.h-ok   { color: #fff; background: var(--good); border-color: var(--good); }
+.tag.h-warn { color: #fff; background: #b45309; border-color: #b45309; }
+.tag.h-fail { color: #fff; background: var(--critical); border-color: var(--critical); }
+
 /* 증감률 숫자. 색 하나만으로 뜻을 전달하지 않도록 항상 +/- 부호와 같이 씁니다. */
 .pct-up   { color: var(--good); }
 .pct-down { color: var(--critical); }

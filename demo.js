@@ -1157,6 +1157,37 @@ const HANDLERS = {
 
     api_store_visits: ({ p_store, p_limit }) => computeStoreVisits(p_store || null, p_limit),
 
+    // 34_account_health.sql — jsonb 스칼라라 객체를 그대로 돌려줍니다.
+    // 세 상태(ok/warn/fail)가 화면에서 어떻게 보이는지 다 섞어 뒀습니다.
+    api_account_health: () => ({
+        run_id: 1,
+        started_at: new Date(Date.now() - 7200_000).toISOString(),
+        finished_at: new Date(Date.now() - 7100_000).toISOString(),
+        note: "ok 3 · warn 2 · fail 1",
+        results: [
+            { channel: "easypos", account: "굿모닝", store: "",
+              status: "ok", detail: "로그인 성공 (코드 0)",
+              checked_at: new Date(Date.now() - 7150_000).toISOString() },
+            { channel: "easypos", account: "착한통신", store: "",
+              status: "warn",
+              detail: "로그인 성공 · 코드 5636 (비밀번호 정책 경고 — 곧 만료될 수 있음)",
+              checked_at: new Date(Date.now() - 7150_000).toISOString() },
+            { channel: "baemin", account: "", store: "샘플01점",
+              status: "ok", detail: "로그인 성공",
+              checked_at: new Date(Date.now() - 7140_000).toISOString() },
+            { channel: "yogiyo", account: "", store: "샘플02점",
+              status: "ok", detail: "로그인 성공 · 매장 1개",
+              checked_at: new Date(Date.now() - 7130_000).toISOString() },
+            { channel: "coupangeats", account: "", store: "샘플03점",
+              status: "warn",
+              detail: "로그인 성공 · 단, ID 가 계정표에 숫자 서식 (앞자리 0 소실 위험)",
+              checked_at: new Date(Date.now() - 7120_000).toISOString() },
+            { channel: "imu", account: "", store: "",
+              status: "fail", detail: "로그인은 됐지만 조회 화면 진입 실패",
+              checked_at: new Date(Date.now() - 7110_000).toISOString() },
+        ],
+    }),
+
     api_store_lifecycle: ({ p_store, p_limit }) => computeStoreLifecycle(p_store || null, p_limit),
     api_store_lifecycle_status: ({ p_status }) => computeLifecycleStatus(p_status || null),
     api_store_lifecycle_summary: ({ p_year }) => computeLifecycleSummary(p_year || null),
