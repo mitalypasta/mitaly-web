@@ -2499,6 +2499,34 @@ async function initNotices() {
 // 한 번만 위임해 둡니다(초안 승인/반려와 같은 패턴, initDrafts 참고).
 function initViolationResolve() {
     $("t-violations").addEventListener("click", async (event) => {
+        // 발송 승인 요청 (39_notice_tasks) — 판정 단계는 서버가 다시 세므로
+        // 여기서는 위반 번호만 보냅니다.
+        const noticeButton = event.target.closest("button[data-act='notice-task']");
+        if (noticeButton) {
+            noticeButton.disabled = true;
+            noticeButton.textContent = "요청 중…";
+            const { data, error } = await db.rpc("create_notice_send_task",
+                { p_event_id: Number(noticeButton.dataset.eventId) });
+            if (error || (data && data.ok === false)) {
+                window.alert(error ? error.message : (data.reason || "요청하지 못했습니다"));
+                noticeButton.disabled = false;
+                noticeButton.textContent = "발송 승인 요청";
+                // 이미 흐름에 있다는 거절이면 배지가 그려지도록 다시 받습니다.
+                if (!error && data.task_id) await refreshViolations();
+                return;
+            }
+            // 업무 화면 쪽 숫자(승인 대기 타일·목록)도 같이 새로 그립니다.
+            await Promise.all([refreshViolations(), refreshTasksSummary(), refreshTaskList()]);
+            return;
+        }
+        const goButton = event.target.closest("button[data-act='notice-task-go']");
+        if (goButton) {
+            showArea("tasks");
+            $("tk-filter-status").value = "waiting_approval";
+            $("tk-filter-status").dispatchEvent(new Event("change"));
+            return;
+        }
+
         const button = event.target.closest("button[data-act='resolve']");
         if (!button) return;
 
@@ -2684,13 +2712,26 @@ async function submitViolation() {
 // (14_reply_drafts.sql 의 approve_reply_draft 등과 같은 모양, D10 조회 규칙은
 // 그대로 지키되 반환 형태만 다름).
 async function refreshViolations() {
-    const { data, error } = await db.rpc("api_notice_stage_status", { p_store: null });
+    // 승인 흐름 배지(39_notice_tasks)를 같이 받습니다 — 이미 요청된 건에
+    // 또 요청 버튼을 보여주면 중복 요청을 함수가 거절하는 것으로 끝나지만,
+    // 애초에 버튼이 안 보이는 편이 낫습니다.
+    const [{ data, error }, { data: sendTasks }] = await Promise.all([
+        db.rpc("api_notice_stage_status", { p_store: null }),
+        db.rpc("api_notice_send_tasks"),
+    ]);
     if (error) {
         $("t-violations").innerHTML =
             '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
         return;
     }
     const list = Array.isArray(data) ? data : [];
+    // 위반+단계 → 살아 있는 승인 업무. 반려된 것은 다시 요청할 수 있어야
+    // 하므로 배지로 치지 않습니다(39 설계 판단 [3]과 같은 규칙).
+    const liveTask = new Map();
+    for (const t of (Array.isArray(sendTasks) ? sendTasks : [])) {
+        if (t.task_status === "rejected") continue;
+        liveTask.set(`${t.violation_id}|${t.stage}`, t);
+    }
     $("violation-summary").textContent = list.length ? `${int(list.length)}건 진행 중` : "";
 
     if (!list.length) {
@@ -2711,9 +2752,27 @@ async function refreshViolations() {
                 ? `<span class="flag" title="${escape(v.manual_review_reason || "")}">담당자 확인</span>`
                 : "—",
             v.note ? escape(v.note) : "—",
-            `<button type="button" class="ghost" data-act="resolve" data-event-id="${v.event_id}">종료 처리</button>`,
+            noticeActions(v, liveTask.get(`${v.event_id}|${v.stage}`)),
         ]),
         { html: true });
+}
+
+// 처리 칸: 종료 처리 + (단계 도달 시) 발송 승인 요청 또는 진행 중 배지.
+function noticeActions(v, live) {
+    const resolve = `<button type="button" class="ghost" data-act="resolve"`
+        + ` data-event-id="${v.event_id}">종료 처리</button>`;
+    if (!v.stage) return resolve;
+
+    if (live) {
+        const label = live.task_status === "done"
+            ? "발송 승인됨" : TASK_STATUS_LABEL[live.task_status] || live.task_status;
+        return `<span class="tag${live.task_status === "done" ? " up" : " h-warn"}">`
+            + `${escape(label)}</span> `
+            + `<button type="button" class="ghost" data-act="notice-task-go">업무 보기</button> `
+            + resolve;
+    }
+    return `<button type="button" data-act="notice-task"`
+        + ` data-event-id="${v.event_id}">발송 승인 요청</button> ` + resolve;
 }
 
 function stageTag(stage, label, requiresLegal) {
@@ -3342,6 +3401,8 @@ function initTaskActions() {
         const taskId = Number(button.dataset.taskId);
         const to = button.dataset.to;
         const preauthId = button.dataset.preauthId ? Number(button.dataset.preauthId) : null;
+        // 전이 뒤 어느 화면을 같이 갱신할지 판단하려고 종류를 기억해 둡니다.
+        const moved = taskRows.find((t) => t.task_id === taskId);
 
         // 이관·반려는 사유가 곧 다음 사람이 읽을 내용이라 받아 둡니다.
         let note = null;
@@ -3381,6 +3442,10 @@ function initTaskActions() {
         }
 
         await Promise.all([refreshTasksSummary(), refreshTaskList()]);
+        // 발송 승인 건은 위반·공문 화면의 배지가 이 업무의 상태를 비추므로
+        // 같이 새로 그립니다 — 영역 전환은 다시 조회하지 않아(위 showArea
+        // 원칙) 여기서 안 하면 옛 배지가 남습니다.
+        if (moved?.kind === "notice_send") await refreshViolations();
         if (!$("task-events-panel").hidden
             && Number($("task-events-panel").dataset.taskId) === taskId) {
             await showTaskEvents(taskId, $("task-events-panel").dataset.taskTitle);

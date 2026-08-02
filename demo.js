@@ -579,6 +579,7 @@ const DEMO_TASK_KINDS = [
     { kind: "inquiry", name: "가맹점 문의", needs_approval: false, enabled: true },
     { kind: "visit_followup", name: "방문·점검 후속", needs_approval: false, enabled: true },
     { kind: "compensation", name: "보상·감면", needs_approval: true, enabled: true },
+    { kind: "notice_send", name: "공문·내용증명 발송", needs_approval: true, enabled: true },
 ];
 
 const DEMO_OVERDUE_DAYS = 7;   // task_settings 의 데모용 미러(실제 값은 표에 있음)
@@ -613,6 +614,10 @@ let demoTaskEvents = [
       approval_kind: null, preauth_id: null, created_at: tsOffset(-19) },
 ];
 let nextTaskEventId = 5;
+
+// 발송 승인 흐름 연결(39_notice_tasks.sql). 처음에는 비워 둡니다 —
+// '발송 승인 요청' 버튼을 눌러 생기는 것까지가 화면 확인 대상입니다.
+let demoNoticeSendTasks = [];
 
 let demoPreauths = [
     { id: 1, kind: "compensation", scope: "배달 지연 보상 3만원 이하",
@@ -1332,6 +1337,50 @@ const HANDLERS = {
     // 23_notice_determination.sql — `returns jsonb`(스칼라)라 감싸지 않고
     // 배열을 그대로 돌려줍니다(approve_reply_draft 등과 같은 반환 형태).
     api_notice_stage_status: ({ p_store }) => computeNoticeStatus(p_store || null),
+
+    // ---- 발송 승인 흐름 (39_notice_tasks.sql) — 함수의 거절 규칙 그대로 ----
+    api_notice_send_tasks: () => demoNoticeSendTasks.map((n) => ({
+        violation_id: n.violation_id, stage: n.stage, task_id: n.task_id,
+        task_status: (demoTasks.find((t) => t.id === n.task_id) || {}).status,
+        created_at: n.created_at,
+    })),
+    create_notice_send_task: ({ p_event_id }) => {
+        const row = computeNoticeStatus(null).find((r) => r.event_id === Number(p_event_id));
+        if (!row) {
+            return { ok: false, reason: "진행 중인 위반이 아닙니다 (이미 종료됐거나 없는 건입니다)" };
+        }
+        if (!row.stage) {
+            return { ok: false, reason: "아직 발송 단계에 도달하지 않았습니다 — 판정 단계가 0입니다" };
+        }
+        const live = demoNoticeSendTasks.find((n) =>
+            n.violation_id === Number(p_event_id) && n.stage === row.stage
+            && (demoTasks.find((t) => t.id === n.task_id) || {}).status !== "rejected");
+        if (live) {
+            return { ok: false, reason: "이미 승인 흐름에 있는 건입니다",
+                     task_id: live.task_id };
+        }
+        const taskId = nextTaskId++;
+        demoTasks.push({
+            id: taskId, kind: "notice_send",
+            title: `내용증명 ${row.stage}단계 발송 — ${row.store_name} · ${row.violation_type}`,
+            body: `판정: ${row.stage_label || row.stage + "단계"} (발생일 ${row.occurred_on}`
+                + ` · 경과 ${row.days_elapsed}일 · 누적 ${row.total_occurrences}회)`
+                + (row.requires_legal_review ? "\n⚠️ 법무 검토 필요 단계입니다 — 승인 전에 법무 확인을 받으세요." : "")
+                + (row.needs_manual_review ? `\n⚠️ 담당자 확인 필요: ${row.manual_review_reason || ""}` : ""),
+            store: row.store_name, source: "web", status: "waiting_approval",
+            assigned_to: null, created_at: new Date().toISOString(),
+        });
+        demoTaskEvents.push({
+            id: nextTaskEventId++, task_id: taskId,
+            from: "received", to: "waiting_approval",
+            note: `내용증명 판정에서 승인 요청 생성 (위반 #${p_event_id})`,
+            approval_kind: null, preauth_id: null,
+            created_at: new Date().toISOString(),
+        });
+        demoNoticeSendTasks.push({ violation_id: Number(p_event_id), stage: row.stage,
+                                   task_id: taskId, created_at: new Date().toISOString() });
+        return { ok: true, task_id: taskId, stage: row.stage };
+    },
 
     // 24_violation_resolve.sql — 실제 함수와 같은 검증 순서(존재→이미 종료
     // →날짜 누락→발생일보다 앞선 종료일)로 {ok, reason} 을 돌려줍니다.
