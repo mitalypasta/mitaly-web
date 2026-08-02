@@ -1401,6 +1401,16 @@ const HANDLERS = {
         ],
     }),
 
+    // 가맹점DB 반입분(35_store_profiles.sql). 화면이 쓰는 것은 sv_name 뿐이라
+    // 나머지 열은 비워 둡니다 — 채우면 '데모에만 있는 값' 이 생깁니다.
+    api_store_profiles: () => STORES.map((s, i) => ({
+        store_id: s.id, store_name: s.name,
+        category: null,
+        sv_name: ["김SV", "박SV", "이SV", "최SV"][i % 4],
+        region: null, order_method: null, pos: null,
+        business_start_date: null, imported_at: null, updated_at: null,
+    })),
+
     api_store_lifecycle: ({ p_store, p_limit }) => computeStoreLifecycle(p_store || null, p_limit),
     api_store_lifecycle_status: ({ p_status }) => computeLifecycleStatus(p_status || null),
     api_store_lifecycle_summary: ({ p_year }) => computeLifecycleSummary(p_year || null),

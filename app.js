@@ -2734,17 +2734,44 @@ function stageTag(stage, label, requiresLegal) {
 // 바꿀 때마다 같은 api_store_visits 를 p_store 만 바꿔 다시 부르는 것으로
 // 풉니다 — 서버가 이미 최신순으로 정렬해 주므로 맨 위가 직전 방문입니다.
 
+// "내 담당 매장" 필터 재료 (PLAN 2주차 9번 'SV 배정 축').
+// 배정은 가맹점DB 반입분(store_profiles.sv_name)이 원천입니다 — 화면은
+// 읽기만 하고, 배정을 고치는 곳은 반입 도구/추후 매장 정보 화면입니다.
+let visitAllStores = [];              // 전 매장 [{id, name}] — SV 로 거를 때 원본
+let visitSvByStore = new Map();       // 매장 이름 → SV 이름
+let visitStoresBySv = new Map();      // SV 이름 → 매장 이름 Set
+
 async function initVisits() {
     const storeSelect = $("vs-store");
     const { data: stores, error: storeErr } = await db.from("stores")
         .select("id,name").order("name");
-    if (!storeErr) {
-        for (const s of stores || []) {
-            const opt = document.createElement("option");
-            opt.value = s.id;
-            opt.textContent = s.name;
-            storeSelect.append(opt);
+    if (!storeErr) visitAllStores = stores || [];
+    rebuildVisitStoreOptions();
+
+    // SV 배정 (없으면 필터 자체를 안 보여줍니다 — 빈 select 는 소음입니다)
+    const { data: profiles, error: profErr } = await db.rpc("api_store_profiles");
+    if (!profErr && Array.isArray(profiles)) {
+        for (const p of profiles) {
+            if (!p.sv_name) continue;
+            visitSvByStore.set(p.store_name, p.sv_name);
+            if (!visitStoresBySv.has(p.sv_name)) visitStoresBySv.set(p.sv_name, new Set());
+            visitStoresBySv.get(p.sv_name).add(p.store_name);
         }
+    }
+    if (visitStoresBySv.size) {
+        const svSelect = $("vs-sv");
+        for (const sv of [...visitStoresBySv.keys()].sort((a, b) => a.localeCompare(b, "ko"))) {
+            const opt = document.createElement("option");
+            opt.value = sv;
+            opt.textContent = `${sv} (${visitStoresBySv.get(sv).size}곳)`;
+            svSelect.append(opt);
+        }
+        $("vs-sv-field").hidden = false;
+        svSelect.addEventListener("change", async () => {
+            rebuildVisitStoreOptions();
+            await refreshVisits();
+            await refreshVisitStoreMetrics();
+        });
     }
 
     $("vs-visited-on").value = new Date().toISOString().slice(0, 10);
@@ -2755,6 +2782,25 @@ async function initVisits() {
 
     await refreshVisits();
     await refreshVisitStoreMetrics();
+}
+
+// 매장 select 를 SV 선택에 맞춰 다시 채웁니다. 고른 매장이 그 SV 담당이면
+// 선택을 살리고, 아니면 초기화합니다(다른 SV 매장에 기록이 남는 실수 방지).
+function rebuildVisitStoreOptions() {
+    const storeSelect = $("vs-store");
+    const sv = $("vs-sv") ? $("vs-sv").value : "";
+    const mine = sv ? visitStoresBySv.get(sv) : null;
+    const keep = storeSelect.selectedOptions[0]?.textContent;
+
+    storeSelect.innerHTML = '<option value="">매장을 고르세요</option>';
+    for (const s of visitAllStores) {
+        if (mine && !mine.has(s.name)) continue;
+        const opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = s.name;
+        if (s.name === keep) opt.selected = true;
+        storeSelect.append(opt);
+    }
 }
 
 async function submitVisit() {
@@ -2816,10 +2862,22 @@ async function refreshVisits() {
             '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
         return;
     }
-    const list = Array.isArray(data) ? data : [];
+    let list = Array.isArray(data) ? data : [];
+
+    // SV 를 골랐고 매장은 안 골랐으면 그 SV 담당 매장의 방문만 보여줍니다.
+    // api_store_visits 는 매장 하나만 거를 줄 알아서(p_store), SV 묶음은
+    // 여기서 거릅니다 — 방문 기록은 화면 한 장 분량이라 충분합니다.
+    const sv = $("vs-sv") ? $("vs-sv").value : "";
+    if (sv && !storeName) {
+        const mine = visitStoresBySv.get(sv) || new Set();
+        list = list.filter((v) => mine.has(v.store_name));
+    }
+
     $("visit-summary").textContent = storeName
         ? `${escape(storeName)} · ${int(list.length)}건`
-        : `전 매장 최근 ${int(list.length)}건`;
+        : (sv
+            ? `${escape(sv)} 담당 ${int((visitStoresBySv.get(sv) || new Set()).size)}곳 · 방문 ${int(list.length)}건`
+            : `전 매장 최근 ${int(list.length)}건`);
 
     if (!list.length) {
         $("t-visits").innerHTML =

@@ -687,6 +687,12 @@
         </p>
 
         <div class="reqform">
+            <!-- SV 배정은 가맹점DB 반입분(store_profiles.sv_name)에서 옵니다.
+                 배정 자료가 없는 환경(dev 초기)에서는 이 칸이 통째로 숨습니다. -->
+            <div class="field" id="vs-sv-field" hidden>
+                <label for="vs-sv">담당 SV</label>
+                <select id="vs-sv"><option value="">전체 SV</option></select>
+            </div>
             <div class="field">
                 <label for="vs-store">매장</label>
                 <select id="vs-store"><option value="">매장을 고르세요</option></select>
