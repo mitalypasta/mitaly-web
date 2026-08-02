@@ -1190,3 +1190,60 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
 
     @page { margin: 16mm; }
 }
+
+/* AI 1차 응대 검토 (1번 영역). 리뷰 초안 검토와 하는 일이 같아 생김새도
+   맞췄습니다 — 담당자가 두 화면에서 같은 동작을 합니다. */
+.iq {
+    padding: 14px 0;
+    border-top: 1px solid var(--gridline);
+}
+.iq:first-child { border-top: none; }
+
+.iq-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+.iq-head b { font-size: 15px; }
+
+/* 문의 원문. 답변과 눈으로 갈라져야 검토가 됩니다. */
+.iq-quote {
+    margin: 0 0 8px;
+    padding: 8px 12px;
+    border-left: 3px solid var(--gridline);
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+}
+
+.iq-text {
+    width: 100%;
+    padding: 10px 12px;
+    font: inherit;
+    line-height: 1.55;
+    color: var(--text-primary);
+    background: var(--surface-1);
+    border: 1px solid var(--gridline);
+    border-radius: 8px;
+    resize: vertical;
+}
+.iq-text[readonly] { color: var(--text-secondary); }
+
+.iq-sources { margin-top: 8px; }
+.iq-sources summary {
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+.iq-sources ul { margin: 6px 0 0; padding-left: 18px; }
+.iq-sources li { margin-bottom: 6px; }
+
+.iq-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+.iq-actions .meta { margin-left: auto; }

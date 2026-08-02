@@ -708,6 +708,73 @@ function demoAdvanceTask({ p_task_id, p_to_status, p_note, p_preauth_id }) {
     return { ok: true, task_id: task.id, from, to: p_to_status, approval_kind: approvalKind };
 }
 
+// ---- AI 1차 응대 데모 (38_inquiry_answers.sql) ---------------------------
+//
+// 세 갈래가 한 화면에 다 보이게 골랐습니다: 검토 대기 초안 · 이관 판정 ·
+// 이미 승인한 것. 근거(sources)에 발췌를 넣은 것은 cs-manual.md 제목이
+// '슬라이드 N' 이라 제목만으로는 무엇을 봤는지 알 수 없기 때문입니다.
+let demoInquiryAnswers = [
+    {
+        id: 1, task_id: 1, routing: "answer",
+        rule_id: 8, rule_kind: "allow", rule_category: "매뉴얼 운영 질문",
+        escalate_to: null,
+        contents: "영수증이 흐리게 나오는 것은 대부분 감열지 방향이 뒤집혔거나 "
+            + "프린터 헤드에 먼지가 앉은 경우입니다. 용지를 광택면이 위로 오게 "
+            + "다시 넣어 보시고, 그래도 같으면 헤드를 마른 천으로 닦아 주세요. "
+            + "두 가지로 해결되지 않으면 포스 점검을 접수해 드리겠습니다.",
+        sources: [
+            { doc: "cs-manual.md", heading: "슬라이드 12",
+              excerpt: "실전 응대 매뉴얼 (전화·예약·배달·클레임 응대) 상황별 응대 지침" },
+            { doc: "hall-kitchen-operations.md", heading: "오픈마감 매뉴얼",
+              excerpt: "| 홀 오픈 및 마감 순서 및 체크리스트 | | | |" },
+        ],
+        model: "claude-sonnet-5", status: "draft", reject_reason: null,
+        created_at: tsOffset(-0.2), reviewed_at: null,
+    },
+    {
+        id: 2, task_id: 3, routing: "escalate",
+        rule_id: 3, rule_kind: "block", rule_category: "계약·법무",
+        escalate_to: "운영지원팀장",
+        contents: null, sources: [], model: "claude-sonnet-5",
+        status: "draft", reject_reason: null,
+        created_at: tsOffset(-2.5), reviewed_at: null,
+    },
+    {
+        id: 3, task_id: 5, routing: "answer",
+        rule_id: 8, rule_kind: "allow", rule_category: "매뉴얼 운영 질문",
+        escalate_to: null,
+        contents: "영업시간 변경은 변경 예정일 7일 전까지 알려 주시면 "
+            + "배달앱과 포스에 함께 반영해 드립니다.",
+        sources: [{ doc: "cs-manual.md", heading: "슬라이드 7",
+                    excerpt: "가맹점 요청 접수 및 처리 기준" }],
+        model: "claude-sonnet-5", status: "approved", reject_reason: null,
+        created_at: tsOffset(-19), reviewed_at: tsOffset(-18),
+    },
+];
+let nextInquiryAnswerId = 4;
+
+function demoInquiryRows({ p_status, p_routing, p_limit }) {
+    return demoInquiryAnswers
+        .filter((a) => (!p_status || a.status === p_status)
+            && (!p_routing || a.routing === p_routing))
+        .sort((a, b) => b.created_at.localeCompare(a.created_at) || (b.id - a.id))
+        .slice(0, p_limit || 100)
+        .map((a) => {
+            const task = demoTasks.find((t) => t.id === a.task_id) || {};
+            return {
+                answer_id: a.id, task_id: a.task_id,
+                task_title: task.title, task_body: task.body,
+                task_status: task.status, store_name: task.store,
+                source: task.source, received_at: task.created_at,
+                routing: a.routing, rule_id: a.rule_id, rule_kind: a.rule_kind,
+                rule_category: a.rule_category, escalate_to: a.escalate_to,
+                contents: a.contents, sources: a.sources, model: a.model,
+                status: a.status, reject_reason: a.reject_reason,
+                created_at: a.created_at, reviewed_at: a.reviewed_at,
+            };
+        });
+}
+
 const HANDLERS = {
     api_filters: () => [{
         ym_min: MONTHS[0],
@@ -1350,6 +1417,63 @@ const HANDLERS = {
             created_at: e.created_at,
         })),
     advance_task: (args) => demoAdvanceTask(args),
+
+    api_inquiry_answers: (args) => demoInquiryRows(args),
+    api_inquiry_answer_summary: () => {
+        const byStatus = {};
+        for (const a of demoInquiryAnswers) {
+            byStatus[a.status] = (byStatus[a.status] || 0) + 1;
+        }
+        const answered = demoInquiryAnswers.filter((a) => a.routing === "answer").length;
+        return {
+            by_status: byStatus,
+            pending: demoInquiryAnswers.filter(
+                (a) => a.status === "draft" && a.routing === "answer").length,
+            escalated: demoInquiryAnswers.filter((a) => a.routing === "escalate").length,
+            answer_rate: demoInquiryAnswers.length
+                ? Math.round(1000 * answered / demoInquiryAnswers.length) / 10 : null,
+        };
+    },
+    // 38_inquiry_answers.sql 의 거절 조건을 그대로 옮긴 것입니다.
+    approve_inquiry_answer: ({ p_answer_id }) => {
+        const row = demoInquiryAnswers.find((a) => a.id === Number(p_answer_id));
+        if (!row) return { ok: false, reason: "답변을 찾지 못했습니다" };
+        if (row.status !== "draft") {
+            return { ok: false, reason: `검토를 마친 답변입니다 (지금 상태: ${row.status})` };
+        }
+        if (row.routing !== "answer") {
+            return { ok: false, reason: "이관으로 판정된 건입니다 — 업무 목록에서 이관으로 넘기세요" };
+        }
+        row.status = "approved";
+        row.reviewed_at = new Date().toISOString();
+        return { ok: true, status: "approved" };
+    },
+    reject_inquiry_answer: ({ p_answer_id, p_reason }) => {
+        const row = demoInquiryAnswers.find((a) => a.id === Number(p_answer_id));
+        if (!row) return { ok: false, reason: "답변을 찾지 못했습니다" };
+        if (row.status === "sent") return { ok: false, reason: "이미 나간 답변입니다" };
+        if (row.status === "rejected") return { ok: false, reason: "이미 반려한 답변입니다" };
+        row.status = "rejected";
+        row.reject_reason = (p_reason || "").trim() || null;
+        row.reviewed_at = new Date().toISOString();
+        return { ok: true, status: "rejected" };
+    },
+    edit_inquiry_answer: ({ p_answer_id, p_contents }) => {
+        const row = demoInquiryAnswers.find((a) => a.id === Number(p_answer_id));
+        if (!row) return { ok: false, reason: "답변을 찾지 못했습니다" };
+        if (!["draft", "approved"].includes(row.status)) {
+            return { ok: false, reason: `고칠 수 없는 상태입니다 (지금 상태: ${row.status})` };
+        }
+        const text = (p_contents || "").trim();
+        if (!text) return { ok: false, reason: "내용이 비어 있습니다" };
+        if (text.length > 4000) return { ok: false, reason: "너무 깁니다(4000자 초과)" };
+        row.contents = text;
+        row.routing = "answer";
+        row.status = "draft";
+        row.reject_reason = null;
+        row.reviewed_at = null;
+        return { ok: true, status: "draft" };
+    },
     revoke_task_preauthorization: ({ p_preauth_id }) => {
         const preauth = demoPreauths.find((p) => p.id === Number(p_preauth_id));
         if (!preauth) return { ok: false, reason: "고지를 찾지 못했습니다" };

@@ -384,6 +384,11 @@
                 <div class="value" id="home-tasks">—</div>
                 <div class="sub" id="home-tasks-sub">접수 후 기준일이 지나도록 끝나지 않은 건 (전체 기간)</div>
             </button>
+            <button type="button" class="tile hometile" id="home-tile-inquiry" data-go-target="tasks">
+                <div class="label">검토 대기 답변</div>
+                <div class="value" id="home-inquiry">—</div>
+                <div class="sub">AI가 만든 문의 1차 응대 중 아직 승인하지 않은 건</div>
+            </button>
             <button type="button" class="tile hometile" id="home-tile-drafts" data-go-target="reviews">
                 <div class="label">승인대기 답글</div>
                 <div class="value" id="home-drafts">—</div>
@@ -974,6 +979,35 @@
             <h3 id="task-events-title"></h3>
             <div class="tableview" id="t-task-events"></div>
         </div>
+    </section>
+
+    <!-- AI 1차 응대 검토 — 1번 영역. 38_inquiry_answers.sql + tools/answer_inquiry.py.
+         답이 매뉴얼에 있는 문의만 초안이 만들어지고, 이관 규칙(33)에 걸린 건은
+         답변 없이 '이관' 으로 기록됩니다. 여기는 그 결과를 사람이 보는 자리입니다. -->
+    <section data-area="tasks" class="card full" id="inquiry-card">
+        <header>
+            <h2>AI 1차 응대 검토</h2>
+            <span class="meta" id="inquiry-summary"></span>
+        </header>
+        <p class="hint">
+            승인한 답변은 '승인됨' 으로 표시되고, 실제 발송은 발송 수단이 연결된
+            뒤에 이뤄집니다. 답변을 고치면 다시 검토 대기로 돌아갑니다.
+        </p>
+        <div class="cardsearch">
+            <select id="iq-filter">
+                <option value="draft">검토 대기</option>
+                <option value="">전체</option>
+                <option value="approved">승인됨</option>
+                <option value="rejected">반려</option>
+                <option value="sent">발송됨</option>
+            </select>
+            <label class="recheck">
+                <input type="checkbox" id="iq-hide-escalated" checked>
+                <span>이관된 건 숨기기</span>
+            </label>
+            <span class="meta" id="iq-shown"></span>
+        </div>
+        <div id="iq-list"></div>
     </section>
 
     <!-- 승인 사전 고지 (D35) — 담당자가 '승인된 내용' 이라고 고지한 범위를
