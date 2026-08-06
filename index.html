@@ -600,6 +600,94 @@
         </div>
     </section>
 
+    <!-- 점주 연락처·계약 — 44_store_contacts.sql (2026-08-06 담당자 확정, QUEUE #56).
+         배달앱 계정(cred-card)과 같은 2차 암호 게이트를 씁니다. 대량 반입은
+         수집 PC 도구(import_store_db --contacts)가 하고, 여기서는 열람과
+         한 매장씩 수정만 합니다. -->
+    <section data-area="stores" class="card full" id="contacts-card">
+        <header>
+            <h2>점주 연락처·계약</h2>
+            <span class="meta" id="ct-summary"></span>
+        </header>
+
+        <div id="ct-gate">
+            <div class="filters">
+                <div class="field">
+                    <label for="ct-pass">접근 암호</label>
+                    <input type="password" id="ct-pass" autocomplete="off"
+                           placeholder="담당자에게 받은 암호">
+                </div>
+                <button class="primary" id="ct-open" type="button">열기</button>
+            </div>
+            <p class="notice" id="ct-error" hidden></p>
+        </div>
+
+        <div id="ct-body" hidden>
+            <div class="filters">
+                <div class="field">
+                    <label for="ct-store">매장</label>
+                    <select id="ct-store"><option value="">전체</option></select>
+                </div>
+                <button class="linkish" id="ct-lock" type="button">닫기(암호 다시 받기)</button>
+            </div>
+            <div class="tableview" id="ct-table"></div>
+
+            <h3>연락처 수정</h3>
+            <p class="note">표에서 '수정'을 누르면 그 매장의 값이 아래 칸에 채워집니다.
+               저장은 칸에 보이는 값 그대로 덮어씁니다.</p>
+            <div class="filters">
+                <div class="field">
+                    <label for="ct-f-store">매장</label>
+                    <select id="ct-f-store"></select>
+                </div>
+                <div class="field">
+                    <label for="ct-f-owner">가맹주</label>
+                    <input type="text" id="ct-f-owner" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label for="ct-f-owner-phone">점주 전화</label>
+                    <input type="text" id="ct-f-owner-phone" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label for="ct-f-operator">실운영자</label>
+                    <input type="text" id="ct-f-operator" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label for="ct-f-operator-phone">실운영자 연락처</label>
+                    <input type="text" id="ct-f-operator-phone" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label for="ct-f-store-phone">매장 전화</label>
+                    <input type="text" id="ct-f-store-phone" autocomplete="off">
+                </div>
+            </div>
+            <div class="filters">
+                <div class="field">
+                    <label for="ct-f-email">이메일</label>
+                    <input type="text" id="ct-f-email" autocomplete="off">
+                </div>
+                <div class="field grow">
+                    <label for="ct-f-address">주소</label>
+                    <input type="text" id="ct-f-address" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label for="ct-f-bizno">사업자번호</label>
+                    <input type="text" id="ct-f-bizno" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label for="ct-f-contract">계약기간</label>
+                    <input type="text" id="ct-f-contract" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label for="ct-f-transfer">양도양수</label>
+                    <input type="text" id="ct-f-transfer" autocomplete="off">
+                </div>
+                <button class="primary" id="ct-save" type="button">저장</button>
+            </div>
+            <p class="notice" id="ct-save-msg" hidden></p>
+        </div>
+    </section>
+
     <section data-area="collect" class="card full" id="request-card">
         <header>
             <h2>수집 요청</h2>

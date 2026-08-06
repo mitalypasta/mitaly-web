@@ -96,6 +96,21 @@ const DEMO_ADS = [
     { ym: 202606, store: "샘플02점", channel: "쿠팡이츠", campaign: "매장 부스트", cost: 190000, impressions: 24500, clicks: 570, orders: 43 },
 ];
 
+// 점주 연락처 데모(44_store_contacts.sql) — 전부 가짜 값입니다.
+const demoContacts = [
+    { store_id: 1, store_name: "샘플01점", owner_name: "김샘플", owner_phone: "010-0000-0001",
+      operator_name: "이운영", operator_phone: "010-0000-0002", store_phone: "02-000-0001",
+      email: "sample01@example.com", address: "서울 샘플구 예시로 1",
+      business_number: "000-00-00001", contract_period: "2024.01 ~ 2029.01",
+      transfer_note: null, updated_at: new Date(Date.now() - 86400_000).toISOString() },
+    { store_id: 2, store_name: "샘플02점", owner_name: "박샘플", owner_phone: "010-0000-0003",
+      operator_name: null, operator_phone: null, store_phone: "02-000-0002",
+      email: null, address: "서울 샘플구 예시로 22",
+      business_number: "000-00-00002", contract_period: "2023.06 ~ 2028.06",
+      transfer_note: "2025.03 양도(전 점주 최샘플)",
+      updated_at: new Date(Date.now() - 43200_000).toISOString() },
+];
+
 // 실행할 때마다 숫자가 바뀌면 헷갈리므로 고정 난수를 씁니다.
 function seeded(seed) {
     let state = seed >>> 0;
@@ -1927,6 +1942,38 @@ const HANDLERS = {
         demoSettleNoticeTasks.push({ task_id: taskId, invoice_id: invoice.id,
                                      created_at: new Date().toISOString() });
         return { ok: true, task_id: taskId, outstanding };
+    },
+
+    // 44_store_contacts.sql — 게이트 암호는 배달앱 계정과 같은 demo1234.
+    api_store_contacts_summary: () => ({
+        stores_with_contacts: demoContacts.length,
+        last_imported_at: new Date(Date.now() - 43200_000).toISOString(),
+    }),
+    api_store_contacts: ({ p_passcode, p_store }) => {
+        if (p_passcode !== "demo1234") {
+            return { ok: false, error: "암호가 올바르지 않습니다 (데모: demo1234)" };
+        }
+        const rows = demoContacts.filter((c) => !p_store || c.store_name === p_store);
+        return { ok: true, contacts: rows.map((c) => ({ ...c })) };
+    },
+    save_store_contact: (args) => {
+        if (args.p_passcode !== "demo1234") {
+            return { ok: false, error: "암호가 올바르지 않습니다" };
+        }
+        let row = demoContacts.find((c) => c.store_name === args.p_store);
+        if (!row) {
+            row = { store_id: 100 + demoContacts.length, store_name: args.p_store };
+            demoContacts.push(row);
+        }
+        Object.assign(row, {
+            owner_name: args.p_owner_name, owner_phone: args.p_owner_phone,
+            operator_name: args.p_operator_name, operator_phone: args.p_operator_phone,
+            store_phone: args.p_store_phone, email: args.p_email,
+            address: args.p_address, business_number: args.p_business_number,
+            contract_period: args.p_contract_period, transfer_note: args.p_transfer_note,
+            updated_at: new Date().toISOString(),
+        });
+        return { ok: true, store: args.p_store };
     },
 
     // 31_notifications.sql — 발송 이력. 세 상태(dry_run/sent/failed)가 화면에서

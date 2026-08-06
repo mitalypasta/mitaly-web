@@ -188,6 +188,13 @@ header.top h1 {
     margin-bottom: var(--gap);
 }
 
+/* 카드 안에 중첩된 필터 줄은 그림자 대신 옅은 패널로 — 그림자 겹침 방지 */
+.card .filters {
+    background: var(--page);
+    box-shadow: none;
+    padding: 12px 14px;
+}
+
 .field {
     display: flex;
     flex-direction: column;
