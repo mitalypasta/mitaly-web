@@ -755,6 +755,7 @@ const DEMO_TASK_KINDS = [
     // 승인 필요로 둡니다 (50_pos_menu.sql 설계 판단 [1]).
     { kind: "pos_soldout", name: "POS 품절 처리·해제", needs_approval: true, enabled: true },
     { kind: "pos_menu_change", name: "POS 메뉴·가격 변경", needs_approval: true, enabled: true },
+    { kind: "announcement_send", name: "공지 발송", needs_approval: true, enabled: true },
 ];
 
 const DEMO_OVERDUE_DAYS = 7;   // task_settings 의 데모용 미러(실제 값은 표에 있음)
@@ -781,8 +782,13 @@ let demoTasks = [
       body: "품절여부 품절 → 정상\n상품코드 000334",
       store: "샘플01점", source: "web", status: "done", assigned_to: null,
       created_at: tsOffset(-2) },
+    // 공지(12번)의 미리 채워 둔 건과 짝입니다 — demoAnnouncements 참조.
+    { id: 7, kind: "announcement_send", title: "공지 발송 — 8월 오일데이 행사 안내 (전체 94곳)",
+      body: "8/14(금) 오일데이 행사 안내입니다. 행사 포스터는 금주 중 발송됩니다.",
+      store: null, source: "web", status: "waiting_approval", assigned_to: null,
+      created_at: tsOffset(-1) },
 ];
-let nextTaskId = 7;
+let nextTaskId = 8;
 
 let demoTaskEvents = [
     { id: 1, task_id: 1, from: "received", to: "in_progress", note: null,
@@ -793,12 +799,26 @@ let demoTaskEvents = [
       approval_kind: null, preauth_id: null, created_at: tsOffset(-2) },
     { id: 4, task_id: 5, from: "received", to: "done", note: null,
       approval_kind: null, preauth_id: null, created_at: tsOffset(-19) },
+    { id: 5, task_id: 7, from: "received", to: "waiting_approval",
+      note: "공지 접수에서 승인 요청 생성 (공지 #1)",
+      approval_kind: null, preauth_id: null, created_at: tsOffset(-1) },
 ];
-let nextTaskEventId = 5;
+let nextTaskEventId = 6;
 
 // 발송 승인 흐름 연결(39_notice_tasks.sql). 처음에는 비워 둡니다 —
 // '발송 승인 요청' 버튼을 눌러 생기는 것까지가 화면 확인 대상입니다.
 let demoNoticeSendTasks = [];
+
+// 공지(12번, 53_announcements.sql). 한 건은 미리 채워 둡니다 — 승인 대기
+// 업무 #7 과 짝. target_count 는 접수 시점 스냅샷이라 숫자로 저장합니다.
+let demoAnnouncements = [{
+    id: 1, title: "8월 오일데이 행사 안내",
+    body: "8/14(금) 오일데이 행사 안내입니다. 행사 포스터는 금주 중 발송됩니다.",
+    audience_kind: "all", audience_value: null, target_count: STORES.length,
+    task_id: 7, created_at: tsOffset(-1),
+    sent: 0, dry_run: 0, failed: 0, reads: 0,
+}];
+let nextAnnouncementId = 2;
 
 let demoPreauths = [
     { id: 1, kind: "compensation", scope: "배달 지연 보상 3만원 이하",
@@ -1871,6 +1891,62 @@ const HANDLERS = {
             created_at: e.created_at,
         })),
     advance_task: (args) => demoAdvanceTask(args),
+
+    // 53_announcements.sql — 공지 접수·목록 (12번). 승인 상태는 업무에서
+    // 실시간으로 읽습니다 — 승인하면 목록의 상태 태그가 같이 바뀝니다.
+    api_announcements: () => demoAnnouncements
+        .map((a) => ({
+            ...a,
+            task_status: (demoTasks.find((t) => t.id === a.task_id) || {}).status
+                || "waiting_approval",
+        }))
+        .sort((a, b) => b.id - a.id),
+
+    create_announcement: (args) => {
+        const title = (args.p_title || "").trim();
+        const body = (args.p_body || "").trim();
+        const kind = args.p_audience_kind;
+        const value = (args.p_audience_value || "").trim() || null;
+        if (!title || !body) return { ok: false, reason: "제목과 본문을 채워 주세요" };
+        if (!["all", "region", "sv", "stores"].includes(kind)) {
+            return { ok: false, reason: `대상 종류가 올바르지 않습니다: ${kind || "(없음)"}` };
+        }
+        if ((kind === "region" || kind === "sv") && !value) {
+            return { ok: false, reason: "지역 또는 담당 SV 를 골라 주세요" };
+        }
+        let count = 0;
+        if (kind === "all") count = STORES.length;
+        else if (kind === "stores") count = (args.p_store_ids || []).length;
+        else {
+            const key = kind === "region" ? "region" : "sv_name";
+            count = storeProfiles.filter((p) => p[key] === value).length;
+        }
+        if (!count) return { ok: false, reason: "대상 매장이 없습니다 — 대상을 다시 골라 주세요" };
+        const label = kind === "all" ? "전체" : kind === "region" ? `지역 ${value}`
+            : kind === "sv" ? `SV ${value}` : "선택 매장";
+        const taskId = nextTaskId++;
+        demoTasks.push({
+            id: taskId, kind: "announcement_send",
+            title: `공지 발송 — ${title} (${label} ${count}곳)`,
+            body, store: null, source: "web", status: "waiting_approval",
+            assigned_to: null, created_at: new Date().toISOString(),
+        });
+        demoTaskEvents.push({
+            id: nextTaskEventId++, task_id: taskId,
+            from: "received", to: "waiting_approval",
+            note: `공지 접수에서 승인 요청 생성 (공지 #${nextAnnouncementId})`,
+            approval_kind: null, preauth_id: null,
+            created_at: new Date().toISOString(),
+        });
+        const annId = nextAnnouncementId++;
+        demoAnnouncements.push({
+            id: annId, title, body, audience_kind: kind, audience_value: value,
+            target_count: count, task_id: taskId,
+            created_at: new Date().toISOString(),
+            sent: 0, dry_run: 0, failed: 0, reads: 0,
+        });
+        return { ok: true, announcement_id: annId, task_id: taskId, target_count: count };
+    },
 
     api_inquiry_answers: (args) => demoInquiryRows(args),
     api_inquiry_answer_summary: () => {

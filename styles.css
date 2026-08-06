@@ -221,6 +221,22 @@ header.top h1 {
     outline-offset: 1px;
 }
 
+/* 공지 본문(12번) — .field select 와 같은 옷. 본문은 여러 줄이라 textarea. */
+.field textarea {
+    font: inherit;
+    padding: 6px 10px;
+    color: var(--text-primary);
+    background: var(--surface-1);
+    border: 1px solid var(--baseline);
+    border-radius: 6px;
+    resize: vertical;
+}
+
+.field textarea:focus-visible {
+    outline: 2px solid var(--series-1);
+    outline-offset: 1px;
+}
+
 /* ---------------------------------------------------------------- KPI */
 
 .kpis {

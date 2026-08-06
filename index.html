@@ -63,6 +63,7 @@
         <div class="navgroup">가맹관리</div>
         <button class="navitem" data-go="stores" type="button">🏪 매장 정보</button>
         <button class="navitem" data-go="lifecycle" type="button">🏪 오픈·폐점</button>
+        <button class="navitem" data-go="comms" type="button">📢 공지</button>
         <button class="navitem" data-go="collect" type="button">🗂 수집·내보내기</button>
     </nav>
 
@@ -1069,6 +1070,76 @@
             않으면 전 매장 최근 기록을 보여줍니다.
         </p>
         <div class="tableview" id="t-lifecycle"></div>
+    </section>
+
+    <!-- 공지 — 12번 영역(소통·공지). 53_announcements.sql 위의 화면입니다.
+         자리는 카카오 채널이고(docs/area12-comms.md) 웹은 작성·승인·이력만
+         맡습니다. 실발송은 tools/send_announcements.py — 발송 수단이 연결되기
+         전까지 dry-run 입니다. -->
+    <section data-area="comms" class="card full" id="comms-form-card">
+        <header>
+            <h2>공지 작성</h2>
+            <span class="meta">접수하면 승인 대기로 만들어집니다</span>
+        </header>
+        <p class="hint">
+            공지는 승인 뒤에 발송됩니다. 대상은 접수한 시점의 매장 목록으로
+            고정됩니다 — 나중에 매장·SV 배정이 바뀌어도 이 공지의 대상은
+            변하지 않습니다.
+        </p>
+        <div class="reqform">
+            <div class="field">
+                <label for="an-audience">대상</label>
+                <select id="an-audience">
+                    <option value="all">전체 매장</option>
+                    <option value="region">지역</option>
+                    <option value="sv">담당 SV</option>
+                    <option value="stores">매장 선택</option>
+                </select>
+            </div>
+            <div class="field" id="an-value-field" hidden>
+                <label for="an-value" id="an-value-label">지역</label>
+                <select id="an-value"></select>
+            </div>
+            <div class="field" id="an-stores-field" hidden>
+                <label for="an-stores">매장 (여러 개 선택)</label>
+                <select id="an-stores" multiple size="6"></select>
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <span class="meta" id="an-target-count"></span>
+            </div>
+        </div>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="an-title">제목</label>
+                <input type="text" id="an-title" placeholder="예: 8월 오일데이 행사 안내">
+            </div>
+        </div>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="an-body">본문</label>
+                <textarea id="an-body" rows="5" placeholder="점주에게 나갈 본문"></textarea>
+            </div>
+        </div>
+        <div class="reqform">
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" id="an-submit">공지 접수</button>
+            </div>
+        </div>
+        <p class="notice" id="an-notice"></p>
+    </section>
+
+    <section data-area="comms" class="card full" id="comms-list-card">
+        <header>
+            <h2>공지 목록</h2>
+            <span class="meta" id="comms-summary"></span>
+        </header>
+        <p class="hint">
+            승인은 '✅ 업무' 화면의 승인 대기에서 합니다. 발송·열람 칸은
+            발송 수단과 열람 추적이 연결되면 채워집니다.
+        </p>
+        <div class="tableview" id="t-announcements"></div>
     </section>
 
     <!-- 광고 — 6번 영역(배달플랫폼 운영·광고). 48_ad_spend.sql 위의 화면입니다.
