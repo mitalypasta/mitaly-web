@@ -292,6 +292,7 @@ async function initDashboard() {
     initSettlement();
     initAds();
     initIngredients();
+    initPosMenu();
     loadAccountHealth();
 
     await load();
@@ -3766,6 +3767,12 @@ function initTaskActions() {
         // 같이 새로 그립니다 — 영역 전환은 다시 조회하지 않아(위 showArea
         // 원칙) 여기서 안 하면 옛 배지가 남습니다.
         if (moved?.kind === "notice_send") await refreshViolations();
+        // POS 메뉴 화면도 이 업무의 상태를 비춥니다. 승인하면 실행 칸이
+        // '실행 대기' 로 바뀌어야 하는데, 여기서 안 그리면 옛 상태가 남습니다.
+        if (moved?.kind === "pos_soldout" || moved?.kind === "pos_menu_change") {
+            await Promise.all([refreshPosMenu(), refreshPosMenuRequests(),
+                               refreshPosMenuSummary()]);
+        }
         if (!$("task-events-panel").hidden
             && Number($("task-events-panel").dataset.taskId) === taskId) {
             await showTaskEvents(taskId, $("task-events-panel").dataset.taskTitle);
@@ -5276,4 +5283,323 @@ async function refreshIngredientUsage() {
     } else {
         $("t-iu-unmatched").innerHTML = "";
     }
+}
+
+// ================================================================ POS 메뉴 (5번 영역)
+//
+// 50_pos_menu.sql 위의 화면입니다. 위쪽 기간·매장 필터는 매출 영역에서만
+// 보이므로(showArea 참조) 이 카드는 자체 고르개를 갖습니다.
+//
+// 변경은 요청 → 승인(30_tasks) → 실행 순서이고, **승인이 곧 실행이 아닙니다.**
+// 실제 POS 쓰기는 담당자 입회 아래 첫 건을 넣기 전까지 dry-run 만 쌓입니다
+// (docs/pos-write-plan.md). 그래서 표에 승인 상태와 실행 상태를 따로 둡니다 —
+// 하나로 합치면 "승인했는데 왜 POS 가 그대로냐" 를 화면이 못 답합니다.
+
+let pmRows = [];
+let pmSummary = {};
+
+async function initPosMenu() {
+    // 계정을 바꾸면 분류·매장 목록이 통째로 달라집니다 — 굿모닝(HI5)과
+    // 착한통신(INY)은 서로 다른 본부라 같은 분류 코드의 뜻이 다릅니다.
+    $("pm-account").addEventListener("change", onPosAccountChange);
+    $("pm-store").addEventListener("change", refreshPosMenu);
+    $("pm-large").addEventListener("change", refreshPosMenu);
+    $("pm-only-unavailable").addEventListener("change", refreshPosMenu);
+    // 검색은 서버로 보냅니다 — 3,000종이 넘어 화면에 다 받아 두지 않습니다.
+    $("pm-q").addEventListener("input", debounce(refreshPosMenu, 250));
+    initPosMenuActions();
+
+    await refreshPosMenuSummary();
+    await Promise.all([refreshPosMenu(), refreshPosMenuRequests()]);
+}
+
+async function onPosAccountChange() {
+    // 고른 계정에 없는 분류·매장이 남아 있으면 빈 표가 나옵니다. 비우고 다시 채웁니다.
+    $("pm-large").value = "";
+    $("pm-store").value = "";
+    fillPosLargeSelect();
+    await fillPosStoreSelect();
+    await refreshPosMenu();
+}
+
+// 분류 고르개. 계정을 고르면 그 계정 것만, 아니면 계정 이름을 붙여 보여줍니다
+// (004 처럼 코드가 같고 뜻이 다른 분류가 있어 이름만으로는 구분이 안 됩니다).
+function fillPosLargeSelect() {
+    const account = $("pm-account").value;
+    const select = $("pm-large");
+    select.length = 1;
+    for (const g of (pmSummary.by_large || [])) {
+        if (account && g.account !== account) continue;
+        const opt = document.createElement("option");
+        opt.value = g.code;
+        opt.textContent = (account ? "" : `[${g.account}] `)
+            + `${g.name || g.code} (${int(g.items)})`;
+        select.append(opt);
+    }
+}
+
+async function fillPosStoreSelect() {
+    const select = $("pm-store");
+    select.length = 1;
+    const { data } = await db.rpc("api_pos_menu_stores",
+        { p_account: $("pm-account").value || null });
+    for (const s of Array.isArray(data) ? data : []) {
+        const opt = document.createElement("option");
+        opt.value = s.store;
+        // 매장 대장에 없는 표기(폐점·이름 차이)도 고를 수 있어야 합니다 —
+        // 빼면 그 매장 메뉴는 화면에서 영영 못 봅니다.
+        opt.textContent = s.matched
+            ? `${s.store} (${int(s.items)})`
+            : `${s.store} (${int(s.items)}) — 대장에 없음`;
+        select.append(opt);
+    }
+}
+
+// 매장 칸 밑에 붙는 한 줄. 계정을 안 좁혔으면 어느 본부 것인지 밝힙니다 —
+// 두 계정이 섞이면 같은 매장 이름이 양쪽에 다 나올 수 있습니다.
+function pmStoreNote(row) {
+    const parts = [];
+    if (row.store_scope === "common") parts.push("본사 메뉴");
+    if (!$("pm-account").value) parts.push(escape(row.account));
+    return parts.length ? `<div class="meta">${parts.join(" · ")}</div>` : "";
+}
+
+function pmSoldoutTag(row) {
+    const label = escape(row.soldout_name || row.soldout_code || "—");
+    return row.unavailable
+        ? `<span class="tag warn">${label}</span>`
+        : `<span class="tag">${label}</span>`;
+}
+
+async function refreshPosMenuSummary() {
+    const { data, error } = await db.rpc("api_pos_menu_summary");
+    if (error) {
+        $("pm-meta").textContent = "불러오지 못했습니다: " + error.message;
+        return;
+    }
+    pmSummary = data || {};
+    const d = pmSummary;
+    const has = Number(d.items) > 0;
+    $("pm-kpis").hidden = !has;
+    if (!has) {
+        $("pm-meta").textContent = "아직 반입 전입니다";
+        return;
+    }
+    $("pm-items").textContent = int(d.items);
+    $("pm-unavailable").textContent = int(d.unavailable);
+    // 이 값은 메뉴 수가 아니라 **매장 수**입니다 (count(distinct store_id)).
+    // 옆 타일 둘이 상품 종수라 라벨을 '메뉴가 붙은 매장' 으로 못박아 뒀습니다.
+    $("pm-stores").textContent = int(d.stores) + "곳";
+    $("pm-open").textContent = int(d.open_requests);
+    $("pm-collected").textContent = d.collected_at
+        ? String(d.collected_at).slice(0, 10) + " 기준" : "";
+    // 못 맞춘 매장 표기는 숨기지 않습니다 — 보여야 고칩니다(미매핑 품목과 같은 태도).
+    $("pm-unmatched").textContent = Number(d.unmatched)
+        ? `매장 못 맞춘 표기 ${int(d.unmatched)}개` : "";
+    // 머리말은 계정별로 씁니다. 계정마다 본부가 달라 합계만 보면 뜻이 흐려집니다.
+    $("pm-meta").textContent = (d.by_account || [])
+        .map((a) => `${a.account}(${a.hq_code || "?"}) ${int(a.items)}종`).join(" · ");
+
+    const accountSelect = $("pm-account");
+    if (accountSelect.options.length <= 1) {
+        for (const a of d.by_account || []) {
+            const opt = document.createElement("option");
+            opt.value = a.account;
+            opt.textContent = `${a.account} (${int(a.items)})`;
+            accountSelect.append(opt);
+        }
+    }
+    fillPosLargeSelect();
+    if ($("pm-store").options.length <= 1) await fillPosStoreSelect();
+}
+
+async function refreshPosMenu() {
+    const args = { p_limit: 300 };
+    if ($("pm-account").value) args.p_account = $("pm-account").value;
+    if ($("pm-store").value) args.p_store = $("pm-store").value;
+    if ($("pm-large").value) args.p_large = $("pm-large").value;
+    if ($("pm-q").value.trim()) args.p_q = $("pm-q").value.trim();
+    if ($("pm-only-unavailable").checked) args.p_only_unavailable = true;
+
+    const { data, error } = await db.rpc("api_pos_menus", args);
+    if (error) {
+        pmRows = [];
+        $("t-posmenu").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + "</p>";
+        return;
+    }
+    const d = data || {};
+    pmRows = d.items || [];
+    $("pm-shown").textContent = Number(d.total) > Number(d.shown)
+        ? `${int(d.total)}건 중 ${int(d.shown)}건 표시` : `${int(d.shown)}건`;
+
+    if (!pmRows.length) {
+        $("t-posmenu").innerHTML = '<p class="hint">조건에 맞는 메뉴가 없습니다.</p>';
+        return;
+    }
+
+    table($("t-posmenu"),
+        ["상태", "매장", "분류", "메뉴", "상품코드", "판매가", "처리"],
+        pmRows.map((r) => [
+            pmSoldoutTag(r),
+            escape(r.store) + pmStoreNote(r),
+            escape(r.category || "—"),
+            escape(r.item_name),
+            escape(r.item_code),
+            r.price == null ? "—" : wonFull(r.price),
+            r.change_task_id
+                ? taskStatusTag(r.change_task_status)
+                    + `<div class="meta">업무 #${int(r.change_task_id)}</div>`
+                : `<button class="ghost" data-act="pm-request"`
+                    + ` data-menu-item-id="${r.menu_item_id}"`
+                    + ` data-to="${r.unavailable ? "0" : "1"}"`
+                    + ` data-item="${escape(r.item_name)}"`
+                    + ` data-store="${escape(r.store)}"`
+                    + ` data-scope="${escape(r.store_scope)}">`
+                    + `${r.unavailable ? "판매 재개 요청" : "품절 요청"}</button>`,
+        ]),
+        { html: true });
+}
+
+// 실행 칸. '승인됨' 과 'POS 에 반영됨' 은 다른 것이라 따로 보여줍니다.
+function pmExecutionTag(row) {
+    if (row.applied) return '<span class="tag up">반영됨</span>';
+    if (row.last_mode === "live" && row.last_ok === false) {
+        return '<span class="tag down">실패</span>';
+    }
+    if (row.last_mode === "dry_run") {
+        return '<span class="tag">dry-run</span>'
+            + '<div class="meta">POS 는 그대로입니다</div>';
+    }
+    if (row.task_status === "done") return '<span class="tag h-warn">실행 대기</span>';
+    return "—";
+}
+
+async function refreshPosMenuRequests() {
+    const { data, error } = await db.rpc("api_pos_menu_requests", { p_limit: 100 });
+    if (error) {
+        $("t-posmenu-requests").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + "</p>";
+        return;
+    }
+    const rows = Array.isArray(data) ? data : [];
+    $("pm-req-meta").textContent = rows.length ? `${int(rows.length)}건` : "";
+    // 목록을 다시 그리면 열려 있던 이력 패널은 옛 요청 것이라 닫습니다.
+    $("posmenu-exec-panel").hidden = true;
+    if (!rows.length) {
+        $("t-posmenu-requests").innerHTML =
+            '<p class="hint">아직 변경 요청이 없습니다.</p>';
+        return;
+    }
+    table($("t-posmenu-requests"),
+        ["승인", "실행", "매장", "메뉴", "바꿀 내용", "요청 사유", "요청일", "이력"],
+        rows.map((r) => [
+            taskStatusTag(r.task_status)
+                + `<div class="meta">업무 #${int(r.task_id)}</div>`,
+            pmExecutionTag(r),
+            escape(r.store || "—"),
+            escape(r.item_name) + `<div class="meta">${escape(r.item_code)}</div>`,
+            escape(r.field) + " "
+                + escape(r.before_label || r.before_value || "(없음)")
+                + " → " + escape(r.after_label || r.after_value),
+            escape(r.reason || "—"),
+            escape(String(r.created_at).slice(0, 10)),
+            Number(r.executions)
+                ? `<button class="ghost" data-act="pm-executions"`
+                    + ` data-request-id="${r.request_id}"`
+                    + ` data-item="${escape(r.item_name)}">${int(r.executions)}건</button>`
+                : "—",
+        ]),
+        { html: true });
+}
+
+// 한 요청의 실행 이력. dry-run 이 몇 번 돌았는지, 실제로 나간 건 언제인지가
+// 여기 있습니다 — 목록의 배지 한 칸으로는 그 경위를 못 보여줍니다.
+async function showPosMenuExecutions(requestId, itemName) {
+    const panel = $("posmenu-exec-panel");
+    panel.hidden = false;
+    $("posmenu-exec-title").textContent = `${itemName} — 실행 이력`;
+    $("t-posmenu-executions").innerHTML = '<p class="hint">불러오는 중…</p>';
+
+    const { data, error } = await db.rpc("api_pos_menu_executions",
+        { p_request_id: requestId });
+    if (error) {
+        $("t-posmenu-executions").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + "</p>";
+        return;
+    }
+    const rows = Array.isArray(data) ? data : [];
+    if (!rows.length) {
+        $("t-posmenu-executions").innerHTML = '<p class="hint">실행 이력이 없습니다.</p>';
+        return;
+    }
+    table($("t-posmenu-executions"),
+        ["언제", "방식", "결과", "POS 응답", "다시 읽은 값", "메모"],
+        rows.map((e) => [
+            escape(String(e.executed_at).replace("T", " ").slice(0, 16)),
+            e.mode === "live"
+                ? '<span class="tag warn">실제 전송</span>'
+                : '<span class="tag">dry-run</span>',
+            e.ok ? '<span class="tag up">성공</span>'
+                 : '<span class="tag down">실패</span>',
+            escape(e.response_code || "—")
+                + (e.response_msg ? `<div class="meta">${escape(e.response_msg)}</div>` : ""),
+            escape(e.verified_value || "—"),
+            escape(e.note || "—"),
+        ]),
+        { html: true });
+}
+
+function initPosMenuActions() {
+    $("t-posmenu-requests").addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-act='pm-executions']");
+        if (!button) return;
+        showPosMenuExecutions(Number(button.dataset.requestId), button.dataset.item);
+    });
+
+    // 목록은 매번 새로 그려지므로 컨테이너에 한 번만 위임합니다.
+    $("t-posmenu").addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-act='pm-request']");
+        if (!button) return;
+
+        const to = button.dataset.to;
+        const what = to === "0" ? "판매 재개" : "품절 처리";
+        let message = `${button.dataset.store} · ${button.dataset.item}\n`
+            + `${what} 를 승인 대기로 올립니다.`;
+        if (button.dataset.scope === "common") {
+            // 본사 마스터 상품이라 전 매장에 걸릴 수 있습니다 — 누르기 전에
+            // 알려야 합니다. 매장 단위 여부는 아직 확인 전입니다(입회 시험 항목).
+            message += "\n\n이 메뉴는 본사 메뉴입니다."
+                + " 한 매장이 아니라 전 매장에 걸릴 수 있습니다.";
+        }
+        if (!window.confirm(message)) return;
+
+        const reason = window.prompt("요청 사유를 적어 주세요. 이력에 남습니다.", "");
+        if (reason === null) return;
+
+        const label = button.textContent;
+        button.disabled = true;
+        button.textContent = "처리 중…";
+
+        const { data, error } = await db.rpc("request_pos_menu_change", {
+            p_menu_item_id: Number(button.dataset.menuItemId),
+            p_change_type: "soldout",
+            p_after_value: to,
+            p_reason: reason.trim() ? reason.trim() : null,
+        });
+
+        if (error || (data && data.ok === false)) {
+            window.alert(error ? error.message : (data.reason || "요청하지 못했습니다"));
+            button.disabled = false;
+            button.textContent = label;
+            return;
+        }
+
+        // 업무 영역의 승인 대기 숫자가 이 요청을 비추므로 같이 새로 그립니다 —
+        // 영역 전환은 다시 조회하지 않아(showArea 원칙) 여기서 안 하면 옛 숫자가 남습니다.
+        await Promise.all([
+            refreshPosMenu(), refreshPosMenuRequests(), refreshPosMenuSummary(),
+            refreshTasksSummary(), refreshTaskList(),
+        ]);
+    });
 }

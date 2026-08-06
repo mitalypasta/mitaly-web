@@ -111,6 +111,90 @@ const demoContacts = [
       updated_at: new Date(Date.now() - 43200_000).toISOString() },
 ];
 
+// POS 메뉴 데모(50_pos_menu.sql). 품절여부는 이지포스 공통코드 POS_246 이고
+// 1(품절)·7(일시판매중지)이 '지금 못 파는 상태' 입니다.
+// large_code 003 은 매장 단독 메뉴, 나머지는 전 매장 공통(본사 메뉴)입니다.
+const DEMO_POS_SOLDOUT = {
+    "0": "정상", "1": "품절", "2": "매장상품", "3": "포장상품",
+    "4": "사용자이미지", "5": "숨김", "6": "출시예정", "7": "일시판매중지",
+};
+const DEMO_POS_UNAVAILABLE = new Set(["1", "7"]);
+// 계정 둘은 서로 다른 본부(HI5·INY)이고 **대분류 004 의 뜻이 다릅니다** —
+// 굿모닝은 '직영점', 착한통신은 '26년 메뉴'. 데모도 그 차이를 그대로 둡니다.
+// 이 줄이 있어야 '계정을 안 고르면 분류 고르개에 계정 이름이 붙는' 동작을
+// 화면에서 확인할 수 있습니다.
+const DEMO_POS_MENUS = [
+    { menu_item_id: 1, account: "굿모닝", hq_code: "HI5", large_code: "001", large_name: "본사(1채널)[본사 메뉴]",
+      store: "전 매장 공통", store_matched: false, store_scope: "common",
+      category: "미태리 파스타 > 토마토",
+      item_code: "000001", item_name: "토마토 파스타", price: 6800, soldout_code: "0" },
+    { menu_item_id: 2, account: "굿모닝", hq_code: "HI5", large_code: "001", large_name: "본사(1채널)[본사 메뉴]",
+      store: "전 매장 공통", store_matched: false, store_scope: "common",
+      category: "미태리 파스타 > 시그니처",
+      item_code: "000100", item_name: "블랙페퍼 목살 스테이크", price: 19800, soldout_code: "1" },
+    { menu_item_id: 3, account: "굿모닝", hq_code: "HI5", large_code: "001", large_name: "본사(1채널)[본사 메뉴]",
+      store: "전 매장 공통", store_matched: false, store_scope: "common",
+      category: "미태리 파스타 > 레드 와인",
+      item_code: "000116", item_name: "파블로 올드 바인 가르나차", price: 28000, soldout_code: "1" },
+    { menu_item_id: 4, account: "굿모닝", hq_code: "HI5", large_code: "003", large_name: "매장(3채널)[단독/본사 메뉴 외]",
+      store: "샘플01점", store_matched: true, store_scope: "store",
+      category: "미태리 샘플01점 > 카페",
+      item_code: "000334", item_name: "토피넛 라떼", price: 4500, soldout_code: "1" },
+    { menu_item_id: 5, account: "굿모닝", hq_code: "HI5", large_code: "003", large_name: "매장(3채널)[단독/본사 메뉴 외]",
+      store: "샘플01점", store_matched: true, store_scope: "store",
+      category: "미태리 샘플01점 > 카페",
+      item_code: "000335", item_name: "고구마 라떼", price: 4500, soldout_code: "0" },
+    { menu_item_id: 6, account: "굿모닝", hq_code: "HI5", large_code: "003", large_name: "매장(3채널)[단독/본사 메뉴 외]",
+      store: "샘플02점", store_matched: true, store_scope: "store",
+      category: "미태리 샘플02점 > 까르보나라",
+      item_code: "000623", item_name: "양송이 까르보나라", price: 8800, soldout_code: "7" },
+    // 매장 대장에 없는 표기(폐점·이름 차이)도 한 줄 둡니다 — 그 줄이 화면에
+    // 어떻게 보이는지가 이 데모의 확인 항목입니다.
+    // 못 맞춘 매장은 실제로 **POS 원문 표기**가 그대로 뜹니다
+    // (api_pos_menus 의 store 폴백이 store_name → pos_store_label 순서라서).
+    // 정규화된 이름을 두면 실제와 다르게 보여 확인이 안 됩니다.
+    { menu_item_id: 7, account: "굿모닝", hq_code: "HI5", large_code: "003", large_name: "매장(3채널)[단독/본사 메뉴 외]",
+      store: "[폐점]미태리 샘플99점", store_matched: false, store_scope: "store",
+      category: "[폐점]미태리 샘플99점 > 주류", item_code: "000701",
+      item_name: "하우스 레드", price: 6000, soldout_code: "0" },
+    { menu_item_id: 8, account: "굿모닝", hq_code: "HI5", large_code: "004", large_name: "미태리 직영점(4채널)",
+      store: "전 매장 공통", store_matched: false, store_scope: "common",
+      category: "직영 > 옵션", item_code: "000810", item_name: "매운맛", price: 0, soldout_code: "0" },
+    // ↓ 같은 대분류 코드 004 인데 뜻이 다릅니다 (착한통신 = 26년 메뉴)
+    { menu_item_id: 9, account: "착한통신", hq_code: "INY", large_code: "004", large_name: "본사(26년 메뉴)",
+      store: "전 매장 공통", store_matched: false, store_scope: "common",
+      category: "26년 > 파스타", item_code: "000210",
+      item_name: "고기고기 분모자 파스타", price: 13800, soldout_code: "0" },
+    { menu_item_id: 10, account: "착한통신", hq_code: "INY", large_code: "003", large_name: "매장(3채널)[단독/본사 메뉴 외]",
+      store: "샘플03점", store_matched: true, store_scope: "store",
+      category: "미태리 샘플03점 > 사이드", item_code: "000415",
+      item_name: "감자튀김", price: 4000, soldout_code: "0" },
+];
+// SQL 의 mitaly_pos_store_name 과 같은 규칙 — '[폐점]미태리 고덕점' → '고덕점'.
+// 고르개는 정규화된 이름을 보여주고 표는 원문을 보여주므로, 거를 때 둘 다 받습니다.
+function demoPosStoreName(label) {
+    return String(label || "").replace(/^\s*\[[^\]]*\]\s*/, "")
+        .replace(/^미태리\s*/, "").trim();
+}
+
+// 변경 요청 ↔ 업무 연결.
+// 한 건은 **미리 채워 둡니다** — 실행 이력은 실제로는 명령줄 도구
+// (tools/pos_menu_record.py)가 남기는 것이라 웹만으로는 절대 안 생깁니다.
+// 비워 두면 '이력' 단추와 이력 표가 데모에서 영영 안 보입니다.
+// 나머지는 눌러서 만들어지는 것을 봅니다.
+let demoPosRequests = [{
+    id: 1, menu_item_id: 4, task_id: 6, change_type: "soldout", field: "품절여부",
+    before_value: "1", after_value: "0", reason: "재고 들어옴 (데모 예시)",
+    created_at: tsOffset(-2),
+}];
+let nextPosRequestId = 2;
+let demoPosExecutions = [{
+    execution_id: 1, request_id: 1, mode: "dry_run", ok: true,
+    response_code: null, response_msg: null, verified_value: null,
+    note: "보내지 않았습니다 — 담당자 입회 전 dry-run", executed_at: tsOffset(-1),
+}];
+let nextPosExecutionId = 2;
+
 // 실행할 때마다 숫자가 바뀌면 헷갈리므로 고정 난수를 씁니다.
 function seeded(seed) {
     let state = seed >>> 0;
@@ -667,6 +751,10 @@ const DEMO_TASK_KINDS = [
     { kind: "compensation", name: "보상·감면", needs_approval: true, enabled: true },
     { kind: "notice_send", name: "공문·내용증명 발송", needs_approval: true, enabled: true },
     { kind: "receivable_notice", name: "미수 안내 발송", needs_approval: true, enabled: true },
+    // 5번 영역. 품절은 저위험(자동) 후보로 올렸지만 담당자 확인 전까지는
+    // 승인 필요로 둡니다 (50_pos_menu.sql 설계 판단 [1]).
+    { kind: "pos_soldout", name: "POS 품절 처리·해제", needs_approval: true, enabled: true },
+    { kind: "pos_menu_change", name: "POS 메뉴·가격 변경", needs_approval: true, enabled: true },
 ];
 
 const DEMO_OVERDUE_DAYS = 7;   // task_settings 의 데모용 미러(실제 값은 표에 있음)
@@ -687,8 +775,14 @@ let demoTasks = [
     { id: 5, kind: "inquiry", title: "영업시간 변경 신고", body: null,
       store: "샘플03점", source: "web", status: "done", assigned_to: "김SV",
       created_at: tsOffset(-20) },
+    // POS 메뉴(5번)의 미리 채워 둔 요청과 짝입니다 — demoPosRequests 참조.
+    // 승인까지 끝났고 실행은 dry-run 만 돌아서, 화면에 '실행 대기' 로 뜹니다.
+    { id: 6, kind: "pos_soldout", title: "POS 품절 해제 — 샘플01점 · 토피넛 라떼",
+      body: "품절여부 품절 → 정상\n상품코드 000334",
+      store: "샘플01점", source: "web", status: "done", assigned_to: null,
+      created_at: tsOffset(-2) },
 ];
-let nextTaskId = 6;
+let nextTaskId = 7;
 
 let demoTaskEvents = [
     { id: 1, task_id: 1, from: "received", to: "in_progress", note: null,
@@ -2016,6 +2110,212 @@ const HANDLERS = {
 
     // 32_recipes.sql — returns table(items jsonb) 이라 [{items: [...]}] 모양.
     api_recipes: () => [{ items: DEMO_RECIPES.map((r) => ({ ...r })) }],
+
+    // ---- POS 메뉴 (50_pos_menu.sql) — 함수 규칙 그대로 ----
+    api_pos_menu_summary: () => ({
+        items: DEMO_POS_MENUS.length,
+        // 실제는 count(distinct store_id) 라 **맞춘 매장만** 셉니다.
+        // 못 맞춘 것까지 세면 바로 옆 unmatched 와 뜻이 반대로 읽힙니다.
+        stores: new Set(DEMO_POS_MENUS
+            .filter((m) => m.store_scope === "store" && m.store_matched)
+            .map((m) => m.store)).size,
+        unmatched: new Set(DEMO_POS_MENUS
+            .filter((m) => m.store_scope === "store" && !m.store_matched)
+            .map((m) => m.store)).size,
+        unavailable: DEMO_POS_MENUS
+            .filter((m) => DEMO_POS_UNAVAILABLE.has(m.soldout_code)).length,
+        collected_at: tsOffset(0),
+        open_requests: demoPosRequests.filter((r) => {
+            const task = demoTasks.find((t) => t.id === r.task_id);
+            return task && !["done", "rejected"].includes(task.status);
+        }).length,
+        // 계정별로 나눕니다 — code 만으로 묶으면 뜻이 다른 004 두 개가
+        // 한 줄로 합쳐집니다 (실제 함수와 같은 규칙).
+        by_large: [...new Map(DEMO_POS_MENUS.map((m) =>
+            [`${m.account}|${m.large_code}`, m])).values()]
+            .map((m) => ({
+                account: m.account, code: m.large_code, name: m.large_name,
+                items: DEMO_POS_MENUS.filter((x) => x.account === m.account
+                    && x.large_code === m.large_code).length,
+            }))
+            .sort((a, b) => a.account.localeCompare(b.account, "ko")
+                || a.code.localeCompare(b.code)),
+        by_account: [...new Set(DEMO_POS_MENUS.map((m) => m.account))].sort()
+            .map((account) => ({
+                account,
+                hq_code: DEMO_POS_MENUS.find((m) => m.account === account).hq_code,
+                items: DEMO_POS_MENUS.filter((m) => m.account === account).length,
+                collected_at: tsOffset(0),
+            })),
+    }),
+
+    api_pos_menu_stores: ({ p_account } = {}) => {
+        const seen = new Map();
+        for (const m of DEMO_POS_MENUS) {
+            if (m.store_scope !== "store") continue;
+            if (p_account && m.account !== p_account) continue;
+            // 실제와 같이 표준이름으로 모읍니다 — 원문 그대로 두면 같은 매장이
+            // 계정마다 따로 나옵니다.
+            const name = m.store_matched ? m.store : demoPosStoreName(m.store);
+            const row = seen.get(name)
+                || { store: name, label: m.category.split(" > ")[0],
+                     matched: m.store_matched, items: 0 };
+            row.items += 1;
+            seen.set(name, row);
+        }
+        return [...seen.values()]
+            .sort((a, b) => (b.matched - a.matched)
+                || a.store.localeCompare(b.store, "ko"));
+    },
+
+    api_pos_menus: ({ p_store, p_large, p_only_unavailable, p_q, p_limit, p_account }) => {
+        const query = (p_q || "").trim();
+        const matched = DEMO_POS_MENUS.filter((m) => {
+            if (p_account && m.account !== p_account) return false;
+            // 실제 함수처럼 원문·표준이름 둘 다 받습니다.
+            if (p_store && m.store !== p_store
+                && demoPosStoreName(m.store) !== p_store) return false;
+            if (p_large && m.large_code !== p_large) return false;
+            if (p_only_unavailable && !DEMO_POS_UNAVAILABLE.has(m.soldout_code)) return false;
+            if (query && !m.item_name.includes(query) && m.item_code !== query) return false;
+            return true;
+        });
+        const items = matched
+            .map((m) => {
+                const live = demoPosRequests.find((r) => {
+                    if (r.menu_item_id !== m.menu_item_id) return false;
+                    const task = demoTasks.find((t) => t.id === r.task_id);
+                    return task && !["done", "rejected"].includes(task.status);
+                });
+                const task = live && demoTasks.find((t) => t.id === live.task_id);
+                return {
+                    ...m,
+                    soldout_name: DEMO_POS_SOLDOUT[m.soldout_code] || m.soldout_code,
+                    unavailable: DEMO_POS_UNAVAILABLE.has(m.soldout_code),
+                    delivery_yn: "Y",
+                    collected_at: tsOffset(0),
+                    change_task_id: task ? live.task_id : null,
+                    change_task_status: task ? task.status : null,
+                };
+            })
+            .sort((a, b) => (b.unavailable - a.unavailable)
+                || a.large_code.localeCompare(b.large_code)
+                || a.item_name.localeCompare(b.item_name, "ko"))
+            .slice(0, Math.max(Number(p_limit) || 300, 1));
+        return { items, shown: items.length, total: matched.length };
+    },
+
+    api_pos_menu_requests: ({ p_limit }) =>
+        [...demoPosRequests]
+            .sort((a, b) => b.id - a.id)
+            .slice(0, Math.max(Number(p_limit) || 100, 1))
+            .map((r) => {
+                // 요청이 남은 채 DEMO_POS_MENUS 를 손보면 못 찾을 수 있습니다.
+                // 그때 표 전체가 안 뜨는 것보다 그 줄만 비는 편이 낫습니다.
+                const menu = DEMO_POS_MENUS.find((m) => m.menu_item_id === r.menu_item_id) || {};
+                const task = demoTasks.find((t) => t.id === r.task_id) || {};
+                const runs = demoPosExecutions.filter((e) => e.request_id === r.id);
+                const last = runs[runs.length - 1];
+                return {
+                    request_id: r.id, task_id: r.task_id, task_status: task.status,
+                    kind: task.kind, menu_item_id: r.menu_item_id,
+                    store: menu.store, item_name: menu.item_name,
+                    item_code: menu.item_code, change_type: r.change_type,
+                    field: r.field, before_value: r.before_value,
+                    after_value: r.after_value,
+                    before_label: DEMO_POS_SOLDOUT[r.before_value] || null,
+                    after_label: DEMO_POS_SOLDOUT[r.after_value] || null,
+                    reason: r.reason, created_at: r.created_at,
+                    executions: runs.length,
+                    last_mode: last ? last.mode : null,
+                    last_ok: last ? last.ok : null,
+                    applied: runs.some((e) => e.mode === "live" && e.ok),
+                };
+            }),
+
+    api_pos_menu_executions: ({ p_request_id }) =>
+        demoPosExecutions.filter((e) => e.request_id === Number(p_request_id)),
+
+    // 실제 함수의 거절 규칙을 그대로 옮긴 것입니다 — 화면이 사유를 그대로
+    // 보여주므로(D18 판정을 화면이 흉내내지 않음) 문구까지 같아야 합니다.
+    request_pos_menu_change: ({ p_menu_item_id, p_change_type, p_after_value, p_reason }) => {
+        const menu = DEMO_POS_MENUS.find((m) => m.menu_item_id === Number(p_menu_item_id));
+        if (!menu) return { ok: false, reason: "메뉴를 찾지 못했습니다" };
+        if (!["soldout", "price", "other"].includes(p_change_type)) {
+            return { ok: false,
+                     reason: "모르는 변경 종류입니다: " + (p_change_type || "(없음)") };
+        }
+        const after = String(p_after_value || "").trim();
+        if (!after) return { ok: false, reason: "바꿀 값을 입력하세요" };
+        if (p_change_type === "soldout" && !["0", "1", "7"].includes(after)) {
+            return { ok: false, reason: "품절 처리는 0(정상)·1(품절)·7(일시판매중지)만 됩니다" };
+        }
+        if (menu.soldout_code === after) return { ok: false, reason: "지금 값과 같습니다" };
+
+        const live = demoPosRequests.find((r) => {
+            if (r.menu_item_id !== menu.menu_item_id) return false;
+            const task = demoTasks.find((t) => t.id === r.task_id);
+            return task && !["done", "rejected"].includes(task.status);
+        });
+        if (live) {
+            const task = demoTasks.find((t) => t.id === live.task_id);
+            return { ok: false, reason: "이미 승인 흐름에 있는 건입니다",
+                     task_id: live.task_id, status: task.status };
+        }
+
+        const taskId = nextTaskId++;
+        demoTasks.push({
+            id: taskId, kind: "pos_soldout",
+            title: `POS 품절 ${after === "0" ? "해제" : "처리"} — `
+                + `${menu.store} · ${menu.item_name}`,
+            body: `품절여부 ${DEMO_POS_SOLDOUT[menu.soldout_code]} → ${DEMO_POS_SOLDOUT[after]}`
+                + `\n상품코드 ${menu.item_code}`
+                + (menu.store_scope === "common"
+                    ? "\n⚠️ 본사 상품 마스터라 전 매장에 걸릴 수 있습니다"
+                    + " (매장 단위 여부 미확인 — 입회 시험 항목)" : ""),
+            store: menu.store_scope === "store" ? menu.store : null,
+            source: "web", status: "waiting_approval", assigned_to: null,
+            created_at: tsOffset(0),
+        });
+        demoTaskEvents.push({
+            id: nextTaskEventId++, task_id: taskId, from: "received",
+            to: "waiting_approval",
+            note: `POS 메뉴 변경 승인 요청 (메뉴 #${menu.menu_item_id})`,
+            approval_kind: null, preauth_id: null, created_at: tsOffset(0),
+        });
+        const requestId = nextPosRequestId++;
+        demoPosRequests.push({
+            id: requestId, menu_item_id: menu.menu_item_id, task_id: taskId,
+            change_type: p_change_type, field: "품절여부",
+            before_value: menu.soldout_code, after_value: after,
+            reason: (p_reason || "").trim() || null, created_at: tsOffset(0),
+        });
+        return { ok: true, task_id: taskId, request_id: requestId,
+                 before: menu.soldout_code, after };
+    },
+
+    record_pos_menu_execution: ({ p_request_id, p_mode, p_ok, p_response_code,
+                                  p_response_msg, p_verified_value, p_note }) => {
+        const request = demoPosRequests.find((r) => r.id === Number(p_request_id));
+        if (!request) return { ok: false, reason: "변경 요청을 찾지 못했습니다" };
+        if (!["dry_run", "live"].includes(p_mode)) {
+            return { ok: false, reason: "mode 는 dry_run 또는 live 입니다" };
+        }
+        const id = nextPosExecutionId++;
+        demoPosExecutions.push({
+            execution_id: id, request_id: request.id, mode: p_mode, ok: !!p_ok,
+            response_code: p_response_code || null, response_msg: p_response_msg || null,
+            verified_value: p_verified_value || null, note: p_note || null,
+            executed_at: tsOffset(0),
+        });
+        // dry-run 은 현황을 바꾸지 않습니다 — 실제 함수와 같은 규칙입니다.
+        if (p_mode === "live" && p_ok && request.change_type === "soldout"
+            && p_verified_value) {
+            const menu = DEMO_POS_MENUS.find((m) => m.menu_item_id === request.menu_item_id);
+            if (menu) menu.soldout_code = p_verified_value;
+        }
+        return { ok: true, execution_id: id };
+    },
 
     // 49_ingredient_usage.sql — 데모 레시피 × 고정 난수 판매량으로 실제와
     // 같은 모양(coverage·unmatched_top 포함)을 돌려줍니다.
