@@ -69,6 +69,33 @@ const DEMO_REVIEWS = [
       can_reply: true, can_report: true, replies: [], drafts: [] },
 ];
 
+// 레시피 데모(32_recipes.sql) — 실제 원가분석 반입분과 같은 필드 이름을 씁니다.
+// 메뉴 이름은 위 MENUS 와 겹치게 둡니다(이론 사용량 계산이 이걸 씁니다).
+const DEMO_RECIPES = [
+    { category: "파스타", menu: "로제 파스타", ingredient: "스파게티면", grams: 130, unit_price: 3.2, supply_won: 416 },
+    { category: "파스타", menu: "로제 파스타", ingredient: "로제 소스", grams: 180, unit_price: 5.1, supply_won: 918 },
+    { category: "파스타", menu: "로제 파스타", ingredient: "베이컨", grams: 30, unit_price: 12.0, supply_won: 360 },
+    { category: "파스타", menu: "까르보나라", ingredient: "스파게티면", grams: 130, unit_price: 3.2, supply_won: 416 },
+    { category: "파스타", menu: "까르보나라", ingredient: "크림 소스", grams: 170, unit_price: 4.8, supply_won: 816 },
+    { category: "파스타", menu: "까르보나라", ingredient: "베이컨", grams: 40, unit_price: 12.0, supply_won: 480 },
+    { category: "파스타", menu: "토마토 파스타", ingredient: "스파게티면", grams: 130, unit_price: 3.2, supply_won: 416 },
+    { category: "파스타", menu: "토마토 파스타", ingredient: "토마토 소스", grams: 190, unit_price: 4.0, supply_won: 760 },
+    { category: "피자", menu: "마르게리따 피자", ingredient: "도우", grams: 1, unit_price: 1200, supply_won: 1200 },
+    { category: "피자", menu: "마르게리따 피자", ingredient: "모짜렐라", grams: 110, unit_price: 9.5, supply_won: 1045 },
+    { category: "피자", menu: "마르게리따 피자", ingredient: "토마토 소스", grams: 90, unit_price: 4.0, supply_won: 360 },
+];
+
+// 광고 데모(48_ad_spend.sql) — 실서버는 자료 반입 전이라 빈 표가 정상이고,
+// 데모는 반대로 '채워진' 화면이 제대로 그려지는지 봅니다.
+const DEMO_ADS = [
+    { ym: 202607, store: "샘플01점", channel: "배민", campaign: "우리가게클릭", cost: 330000, impressions: 41200, clicks: 1180, orders: 96 },
+    { ym: 202607, store: "샘플01점", channel: "쿠팡이츠", campaign: "매장 부스트", cost: 210000, impressions: 28800, clicks: 640, orders: 51 },
+    { ym: 202607, store: "샘플02점", channel: "배민", campaign: "우리가게클릭", cost: 275000, impressions: 35400, clicks: 990, orders: 74 },
+    { ym: 202607, store: "샘플03점", channel: "요기요", campaign: "", cost: 120000, impressions: 15100, clicks: 310, orders: 22 },
+    { ym: 202606, store: "샘플01점", channel: "배민", campaign: "우리가게클릭", cost: 310000, impressions: 39900, clicks: 1050, orders: 88 },
+    { ym: 202606, store: "샘플02점", channel: "쿠팡이츠", campaign: "매장 부스트", cost: 190000, impressions: 24500, clicks: 570, orders: 43 },
+];
+
 // 실행할 때마다 숫자가 바뀌면 헷갈리므로 고정 난수를 씁니다.
 function seeded(seed) {
     let state = seed >>> 0;
@@ -510,6 +537,50 @@ function computeStoreVisits(pStore, pLimit) {
     return list;
 }
 
+// ---- 가맹점 DB 데모 (35_store_profiles.sql + 44_store_admin.sql) ----------
+//
+// 마지막 두 매장(샘플93·94점)은 일부러 프로필 없이 둡니다 — '프로필 없음'
+// 표시와 빈 행 인라인 편집(저장이 곧 생성, upsert)이 화면에서 보이는지
+// 확인용. 값들은 실제 DB 에 들어 있는 부류의 값입니다(분류 일반/자활 등) —
+// 데모에만 있는 표기를 만들지 않습니다.
+const DEMO_REGIONS = ["서울", "경기", "인천", "충청", "전라", "경상"];
+const DEMO_POS = ["이지포스(굿모닝)", "이지포스(착한통신)", "아임유"];
+const DEMO_ORDER = ["키오스크", "테이블오더", "대면"];
+let storeProfiles = STORES.slice(0, -2).map((s, i) => ({
+    store_id: s.id, store_name: s.name,
+    category: i % 9 === 0 ? "자활" : "일반",
+    sv_name: ["김SV", "박SV", "이SV", "최SV"][i % 4],
+    region: DEMO_REGIONS[i % DEMO_REGIONS.length],
+    order_method: DEMO_ORDER[i % DEMO_ORDER.length],
+    pos: DEMO_POS[i % DEMO_POS.length],
+    business_start_date: `20${19 + (i % 7)}-${String(1 + (i % 12)).padStart(2, "0")}-15`,
+    imported_at: null, updated_at: null,
+}));
+
+// 채널별 계정 유무(44 api_account_presence). 실제 분포를 흉내 냅니다 —
+// 배민·쿠팡이츠는 대부분, 요기요는 1/3쯤, 신규 채널은 소수. 마지막 두
+// 매장은 계정이 하나도 없게 둬 '계정 없는 매장만' 필터가 보이게 합니다.
+const AP_CHANNELS = ["배민", "쿠팡이츠", "요기요", "땡겨요", "위메프오", "먹깨비"];
+function computeAccountPresence() {
+    const stores = STORES.map((s, i) => {
+        const has = {};
+        if (i < STORES.length - 2) {
+            if (i % 10 !== 3) has["배민"] = true;
+            if (i % 5 !== 2) has["쿠팡이츠"] = true;
+            if (i % 3 === 0) has["요기요"] = true;
+            if (i % 12 === 1) has["땡겨요"] = true;
+            if (i === 30) has["위메프오"] = true;
+            if (i % 46 === 7) has["먹깨비"] = true;
+        }
+        return { store_id: s.id, store_name: s.name, has };
+    }).sort((a, b) => a.store_name.localeCompare(b.store_name));
+    const totals = {};
+    for (const st of stores) {
+        for (const ch of Object.keys(st.has)) totals[ch] = (totals[ch] || 0) + 1;
+    }
+    return { channels: AP_CHANNELS, stores, totals };
+}
+
 // ---- 오픈·폐점 기록 데모 (27_store_lifecycle.sql) -------------------------
 //
 // 샘플07점은 작년 오픈·이번 달 폐점 두 건을 다 넣어 뒀습니다 — "현재 상태"
@@ -580,6 +651,7 @@ const DEMO_TASK_KINDS = [
     { kind: "visit_followup", name: "방문·점검 후속", needs_approval: false, enabled: true },
     { kind: "compensation", name: "보상·감면", needs_approval: true, enabled: true },
     { kind: "notice_send", name: "공문·내용증명 발송", needs_approval: true, enabled: true },
+    { kind: "receivable_notice", name: "미수 안내 발송", needs_approval: true, enabled: true },
 ];
 
 const DEMO_OVERDUE_DAYS = 7;   // task_settings 의 데모용 미러(실제 값은 표에 있음)
@@ -778,6 +850,178 @@ function demoInquiryRows({ p_status, p_routing, p_limit }) {
                 created_at: a.created_at, reviewed_at: a.reviewed_at,
             };
         });
+}
+
+// ---- 정산 · 로열티 데모 (41_settlement.sql) -------------------------------
+//
+// 픽스처는 화면에서 확인해야 하는 상태가 한 번에 다 보이게 골랐습니다.
+//   · 최신 달(202607)은 미청구 — '청구 생성·갱신' 버튼의 동작 확인용.
+//     생성하면 납기(2026-08-01)가 이미 지나 전 매장이 미수로 잡힙니다 —
+//     실제로도 청구를 늦게 만들면 그렇게 됩니다(버그 아님).
+//   · 202606: 샘플05점 전액 미납 · 샘플11점 절반 입금(둘 다 미수), 나머지 완납
+//   · 202605: 샘플07점 전액 미납(두 달 연체) — 미수 정렬·지연이자 확인
+// 계산·거절 규칙은 41_settlement.sql 함수를 그대로 옮깁니다.
+
+const DEMO_SETTLEMENT = { rate_pct: 3.3, due_day: 1, late_pct: 20 };  // settlement_settings 미러
+
+let demoInvoices = [];          // {id, ym, store(이름), sales, amount, due_date, source}
+let demoPayments = [];          // {id, invoice_id, paid_on, amount, note, source, canceled_at, canceled_note}
+let demoSettleNoticeTasks = []; // {task_id, invoice_id, created_at}
+let nextInvoiceId = 1;
+let nextPaymentId = 1;
+
+function demoDaysBetween(a, b) {
+    return Math.round((new Date(b) - new Date(a)) / 86400000);
+}
+
+function demoDueDate(ym) {
+    const next = shiftYm(ym, 1);
+    return `${String(next).slice(0, 4)}-${String(next).slice(4, 6)}-`
+        + String(DEMO_SETTLEMENT.due_day).padStart(2, "0");
+}
+
+function demoStoreSales(ym, store) {
+    const hall = demoAmountAt(ym, store, "홀");
+    const delivery = demoAmountAt(ym, store, "배달");
+    if (hall == null && delivery == null) return null;
+    return (hall || 0) + (delivery || 0);
+}
+
+function demoPaidTotal(invoiceId) {
+    return demoPayments
+        .filter((p) => p.invoice_id === invoiceId && !p.canceled_at)
+        .reduce((a, p) => a + p.amount, 0);
+}
+
+function demoMakeInvoice(ym, store) {
+    const sales = demoStoreSales(ym, store);
+    if (!sales) return null;
+    const invoice = {
+        id: nextInvoiceId++, ym, store: store.name, sales,
+        amount: Math.round(sales * DEMO_SETTLEMENT.rate_pct / 100),
+        due_date: demoDueDate(ym), source: "computed",
+    };
+    demoInvoices.push(invoice);
+    return invoice;
+}
+
+// 202601~202606 청구 + 입금 픽스처 (202607 은 일부러 미청구로 비워 둡니다).
+for (let fixtureYm = 202601; fixtureYm <= 202606; fixtureYm++) {
+    for (const store of STORES) {
+        const invoice = demoMakeInvoice(fixtureYm, store);
+        if (!invoice) continue;
+        const unpaid = (fixtureYm === 202606 && store.name === "샘플05점")
+            || (fixtureYm === 202605 && store.name === "샘플07점");
+        if (unpaid) continue;
+        const half = fixtureYm === 202606 && store.name === "샘플11점";
+        demoPayments.push({
+            id: nextPaymentId++, invoice_id: invoice.id, paid_on: invoice.due_date,
+            amount: half ? Math.round(invoice.amount / 2) : invoice.amount,
+            note: half ? "CMS 부분 이체" : null, source: "hq",
+            canceled_at: null, canceled_note: null,
+        });
+    }
+}
+
+// api_royalty_month 와 같은 모양(jsonb 스칼라 → 객체 그대로).
+function computeRoyaltyMonth(p_ym) {
+    const today = dateOffset(0);
+    const invByStore = new Map(
+        demoInvoices.filter((i) => i.ym === p_ym).map((i) => [i.store, i]));
+
+    const rows = [];
+    for (const store of STORES) {
+        const sales = demoStoreSales(p_ym, store);
+        const invoice = invByStore.get(store.name) || null;
+        if (!sales && !invoice) continue;
+        const paid = invoice ? demoPaidTotal(invoice.id) : 0;
+        const outstanding = invoice ? invoice.amount - paid : null;
+        const overdue = invoice && today > invoice.due_date;
+        rows.push({
+            store_id: store.id, store: store.name, trade_area: store.trade_area,
+            sales_amount: sales,
+            invoice_id: invoice ? invoice.id : null,
+            source: invoice ? invoice.source : null,
+            billed_sales: invoice ? invoice.sales : null,
+            billed_amount: invoice ? invoice.amount : null,
+            rate_pct: invoice ? DEMO_SETTLEMENT.rate_pct : null,
+            due_date: invoice ? invoice.due_date : null,
+            paid_amount: paid,
+            outstanding,
+            payments: invoice
+                ? demoPayments.filter((p) => p.invoice_id === invoice.id)
+                    .map((p) => ({ payment_id: p.id, paid_on: p.paid_on, amount: p.amount,
+                                   note: p.note, source: p.source, canceled: !!p.canceled_at }))
+                : [],
+            status: !invoice ? "미청구"
+                : outstanding <= 0 ? "완납"
+                : !overdue ? (paid > 0 ? "부분 입금" : "기한 전")
+                : "미수",
+            overdue_days: overdue ? demoDaysBetween(invoice.due_date, today) : 0,
+        });
+    }
+    rows.sort((a, b) =>
+        (Number(b.status === "미수") - Number(a.status === "미수"))
+        || ((b.outstanding ?? -1) - (a.outstanding ?? -1))
+        || a.store.localeCompare(b.store));
+
+    const billed = rows.filter((r) => r.invoice_id != null);
+    return {
+        ym: p_ym,
+        rate_pct: DEMO_SETTLEMENT.rate_pct,
+        due_date: demoDueDate(p_ym),
+        stores: rows,
+        totals: {
+            sales: rows.reduce((a, r) => a + (r.sales_amount || 0), 0),
+            billed: billed.reduce((a, r) => a + r.billed_amount, 0),
+            paid: rows.reduce((a, r) => a + r.paid_amount, 0),
+            outstanding: rows.reduce((a, r) => a + Math.max(r.outstanding || 0, 0), 0),
+            stores: rows.length,
+            billed_stores: billed.length,
+            unbilled_stores: rows.length - billed.length,
+            overdue_stores: rows.filter((r) => r.status === "미수").length,
+        },
+    };
+}
+
+// api_royalty_receivables 와 같은 모양 + 같은 판정(납기 경과 · 입금 부족).
+function computeReceivables() {
+    const today = dateOffset(0);
+    const items = demoInvoices
+        .map((invoice) => {
+            const paid = demoPaidTotal(invoice.id);
+            const outstanding = invoice.amount - paid;
+            if (outstanding <= 0 || invoice.due_date >= today) return null;
+            const overdueDays = demoDaysBetween(invoice.due_date, today);
+            const link = demoSettleNoticeTasks
+                .filter((n) => n.invoice_id === invoice.id)
+                .map((n) => ({ ...n,
+                    status: (demoTasks.find((t) => t.id === n.task_id) || {}).status }))
+                .filter((n) => n.status !== "rejected")
+                .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] || null;
+            return {
+                invoice_id: invoice.id, ym: invoice.ym,
+                store_id: (STORES.find((s) => s.name === invoice.store) || {}).id ?? null,
+                store: invoice.store,
+                amount: invoice.amount, paid_amount: paid, outstanding,
+                due_date: invoice.due_date, overdue_days: overdueDays,
+                late_interest_est: Math.floor(
+                    outstanding * DEMO_SETTLEMENT.late_pct / 100 * overdueDays / 365),
+                notice_task_id: link ? link.task_id : null,
+                notice_task_status: link ? link.status : null,
+                notice_created_at: link ? link.created_at : null,
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => (b.overdue_days - a.overdue_days) || (b.outstanding - a.outstanding));
+    return {
+        late_interest_pct_year: DEMO_SETTLEMENT.late_pct,
+        items,
+        totals: {
+            count: items.length,
+            outstanding: items.reduce((a, x) => a + x.outstanding, 0),
+        },
+    };
 }
 
 const HANDLERS = {
@@ -1450,15 +1694,57 @@ const HANDLERS = {
         ],
     }),
 
-    // 가맹점DB 반입분(35_store_profiles.sql). 화면이 쓰는 것은 sv_name 뿐이라
-    // 나머지 열은 비워 둡니다 — 채우면 '데모에만 있는 값' 이 생깁니다.
-    api_store_profiles: () => STORES.map((s, i) => ({
-        store_id: s.id, store_name: s.name,
-        category: null,
-        sv_name: ["김SV", "박SV", "이SV", "최SV"][i % 4],
-        region: null, order_method: null, pos: null,
-        business_start_date: null, imported_at: null, updated_at: null,
-    })),
+    // 가맹점DB 반입분(35_store_profiles.sql). 가맹점 DB 관리 화면이 전 열을
+    // 쓰므로 storeProfiles(위 픽스처)를 그대로 내려줍니다. 방문·점검 화면의
+    // SV 필터도 같은 데이터를 씁니다.
+    api_store_profiles: () => storeProfiles.map((p) => ({ ...p })),
+
+    // 44_store_admin.sql — 인라인 수정 저장. 실제 함수처럼 upsert 입니다
+    // (프로필 없는 매장의 저장이 곧 생성).
+    save_store_profile: (args) => {
+        const store = STORES.find((s) => s.id === Number(args.p_store_id));
+        if (!store) return { ok: false, reason: "그런 매장이 없습니다" };
+        const values = {
+            category: args.p_category || null,
+            sv_name: args.p_sv_name || null,
+            region: args.p_region || null,
+            order_method: args.p_order_method || null,
+            pos: args.p_pos || null,
+            business_start_date: args.p_business_start_date || null,
+        };
+        const row = storeProfiles.find((p) => p.store_id === store.id);
+        if (row) Object.assign(row, values, { updated_at: new Date().toISOString() });
+        else storeProfiles.push({ store_id: store.id, store_name: store.name,
+                                  ...values, imported_at: null,
+                                  updated_at: new Date().toISOString() });
+        return { ok: true, store_id: store.id, store_name: store.name };
+    },
+
+    // 44_store_admin.sql — 신규 매장 등록. stores 에도 넣어 매장 select
+    // (방문·수집 화면)에 같이 나타나게 합니다. weight 0 = 매출 이력 0.
+    register_store: (args) => {
+        const name = (args.p_name || "").trim();
+        if (!name) return { ok: false, reason: "매장 이름이 비어 있습니다" };
+        if (STORES.some((s) => s.name === name)) {
+            return { ok: false, reason: `이미 있는 매장입니다: ${name}` };
+        }
+        const id = Math.max(...STORES.map((s) => s.id)) + 1;
+        STORES.push({ id, name, trade_area: null, weight: 0 });
+        storeProfiles.push({
+            store_id: id, store_name: name,
+            category: args.p_category || null,
+            sv_name: args.p_sv_name || null,
+            region: args.p_region || null,
+            order_method: args.p_order_method || null,
+            pos: args.p_pos || null,
+            business_start_date: args.p_business_start_date || null,
+            imported_at: null, updated_at: new Date().toISOString(),
+        });
+        return { ok: true, store_id: id, store_name: name };
+    },
+
+    // 44_store_admin.sql — 채널별 계정 유무(아이디·비밀번호 없음).
+    api_account_presence: () => computeAccountPresence(),
 
     api_store_lifecycle: ({ p_store, p_limit }) => computeStoreLifecycle(p_store || null, p_limit),
     api_store_lifecycle_status: ({ p_status }) => computeLifecycleStatus(p_status || null),
@@ -1539,6 +1825,185 @@ const HANDLERS = {
         if (preauth.revoked_at) return { ok: false, reason: "이미 철회된 고지입니다" };
         preauth.revoked_at = new Date().toISOString();
         return { ok: true, preauth_id: preauth.id };
+    },
+
+    // ---- 정산 · 로열티 (41_settlement.sql) — 함수 규칙 그대로 ----
+    api_royalty_month: ({ p_ym }) => computeRoyaltyMonth(Number(p_ym)),
+    api_royalty_receivables: () => computeReceivables(),
+
+    generate_royalty_invoices: ({ p_ym }) => {
+        const ym = Number(p_ym);
+        if (!ym || ym < 200001 || ym > 209912 || ym % 100 < 1 || ym % 100 > 12) {
+            return { ok: false, reason: `연월(YYYYMM)이 이상합니다: ${p_ym || "(없음)"}` };
+        }
+        let written = 0;
+        let removed = 0;
+        for (const store of STORES) {
+            const sales = demoStoreSales(ym, store);
+            const invoice = demoInvoices.find((i) => i.ym === ym && i.store === store.name);
+            if (sales) {
+                if (!invoice) {
+                    demoMakeInvoice(ym, store);
+                    written += 1;
+                } else if (invoice.source === "computed") {
+                    invoice.sales = sales;
+                    invoice.amount = Math.round(sales * DEMO_SETTLEMENT.rate_pct / 100);
+                    invoice.due_date = demoDueDate(ym);
+                    written += 1;
+                }
+            } else if (invoice && invoice.source === "computed"
+                       && !demoPayments.some((p) => p.invoice_id === invoice.id && !p.canceled_at)) {
+                demoInvoices = demoInvoices.filter((i) => i !== invoice);
+                removed += 1;
+            }
+        }
+        return {
+            ok: true, ym,
+            stores: STORES.filter((s) => demoStoreSales(ym, s)).length,
+            written, removed,
+            hq_kept: demoInvoices.filter((i) => i.ym === ym && i.source === "hq").length,
+            rate_pct: DEMO_SETTLEMENT.rate_pct, due_date: demoDueDate(ym),
+        };
+    },
+
+    record_royalty_payment: ({ p_invoice_id, p_paid_on, p_amount, p_note }) => {
+        const invoice = demoInvoices.find((i) => i.id === Number(p_invoice_id));
+        if (!invoice) return { ok: false, reason: "청구를 찾지 못했습니다" };
+        if (!p_paid_on) return { ok: false, reason: "입금일을 입력하세요" };
+        const amount = Number(p_amount);
+        if (!amount || amount <= 0) return { ok: false, reason: "금액은 0보다 커야 합니다" };
+        demoPayments.push({
+            id: nextPaymentId++, invoice_id: invoice.id, paid_on: p_paid_on,
+            amount, note: (p_note || "").trim() || null, source: "web",
+            canceled_at: null, canceled_note: null,
+        });
+        const paid = demoPaidTotal(invoice.id);
+        return { ok: true, payment_id: nextPaymentId - 1,
+                 paid_total: paid, outstanding: invoice.amount - paid };
+    },
+
+    cancel_royalty_payment: ({ p_payment_id, p_note }) => {
+        const payment = demoPayments.find((p) => p.id === Number(p_payment_id));
+        if (!payment) return { ok: false, reason: "입금 기록을 찾지 못했습니다" };
+        if (payment.canceled_at) return { ok: false, reason: "이미 취소된 기록입니다" };
+        payment.canceled_at = new Date().toISOString();
+        payment.canceled_note = (p_note || "").trim() || null;
+        return { ok: true, payment_id: payment.id };
+    },
+
+    request_receivable_notice: ({ p_invoice_id }) => {
+        const invoice = demoInvoices.find((i) => i.id === Number(p_invoice_id));
+        if (!invoice) return { ok: false, reason: "청구를 찾지 못했습니다" };
+        const paid = demoPaidTotal(invoice.id);
+        const outstanding = invoice.amount - paid;
+        if (outstanding <= 0) return { ok: false, reason: "미수가 없는 청구입니다" };
+        const today = dateOffset(0);
+        if (invoice.due_date >= today) {
+            return { ok: false, reason: `아직 납기(${invoice.due_date})가 지나지 않았습니다` };
+        }
+        const live = demoSettleNoticeTasks.find((n) => n.invoice_id === invoice.id
+            && (demoTasks.find((t) => t.id === n.task_id) || {}).status !== "rejected");
+        if (live) {
+            return { ok: false, reason: "이미 승인 흐름에 있는 건입니다", task_id: live.task_id };
+        }
+        const over = demoDaysBetween(invoice.due_date, today);
+        const est = Math.floor(outstanding * DEMO_SETTLEMENT.late_pct / 100 * over / 365);
+        const label = `${String(invoice.ym).slice(0, 4)}.${String(invoice.ym).slice(4, 6)}`;
+        const taskId = nextTaskId++;
+        demoTasks.push({
+            id: taskId, kind: "receivable_notice",
+            title: `미수 안내 발송 — ${invoice.store} · ${label}분 로열티`,
+            body: `청구 ${invoice.amount}원 · 입금 ${paid}원 · 미수 ${outstanding}원\n`
+                + `납기 ${invoice.due_date} (경과 ${over}일)\n`
+                + `지연이자 참고 ${est}원 (연 ${DEMO_SETTLEMENT.late_pct}%, 실제 부과는 본사 결정)`,
+            store: invoice.store, source: "web", status: "waiting_approval",
+            assigned_to: null, created_at: new Date().toISOString(),
+        });
+        demoTaskEvents.push({
+            id: nextTaskEventId++, task_id: taskId, from: "received", to: "waiting_approval",
+            note: `미수 판정에서 승인 요청 생성 (청구 #${invoice.id})`,
+            approval_kind: null, preauth_id: null, created_at: new Date().toISOString(),
+        });
+        demoSettleNoticeTasks.push({ task_id: taskId, invoice_id: invoice.id,
+                                     created_at: new Date().toISOString() });
+        return { ok: true, task_id: taskId, outstanding };
+    },
+
+    // 48_ad_spend.sql — jsonb 스칼라(객체) 그대로.
+    api_ad_spend: () => {
+        const sum = (rows, key) => rows.reduce((t, r) => t + (r[key] || 0), 0);
+        const channels = [...new Set(DEMO_ADS.map((r) => r.channel))]
+            .map((ch) => {
+                const mine = DEMO_ADS.filter((r) => r.channel === ch);
+                return { channel: ch, cost: sum(mine, "cost"),
+                         impressions: sum(mine, "impressions"),
+                         clicks: sum(mine, "clicks"), orders: sum(mine, "orders") };
+            })
+            .sort((a, b) => b.cost - a.cost);
+        return {
+            summary: { cost: sum(DEMO_ADS, "cost"),
+                       impressions: sum(DEMO_ADS, "impressions"),
+                       clicks: sum(DEMO_ADS, "clicks"),
+                       orders: sum(DEMO_ADS, "orders") },
+            by_channel: channels,
+            rows: [...DEMO_ADS].sort((a, b) => b.ym - a.ym),
+        };
+    },
+
+    // 32_recipes.sql — returns table(items jsonb) 이라 [{items: [...]}] 모양.
+    api_recipes: () => [{ items: DEMO_RECIPES.map((r) => ({ ...r })) }],
+
+    // 49_ingredient_usage.sql — 데모 레시피 × 고정 난수 판매량으로 실제와
+    // 같은 모양(coverage·unmatched_top 포함)을 돌려줍니다.
+    api_ingredient_usage: ({ p_from, p_to, p_store }) => {
+        const to = Number(p_to) || 202607;
+        const from = Number(p_from) || 202605;
+        const rand = seeded(from * 31 + to * 7 + (p_store ? p_store.length : 0));
+
+        const qtyByMenu = new Map();
+        for (const [name] of MENUS) {
+            qtyByMenu.set(name, 200 + Math.floor(rand() * 800));
+        }
+        const recipeMenus = new Set(DEMO_RECIPES.map((r) => r.menu));
+
+        const usage = new Map();
+        for (const r of DEMO_RECIPES) {
+            const qty = qtyByMenu.get(r.menu) || 0;
+            const u = usage.get(r.ingredient)
+                || { amount: 0, cost: 0, menus: new Set() };
+            u.amount += qty * r.grams;
+            u.cost += qty * (r.supply_won || 0);
+            u.menus.add(r.menu);
+            usage.set(r.ingredient, u);
+        }
+
+        let qtyMatched = 0, qtyTotal = 0, menuMatched = 0;
+        for (const [name, qty] of qtyByMenu) {
+            qtyTotal += qty;
+            if (recipeMenus.has(name)) { qtyMatched += qty; menuMatched += 1; }
+        }
+
+        return {
+            from_ym: from, to_ym: to, ym_min: 202501, ym_max: 202607,
+            coverage: { menu_matched: menuMatched, menu_total: qtyByMenu.size,
+                        qty_matched: qtyMatched, qty_total: qtyTotal },
+            ingredients: [...usage.entries()]
+                .map(([ingredient, u]) => ({
+                    ingredient,
+                    amount: Math.round(u.amount * 10) / 10,
+                    cost: Math.round(u.cost),
+                    menus: u.menus.size,
+                }))
+                .sort((a, b) => b.cost - a.cost),
+            unmatched_top: [...qtyByMenu.entries()]
+                .filter(([name]) => !recipeMenus.has(name))
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10)
+                .map(([menu, qty]) => ({
+                    menu, qty,
+                    category: (MENUS.find(([n]) => n === menu) || [])[1] || null,
+                })),
+        };
     },
 };
 

@@ -1247,3 +1247,19 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
     margin-top: 10px;
 }
 .iq-actions .meta { margin-left: auto; }
+
+/* ---------------------------------------------------------------- 가맹점 DB (9번 기반) */
+
+/* 인라인 수정 행 — 표 안 입력칸이 열 너비를 터뜨리지 않게만 조입니다.
+   표는 왼쪽 정렬 텍스트 열이라 입력칸도 왼쪽 정렬 그대로 둡니다. */
+.sdb-editing input {
+    font: inherit;
+    font-size: 13px;
+    width: 110px;
+    padding: 4px 6px;
+    color: var(--text-primary);
+    background: var(--surface-1);
+    border: 1px solid var(--baseline);
+    border-radius: 6px;
+}
+.sdb-editing input[type="date"] { width: 150px; }

@@ -49,12 +49,15 @@
         <button class="navitem is-on" data-go="home" type="button">🏠 홈</button>
         <button class="navitem" data-go="tasks" type="button">✅ 업무</button>
         <button class="navitem" data-go="sales" type="button">📊 매출</button>
+        <button class="navitem" data-go="settlement" type="button">💰 정산</button>
         <button class="navitem" data-go="reviews" type="button">⭐ 리뷰</button>
         <button class="navitem" data-go="stores" type="button">🏪 매장 정보</button>
         <button class="navitem" data-go="collect" type="button">🗂 수집·내보내기</button>
         <button class="navitem" data-go="notices" type="button">📋 위반·공문</button>
         <button class="navitem" data-go="visits" type="button">🚶 방문·점검</button>
         <button class="navitem" data-go="lifecycle" type="button">🏪 오픈·폐점</button>
+        <button class="navitem" data-go="ads" type="button">📣 광고</button>
+        <button class="navitem" data-go="ingredients" type="button">🥬 식자재·발주</button>
     </nav>
 
     <!-- 필터는 한 줄로 맨 위에. 아래 모든 카드가 같은 조건으로 다시 그려집니다. -->
@@ -412,6 +415,112 @@
     </section>
 
     <!-- 수집 요청 — 이 PC(수집용)에서 에이전트가 돌고 있어야 실행됩니다. -->
+
+    <!-- 가맹점 DB 관리 — 9번(방문·점검)의 기반. docs/store-db-design.md 4절
+         조립: 표는 api_store_profiles(35), 저장은 save_store_profile(44),
+         필터는 SV·지역. stores 에는 있는데 프로필이 없는 매장(반입 때 못
+         찾음·업로더 신규)도 빈 행으로 보여 바로 채울 수 있게 합니다. -->
+    <section data-area="stores" class="card full" id="store-db-card">
+        <header>
+            <h2>가맹점 DB</h2>
+            <span class="meta" id="sdb-summary"></span>
+        </header>
+        <div class="filters">
+            <div class="field">
+                <label for="sdb-sv">담당 SV</label>
+                <select id="sdb-sv"><option value="">전체</option></select>
+            </div>
+            <div class="field">
+                <label for="sdb-region">지역</label>
+                <select id="sdb-region"><option value="">전체</option></select>
+            </div>
+            <div class="field grow">
+                <label for="sdb-search">매장 찾기</label>
+                <input type="text" id="sdb-search" autocomplete="off" placeholder="이름 일부">
+            </div>
+        </div>
+        <div class="tableview" id="sdb-table"></div>
+        <p class="notice" id="sdb-notice" hidden></p>
+
+        <h3>신규 매장 등록</h3>
+        <p class="hint">
+            아직 매출이 없는 매장을 미리 만듭니다. 매출이 올라오기 시작하면 같은
+            이름으로 자동으로 이어집니다 — 이름은 계정표의 표준 매장명과 똑같이
+            적으세요(다르면 한 매장이 두 줄로 갈라집니다).
+        </p>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="sdb-n-name">가맹점명 (필수)</label>
+                <input type="text" id="sdb-n-name" autocomplete="off" placeholder="예: 강남역점">
+            </div>
+            <div class="field">
+                <label for="sdb-n-category">분류</label>
+                <input type="text" id="sdb-n-category" autocomplete="off" placeholder="예: 일반">
+            </div>
+            <div class="field">
+                <label for="sdb-n-sv">담당 SV</label>
+                <input type="text" id="sdb-n-sv" autocomplete="off">
+            </div>
+            <div class="field">
+                <label for="sdb-n-region">지역</label>
+                <input type="text" id="sdb-n-region" autocomplete="off">
+            </div>
+        </div>
+        <div class="reqform">
+            <div class="field">
+                <label for="sdb-n-order">주문방식</label>
+                <input type="text" id="sdb-n-order" autocomplete="off">
+            </div>
+            <div class="field">
+                <label for="sdb-n-pos">포스</label>
+                <input type="text" id="sdb-n-pos" autocomplete="off">
+            </div>
+            <div class="field">
+                <label for="sdb-n-start">영업시작일</label>
+                <input type="date" id="sdb-n-start">
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" class="primary" id="sdb-n-submit">매장 등록</button>
+            </div>
+        </div>
+        <p class="notice" id="sdb-n-notice" hidden></p>
+    </section>
+
+    <!-- 계정 관리(기반) — 채널별 계정 '유무만' 봅니다(api_account_presence, 44 —
+         아이디·비밀번호는 읽지도 않는 함수). 게이트 뒤 상세(실계정·연락처)는
+         담당자 확인 3건(docs/store-db-design.md 2절)이 끝나면 붙습니다 —
+         지금은 카드 맨 아래 안내 한 줄이 그 자리입니다. -->
+    <section data-area="stores" class="card full" id="account-presence-card">
+        <header>
+            <h2>계정 관리 · 채널별 계정 유무</h2>
+            <span class="meta" id="ap-summary"></span>
+        </header>
+        <div class="filters">
+            <div class="field">
+                <label for="ap-channel">채널</label>
+                <select id="ap-channel"><option value="">전체(표로 보기)</option></select>
+            </div>
+            <div class="field">
+                <label for="ap-state">보기</label>
+                <select id="ap-state">
+                    <option value="">전체 매장</option>
+                    <option value="has">계정 있는 매장만</option>
+                    <option value="none">계정 없는 매장만</option>
+                </select>
+            </div>
+        </div>
+        <p class="hint">
+            빈칸은 그 채널에 계정이 등록돼 있지 않다는 뜻입니다. 계정표 기준
+            x/빈칸은 '그 채널 영업 안 함' 이므로 빈칸이 곧 문제는 아닙니다.
+        </p>
+        <div class="tableview" id="ap-table"></div>
+        <p class="hint">
+            아이디·비밀번호 열람·수정은 아래 '매장 정보 · 배달앱 계정' 카드에서
+            합니다(접근 암호). 가맹점 연락처·계약(민감 열) 화면은 담당자 확인
+            3건(docs/store-db-design.md 2절)이 끝나면 이 카드에 붙습니다.
+        </p>
+    </section>
 
     <!-- 매장별 배달앱 계정. 들어올 때 암호를 한 번 더 받습니다(29_store_credentials.sql).
          웹 로그인만으로는 부족합니다 — 화면 켜 놓고 자리를 비우면 지나가는 사람이
@@ -865,6 +974,92 @@
         <div class="tableview" id="t-lifecycle"></div>
     </section>
 
+    <!-- 광고 — 6번 영역(배달플랫폼 운영·광고). 48_ad_spend.sql 위의 화면입니다.
+         자료(광고 집행액·노출·클릭, 마케팅팀)가 아직 반입 전이라 평소에는 빈
+         표가 정상입니다 — 자료가 오면 반입 도구만 붙이면 이 화면이 채워집니다.
+         광고 변경(쓰기)은 점주 개인 계정이라 만들지 않습니다(scope-2026 6번, D18). -->
+    <section data-area="ads" class="card full" id="ads-card">
+        <header>
+            <h2>광고 집행 현황</h2>
+            <span class="meta" id="ads-meta"></span>
+        </header>
+        <p class="hint">
+            광고비 자료가 반입되면 채널·매장·월 단위로 여기 표시됩니다.
+            자료 원천은 마케팅팀 광고 집행 대장입니다(광고비는 통상 점주 부담).
+        </p>
+        <div class="kpis" id="ads-kpis" hidden>
+            <div class="tile hero">
+                <div class="label">광고비 합계</div>
+                <div class="value" id="ads-cost">—</div>
+                <div class="sub" id="ads-range"></div>
+            </div>
+            <div class="tile">
+                <div class="label">노출</div>
+                <div class="value" id="ads-impressions">—</div>
+            </div>
+            <div class="tile">
+                <div class="label">클릭</div>
+                <div class="value" id="ads-clicks">—</div>
+            </div>
+            <div class="tile">
+                <div class="label">광고 경유 주문</div>
+                <div class="value" id="ads-orders">—</div>
+            </div>
+        </div>
+        <div class="tableview" id="t-ads-channel"></div>
+        <div class="tableview" id="t-ads"></div>
+    </section>
+
+    <!-- 식자재·발주 — 10번 영역. 32_recipes.sql(레시피 278행 반입됨) +
+         49_ingredient_usage.sql(판매량 × 레시피 = 이론 사용량) 위의 화면입니다.
+         발주량 대조는 발주 자료(아워홈)가 연동돼야 가능해 아직 없습니다. -->
+    <section data-area="ingredients" class="card full" id="recipe-card">
+        <header>
+            <h2>레시피 소요량</h2>
+            <span class="meta" id="recipe-meta"></span>
+        </header>
+        <p class="hint">
+            원가분석 파일에서 반입한 1인분 기준 소요량입니다. 메뉴를 고르면
+            그 메뉴의 재료만 보여줍니다.
+        </p>
+        <div class="reqform">
+            <div class="field">
+                <label for="rc-menu">메뉴</label>
+                <select id="rc-menu"><option value="">메뉴를 고르세요</option></select>
+            </div>
+        </div>
+        <div class="tableview" id="t-recipes"></div>
+    </section>
+
+    <section data-area="ingredients" class="card full" id="ingredient-usage-card">
+        <header>
+            <h2>이론 재료 사용량</h2>
+            <span class="meta" id="iu-meta"></span>
+        </header>
+        <p class="hint">
+            판매량 × 레시피로 계산한 이론값입니다. 로스·폐기율 반영 전이라
+            절대량 판정이 아니라 추이·비율 비교용으로 쓰세요. 발주량과의
+            대조는 발주 자료가 연동되면 붙습니다.
+        </p>
+        <div class="reqform">
+            <div class="field">
+                <label for="iu-from">시작</label>
+                <select id="iu-from"></select>
+            </div>
+            <div class="field">
+                <label for="iu-to">종료</label>
+                <select id="iu-to"></select>
+            </div>
+            <div class="field">
+                <label for="iu-store">매장</label>
+                <select id="iu-store"><option value="">전체</option></select>
+            </div>
+        </div>
+        <p class="hint" id="iu-coverage"></p>
+        <div class="tableview" id="t-ingredient-usage"></div>
+        <div class="tableview" id="t-iu-unmatched"></div>
+    </section>
+
     <!-- 업무 — 11번 영역(업무 및 보고 자동화). 30_tasks.sql 위에 얹는 화면입니다.
          이 축은 매출과 그레인이 다릅니다(접수 건 단위). 그래서 위쪽 기간·매장
          필터를 따르지 않습니다 — 방문·점검, 오픈·폐점과 같은 이유입니다.
@@ -1051,6 +1246,129 @@
         </div>
         <p class="notice" id="pa-notice"></p>
         <div class="tableview" id="t-preauths"></div>
+    </section>
+
+    <!-- 발송 이력 — 31_notifications + 43_notify_dispatch. 발송 자체는 수집 PC
+         도구(tools/alert_negative_reviews.py · send_approved_notices.py ·
+         alert_closed_store_accounts.py)의 일이고, 웹은 이력만 봅니다
+         (notify.py 머리 주석의 역할 분담 — 웹에서 발송 버튼을 만들지 않습니다). -->
+    <section data-area="tasks" class="card full" id="notify-card">
+        <header>
+            <h2>발송 이력</h2>
+            <span class="meta" id="nf-summary"></span>
+        </header>
+        <p class="hint">
+            메일·알림톡으로 나간 발송의 기록입니다. dry-run 은 보내지 않고
+            기록만 남긴 시험입니다. 수신처는 notify_recipients,
+            부정 리뷰 기준은 review_alert_rules 표에서 바꿉니다.
+        </p>
+        <div class="cardsearch">
+            <select id="nf-filter-kind">
+                <option value="">전체</option>
+                <option value="review_alert">부정 리뷰</option>
+                <option value="notice">공문</option>
+                <option value="store_close">폐점 계정</option>
+                <option value="report">보고서</option>
+                <option value="test">시험</option>
+            </select>
+            <span class="meta" id="nf-shown"></span>
+        </div>
+        <div class="tableview" id="t-notifications"></div>
+    </section>
+
+    <!-- 정산 · 로열티 — 3번 영역. 41_settlement.sql 이 짝입니다.
+         요율·납기·지연이자는 settlement_settings(본사 값)이고, 청구는 매출
+         (agg_month)로 계산한 예상치입니다 — 본사 청구·입금 원자료가 반입되면
+         그 값(source=hq)이 우선하고 갱신해도 덮이지 않습니다. -->
+    <section data-area="settlement" class="card full" id="settlement-month-card">
+        <header>
+            <h2>월별 로열티 청구</h2>
+            <span class="meta" id="st-month-meta"></span>
+        </header>
+        <p class="hint">
+            로열티는 그 달 매출(전 품목 합)의 요율로 계산합니다. '청구 생성·갱신'을
+            누르면 그 달 청구가 지금 매출 기준으로 다시 계산됩니다 — 본사 원자료로
+            들어온 청구는 갱신해도 바뀌지 않습니다.
+        </p>
+        <div class="cardsearch">
+            <select id="st-ym"></select>
+            <button type="button" id="st-generate">청구 생성·갱신</button>
+            <span class="meta" id="st-generate-msg"></span>
+        </div>
+        <div class="kpis">
+            <div class="tile hero">
+                <div class="label">미수 합계</div>
+                <div class="value" id="st-outstanding">—</div>
+                <div class="sub" id="st-outstanding-sub"></div>
+            </div>
+            <div class="tile">
+                <div class="label">청구 합계</div>
+                <div class="value" id="st-billed">—</div>
+                <div class="sub" id="st-billed-sub"></div>
+            </div>
+            <div class="tile">
+                <div class="label">입금 합계</div>
+                <div class="value" id="st-paid">—</div>
+            </div>
+            <div class="tile">
+                <div class="label">미청구 매장</div>
+                <div class="value" id="st-unbilled">—</div>
+                <div class="sub">매출은 있는데 청구가 아직 없는 곳</div>
+            </div>
+        </div>
+        <div class="tableview" id="t-settlement"></div>
+        <div id="settlement-payments-panel" hidden>
+            <h3 id="settlement-payments-title"></h3>
+            <div class="tableview" id="t-settlement-payments"></div>
+        </div>
+    </section>
+
+    <section data-area="settlement" class="card full" id="settlement-payment-card">
+        <header>
+            <h2>입금 기록</h2>
+            <span class="meta">기록하면 위 표와 미수 목록이 바로 다시 계산됩니다</span>
+        </header>
+        <p class="hint">
+            위 표의 '입금' 버튼을 누르면 매장이 채워집니다. 잘못 넣은 기록은
+            '내역'에서 취소하면 됩니다 — 기록은 지워지지 않고 취소 표시로 남습니다.
+        </p>
+        <div class="reqform">
+            <div class="field">
+                <label for="pay-invoice">매장 (그 달 청구)</label>
+                <select id="pay-invoice"></select>
+            </div>
+            <div class="field">
+                <label for="pay-date">입금일</label>
+                <input type="date" id="pay-date">
+            </div>
+            <div class="field">
+                <label for="pay-amount">금액(원)</label>
+                <input type="number" id="pay-amount" min="1" placeholder="예: 749156">
+            </div>
+            <div class="field grow">
+                <label for="pay-note">메모</label>
+                <input type="text" id="pay-note" placeholder="선택 입력 (예: CMS 재이체)">
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" id="pay-submit">입금 기록</button>
+            </div>
+        </div>
+        <p class="notice" id="pay-notice"></p>
+    </section>
+
+    <section data-area="settlement" class="card full" id="settlement-receivable-card">
+        <header>
+            <h2>미수 목록</h2>
+            <span class="meta" id="st-recv-meta"></span>
+        </header>
+        <p class="hint">
+            납기가 지나도록 입금이 모자란 청구가 전 기간에서 모입니다. '발송 승인
+            요청'을 누르면 업무 영역의 승인 대기로 넘어가고(승인자: 운영지원팀
+            팀장), 실제 발송은 승인 뒤에 이뤄집니다. 지연이자는 참고 계산입니다 —
+            실제 부과는 본사가 정합니다.
+        </p>
+        <div class="tableview" id="t-receivables"></div>
     </section>
 
     <!-- 매장 선택창 — 기존 프로그램의 '수집 매장 선택'과 같은 역할 -->
