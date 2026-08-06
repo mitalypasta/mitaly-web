@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
     <title>미태리 매출 대시보드</title>
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
     <link rel="stylesheet" href="styles.css">
     <script src="config.js"></script>
 </head>
@@ -48,17 +50,23 @@
     <nav class="sidenav" id="sidenav" aria-label="업무 영역">
         <button class="navitem is-on" data-go="home" type="button">🏠 홈</button>
         <button class="navitem" data-go="tasks" type="button">✅ 업무</button>
+        <div class="navgroup">매출분석</div>
         <button class="navitem" data-go="sales" type="button">📊 매출</button>
         <button class="navitem" data-go="settlement" type="button">💰 정산</button>
-        <button class="navitem" data-go="reviews" type="button">⭐ 리뷰</button>
-        <button class="navitem" data-go="stores" type="button">🏪 매장 정보</button>
-        <button class="navitem" data-go="collect" type="button">🗂 수집·내보내기</button>
-        <button class="navitem" data-go="notices" type="button">📋 위반·공문</button>
-        <button class="navitem" data-go="visits" type="button">🚶 방문·점검</button>
-        <button class="navitem" data-go="lifecycle" type="button">🏪 오픈·폐점</button>
         <button class="navitem" data-go="ads" type="button">📣 광고</button>
+        <div class="navgroup">매장운영</div>
+        <button class="navitem" data-go="reviews" type="button">⭐ 리뷰</button>
+        <button class="navitem" data-go="visits" type="button">🚶 방문·점검</button>
+        <button class="navitem" data-go="notices" type="button">📋 위반·공문</button>
         <button class="navitem" data-go="ingredients" type="button">🥬 식자재·발주</button>
+        <div class="navgroup">가맹관리</div>
+        <button class="navitem" data-go="stores" type="button">🏪 매장 정보</button>
+        <button class="navitem" data-go="lifecycle" type="button">🏪 오픈·폐점</button>
+        <button class="navitem" data-go="collect" type="button">🗂 수집·내보내기</button>
     </nav>
+
+    <!-- 오른쪽 본문 기둥 — 필터부터 모든 카드까지. 왼쪽 메뉴와 2단을 이룹니다. -->
+    <div class="main-col">
 
     <!-- 필터는 한 줄로 맨 위에. 아래 모든 카드가 같은 조건으로 다시 그려집니다. -->
     <div class="filters">
@@ -88,7 +96,7 @@
         </div>
     </div>
 
-    <div class="kpis" id="sales-kpis">
+    <div class="kpis page-kpis" id="sales-kpis">
         <div class="tile hero">
             <div class="label">선택 기간 매출</div>
             <div class="value" id="kpi-amount">—</div>
@@ -1370,6 +1378,8 @@
         </p>
         <div class="tableview" id="t-receivables"></div>
     </section>
+
+    </div><!-- /main-col -->
 
     <!-- 매장 선택창 — 기존 프로그램의 '수집 매장 선택'과 같은 역할 -->
     <div class="modal" id="store-modal" hidden>

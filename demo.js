@@ -1929,6 +1929,23 @@ const HANDLERS = {
         return { ok: true, task_id: taskId, outstanding };
     },
 
+    // 31_notifications.sql — 발송 이력. 세 상태(dry_run/sent/failed)가 화면에서
+    // 어떻게 보이는지 다 섞어 뒀습니다(2026-08-06 리뷰: 핸들러 누락 보충).
+    api_notifications: ({ p_limit }) => [
+        { id: 3, created_at: new Date(Date.now() - 1800_000).toISOString(),
+          kind: "review_alert", channel: "mail", recipient: "ops@demo.example",
+          subject: "부정 리뷰 2건 — 샘플01점 외", status: "dry_run",
+          error: null, task_id: null },
+        { id: 2, created_at: new Date(Date.now() - 7200_000).toISOString(),
+          kind: "notice", channel: "mail", recipient: "ops@demo.example",
+          subject: "내용증명 발송 — 샘플02점 2단계", status: "sent",
+          error: null, task_id: 1 },
+        { id: 1, created_at: new Date(Date.now() - 86400_000).toISOString(),
+          kind: "store_close", channel: "alimtalk", recipient: "운영지원팀",
+          subject: "폐점 매장 계정 정리 — 샘플03점", status: "failed",
+          error: "알림톡 제공자 미구성", task_id: null },
+    ].slice(0, Number(p_limit) || 200),
+
     // 48_ad_spend.sql — jsonb 스칼라(객체) 그대로.
     api_ad_spend: () => {
         const sum = (rows, key) => rows.reduce((t, r) => t + (r[key] || 0), 0);

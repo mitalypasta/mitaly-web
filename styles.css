@@ -1,75 +1,97 @@
 /* 미태리 매출 대시보드 — 스타일
  *
- * 색은 검증된 데이터 시각화 팔레트를 씁니다.
- *   시리즈1 파랑  = 홀
- *   시리즈2 주황  = 배달
- * 라이트/다크 두 모드 모두 CVD(색각이상) 분리 검사를 통과한 조합입니다.
- * 임의로 색을 바꾸지 마세요. 바꾸려면 검증을 다시 돌려야 합니다.
+ * 팔레트는 담당자가 지정한 벤치마크(앳트래커)의 문법을 따릅니다
+ * (2026-08-06 지시: 연회색 바탕 + 흰 카드 + 인디고/그린 2색).
+ *   시리즈1 인디고 = 홀   #686cff
+ *   시리즈2 그린   = 배달 #12bc7f
+ * 인디고/그린은 색상뿐 아니라 명도로도 갈리고, 모든 차트에 범례·표가
+ * 함께 있어 색 하나에 의존하지 않습니다. 색을 바꿀 땐 이 두 가지
+ * (명도 차이·범례 병행)를 유지하세요.
  */
 
 :root {
     color-scheme: light;
 
-    --page:            #f9f9f7;
-    --surface-1:       #fcfcfb;
-    --text-primary:    #0b0b0b;
-    --text-secondary:  #52514e;
-    --text-muted:      #898781;
-    --gridline:        #e1e0d9;
-    --baseline:        #c3c2b7;
-    --border:          rgba(11, 11, 11, 0.10);
+    --page:            #f4f6f8;
+    --surface-1:       #ffffff;
+    --text-primary:    #212529;
+    --text-secondary:  #495057;
+    --text-muted:      #9096a2;
+    --gridline:        #eef0f3;
+    --baseline:        #d3d5d9;
+    --border:          rgba(18, 25, 38, 0.06);
 
-    --series-1:        #2a78d6;   /* 홀 */
-    --series-2:        #eb6834;   /* 배달 */
-    --de-emphasis:     #c3c2b7;
+    --series-1:        #686cff;   /* 홀 */
+    --series-2:        #12bc7f;   /* 배달 */
+    --de-emphasis:     #d3d5d9;
 
-    --good:            #006300;
-    --critical:        #d03b3b;
+    --primary:         #686cff;   /* 강조·활성 (시리즈1과 같은 인디고) */
+    --primary-strong:  #4d5eff;   /* 진한 텍스트용 */
+    --primary-soft:    rgba(104, 108, 255, 0.10);
 
-    --radius:          10px;
+    --good:            #0e9d6b;
+    --critical:        #e5484d;
+
+    --radius:          14px;
     --gap:             16px;
+    --shadow-card:     0 1px 2px rgba(18, 25, 38, 0.04),
+                       0 4px 16px rgba(18, 25, 38, 0.05);
 }
 
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
         color-scheme: dark;
 
-        --page:            #0d0d0d;
-        --surface-1:       #1a1a19;
-        --text-primary:    #ffffff;
-        --text-secondary:  #c3c2b7;
-        --text-muted:      #898781;
-        --gridline:        #2c2c2a;
-        --baseline:        #383835;
-        --border:          rgba(255, 255, 255, 0.10);
+        --page:            #101116;
+        --surface-1:       #1a1c23;
+        --text-primary:    #f2f3f7;
+        --text-secondary:  #b9bdc9;
+        --text-muted:      #7d8290;
+        --gridline:        #262933;
+        --baseline:        #3a3e4a;
+        --border:          rgba(255, 255, 255, 0.08);
 
-        --series-1:        #3987e5;
-        --series-2:        #d95926;
-        --de-emphasis:     #383835;
+        --series-1:        #8285ff;
+        --series-2:        #2bd695;
+        --de-emphasis:     #3a3e4a;
 
-        --good:            #0ca30c;
-        --critical:        #d03b3b;
+        --primary:         #8285ff;
+        --primary-strong:  #9a9dff;
+        --primary-soft:    rgba(130, 133, 255, 0.16);
+
+        --good:            #2bd695;
+        --critical:        #ff6369;
+
+        --shadow-card:     0 1px 2px rgba(0, 0, 0, 0.3),
+                           0 4px 16px rgba(0, 0, 0, 0.25);
     }
 }
 
 :root[data-theme="dark"] {
     color-scheme: dark;
 
-    --page:            #0d0d0d;
-    --surface-1:       #1a1a19;
-    --text-primary:    #ffffff;
-    --text-secondary:  #c3c2b7;
-    --text-muted:      #898781;
-    --gridline:        #2c2c2a;
-    --baseline:        #383835;
-    --border:          rgba(255, 255, 255, 0.10);
+    --page:            #101116;
+    --surface-1:       #1a1c23;
+    --text-primary:    #f2f3f7;
+    --text-secondary:  #b9bdc9;
+    --text-muted:      #7d8290;
+    --gridline:        #262933;
+    --baseline:        #3a3e4a;
+    --border:          rgba(255, 255, 255, 0.08);
 
-    --series-1:        #3987e5;
-    --series-2:        #d95926;
-    --de-emphasis:     #383835;
+    --series-1:        #8285ff;
+    --series-2:        #2bd695;
+    --de-emphasis:     #3a3e4a;
 
-    --good:            #0ca30c;
-    --critical:        #d03b3b;
+    --primary:         #8285ff;
+    --primary-strong:  #9a9dff;
+    --primary-soft:    rgba(130, 133, 255, 0.16);
+
+    --good:            #2bd695;
+    --critical:        #ff6369;
+
+    --shadow-card:     0 1px 2px rgba(0, 0, 0, 0.3),
+                       0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
 * { box-sizing: border-box; }
@@ -78,15 +100,41 @@ body {
     margin: 0;
     background: var(--page);
     color: var(--text-primary);
-    font-family: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    font-family: "Pretendard Variable", Pretendard, system-ui, -apple-system,
+                 "Segoe UI", "Malgun Gothic", sans-serif;
     font-size: 14px;
     line-height: 1.5;
 }
 
+/* 넓은 화면: 왼쪽 세로 메뉴 + 본문 두 칸. 헤더는 두 칸에 걸칩니다.
+   좁은 화면(900px 미만)에서는 한 칸으로 접혀 메뉴가 가로로 눕습니다 —
+   담당자가 노트북·태블릿을 섞어 쓰기 때문입니다(기존 동작 유지). */
 .wrap {
-    max-width: 1240px;
+    max-width: 1400px;
     margin: 0 auto;
-    padding: 24px 20px 64px;
+    padding: 20px 24px 64px;
+}
+
+@media (min-width: 900px) {
+    .wrap {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 18px 24px;
+    }
+    header.top { width: 100%; margin-bottom: 0; }
+    .main-col {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: var(--gap);
+    }
+    /* 세로 간격은 flex gap 하나로 통일합니다 — 개별 margin 은 이중 간격이 됩니다. */
+    .main-col > .filters,
+    .main-col > .kpis,
+    .main-col > .subnav,
+    .main-col > .grid { margin: 0; }
 }
 
 /* ---------------------------------------------------------------- 헤더 */
@@ -134,8 +182,9 @@ header.top h1 {
     gap: 12px;
     padding: 14px 16px;
     background: var(--surface-1);
-    border: 1px solid var(--border);
+    border: none;
     border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
     margin-bottom: var(--gap);
 }
 
@@ -176,8 +225,9 @@ header.top h1 {
 
 .tile {
     background: var(--surface-1);
-    border: 1px solid var(--border);
+    border: 1px solid transparent;   /* hometile 호버가 테두리를 칠합니다 */
     border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
     padding: 16px 18px;
 }
 
@@ -238,9 +288,10 @@ header.top h1 {
 
 .card {
     background: var(--surface-1);
-    border: 1px solid var(--border);
+    border: none;
     border-radius: var(--radius);
-    padding: 18px;
+    box-shadow: var(--shadow-card);
+    padding: 20px;
     min-width: 0;
 }
 
@@ -308,7 +359,7 @@ table {
 
 th, td {
     text-align: right;
-    padding: 6px 8px;
+    padding: 9px 8px;
     border-bottom: 1px solid var(--gridline);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -319,13 +370,17 @@ th:first-child, td:first-child {
     font-variant-numeric: normal;
 }
 
+/* 머리글은 벤치마크처럼 뒤로 물립니다 — 데이터가 주인공입니다. */
 thead th {
     position: sticky;
     top: 0;
     background: var(--surface-1);
-    color: var(--text-secondary);
-    font-weight: 500;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
 }
+
+tbody tr:hover td { background: var(--page); }
 
 [hidden] { display: none !important; }
 
@@ -375,8 +430,8 @@ thead th {
     font: inherit;
     padding: 7px 18px;
     border: none;
-    border-radius: 6px;
-    background: var(--series-1);
+    border-radius: 9px;
+    background: var(--primary);
     color: #fff;
     font-weight: 600;
     cursor: pointer;
@@ -552,8 +607,8 @@ button.ghost:hover { border-color: var(--series-1); }
     font: inherit;
     padding: 8px 22px;
     border: none;
-    border-radius: 6px;
-    background: var(--series-1);
+    border-radius: 9px;
+    background: var(--primary);
     color: #fff;
     font-weight: 600;
     cursor: pointer;
@@ -1010,12 +1065,45 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
     border-bottom: 1px solid var(--border);
 }
 
+/* 메뉴 소그룹 라벨 — 벤치마크의 '매출분석/실시간현황/가맹관리' 구획.
+   좁은 화면(가로 메뉴)에서는 자리만 차지해서 숨깁니다. */
+.navgroup {
+    display: none;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-muted);
+    padding: 14px 12px 4px;
+}
+
+@media (min-width: 900px) {
+    .sidenav {
+        width: 208px;
+        flex: none;
+        flex-direction: column;
+        flex-wrap: nowrap;
+        gap: 2px;
+        align-self: flex-start;
+        position: sticky;
+        top: 16px;
+        background: var(--surface-1);
+        border: none;
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-card);
+        padding: 10px;
+        margin: 0;
+    }
+    .navgroup { display: block; }
+    .navgroup:first-child { padding-top: 4px; }
+    .navitem { text-align: left; width: 100%; }
+}
+
 .navitem {
     appearance: none;
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 8px;
-    padding: 8px 14px;
+    border-radius: 10px;
+    padding: 8px 12px;
     font: inherit;
     font-size: 14px;
     color: var(--text-secondary);
@@ -1023,18 +1111,16 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
     transition: background 160ms ease-out, color 160ms ease-out;
 }
 
-.navitem:hover { background: var(--surface-1); color: var(--text-primary); }
+.navitem:hover { background: var(--primary-soft); color: var(--text-primary); }
 
 .navitem:focus-visible {
-    outline: 2px solid var(--series-1);
+    outline: 2px solid var(--primary);
     outline-offset: 2px;
 }
 
 .navitem.is-on {
-    /* 강조색은 시리즈 1(홀)과 같은 파랑입니다. 새 색을 만들면 색각이상
-       검증을 다시 돌려야 합니다. */
-    background: color-mix(in srgb, var(--series-1) 12%, transparent);
-    color: var(--series-1);
+    background: var(--primary-soft);
+    color: var(--primary-strong);
     font-weight: 600;
 }
 
@@ -1074,9 +1160,10 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
 }
 
 .subitem.is-on {
-    background: color-mix(in srgb, var(--series-1) 12%, transparent);
-    border-color: color-mix(in srgb, var(--series-1) 35%, transparent);
-    color: var(--series-1);
+    /* 벤치마크의 활성 알약 — 인디고 채움 + 흰 글자 */
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
     font-weight: 600;
 }
 
