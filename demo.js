@@ -938,18 +938,35 @@ let nextTaskEventId = 6;
 // '발송 승인 요청' 버튼을 눌러 생기는 것까지가 화면 확인 대상입니다.
 let demoNoticeSendTasks = [];
 
-// 배달 지도 데모(6번, QUEUE #55). 실데이터(매장×동×월)는 수집 확장 뒤에
-// 생기므로, 데모는 '그려지는 것' 자체를 확인하는 용도입니다 — 서울 남부의
-// 대략적인 사각형 4개(실제 행정동 경계 아님).
-window.DEMO_DONG_MAP = [
-    { name: "관악구 신림동", orders: 1240, delivery_fee: 3200, path: [
-        [37.487, 126.909], [37.487, 126.935], [37.472, 126.935], [37.472, 126.909]] },
-    { name: "동작구 상도동", orders: 860, delivery_fee: 3000, path: [
-        [37.505, 126.936], [37.505, 126.958], [37.492, 126.958], [37.492, 126.936]] },
-    { name: "구로구 구로동", orders: 610, delivery_fee: 3500, path: [
-        [37.500, 126.880], [37.500, 126.905], [37.485, 126.905], [37.485, 126.880]] },
-    { name: "영등포구 신길동", orders: 320, delivery_fee: 2800, path: [
-        [37.517, 126.905], [37.517, 126.925], [37.505, 126.925], [37.505, 126.905]] },
+// 배달 지도 데모(6번, QUEUE #55). 경계는 데모에서도 진짜 파일
+// (web/dong_boundaries.json)을 씁니다 — 예전에는 여기에 사각형 4개를 손으로
+// 그려 뒀는데, 그건 '폴리곤이 그려지는가' 만 확인할 뿐 **코드로 경계를 찾는
+// 진짜 사슬**을 하나도 안 봤습니다. 그래서 실제 법정동·행정동 코드를 씁니다.
+//
+// 화면에서 확인할 것 네 가지를 일부러 섞어 뒀습니다:
+//   · 구로3동  — 행정동 코드가 경계에 그대로 있는 경우(1단 exact)
+//   · 신림동   — **법정동** 코드라 그 코드의 경계가 없음 → 이름으로 찾아감
+//   · 서원동   — 시군구 표기가 달라 추정으로 붙은 것(주황으로 보여야 함)
+//   · (미상)   — 주소에서 동을 못 읽은 주문. 지도에 없고 숫자로만 보입니다.
+const DEMO_DONG_ROWS = [
+    { ym: 202607, store: "샘플01점", source: "배민", sido: "서울", sigungu: "구로구",
+      dong: "구로3동", dong_code: "1153054000", match: "exact",
+      orders: 610, amount: 12_800_000, delivery_fee: null },
+    { ym: 202607, store: "샘플01점", source: "쿠팡이츠", sido: "서울", sigungu: "관악구",
+      dong: "신림동", dong_code: "1162010200", match: "exact",
+      orders: 1240, amount: 25_100_000, delivery_fee: null },
+    { ym: 202607, store: "샘플02점", source: "요기요", sido: "서울", sigungu: "동작구",
+      dong: "상도1동", dong_code: "1159053000", match: "exact",
+      orders: 860, amount: 17_400_000, delivery_fee: null },
+    { ym: 202607, store: "샘플02점", source: "땡겨요", sido: "서울", sigungu: "관악구",
+      dong: "서원동", dong_code: "1162064500", match: "sido_dong",
+      orders: 320, amount: 6_300_000, delivery_fee: null },
+    { ym: 202607, store: "샘플02점", source: "배민", sido: "서울", sigungu: "관악구",
+      dong: "없는동", dong_code: null, match: null,
+      orders: 90, amount: 1_800_000, delivery_fee: null },
+    { ym: 202607, store: "샘플01점", source: "배민", sido: "", sigungu: "",
+      dong: "(미상)", dong_code: null, match: null,
+      orders: 210, amount: 4_100_000, delivery_fee: null },
 ];
 
 // 공지(12번, 53_announcements.sql). 한 건은 미리 채워 둡니다 — 승인 대기
@@ -1297,6 +1314,25 @@ function computeReceivables() {
 }
 
 const HANDLERS = {
+    // 배달 지도 (QUEUE #55, 54_dong_agg + 61_dong_alias). 합계는 행에서 세어
+    // 두 숫자가 어긋나지 않게 합니다 — 커버리지 표시가 이 합에 걸립니다.
+    api_dong_month: () => ({
+        summary: {
+            orders: DEMO_DONG_ROWS.reduce((a, r) => a + r.orders, 0),
+            amount: DEMO_DONG_ROWS.reduce((a, r) => a + r.amount, 0),
+            unknown_orders: DEMO_DONG_ROWS
+                .filter((r) => r.dong === "(미상)").reduce((a, r) => a + r.orders, 0),
+            unmatched_orders: DEMO_DONG_ROWS
+                .filter((r) => r.dong !== "(미상)" && !r.dong_code)
+                .reduce((a, r) => a + r.orders, 0),
+            inferred_orders: DEMO_DONG_ROWS
+                .filter((r) => r.match === "sido_dong").reduce((a, r) => a + r.orders, 0),
+            dongs: new Set(DEMO_DONG_ROWS.filter((r) => r.dong !== "(미상)")
+                .map((r) => `${r.sigungu}|${r.dong}`)).size,
+        },
+        rows: DEMO_DONG_ROWS,
+    }),
+
     // 배달앱 메뉴 대조 (QUEUE #61, 57_delivery_menu.sql). 종류 4가지가 화면에
     // 어떻게 갈려 보이는지가 이 픽스처의 확인 항목이라 종류마다 한 줄 이상 둡니다.
     // 값은 2026-08-07 dev 실측(고척점·부안점·구월힐캐슬점)에서 가져온 모양입니다.

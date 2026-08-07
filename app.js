@@ -246,6 +246,11 @@ async function initDashboard() {
 
     for (const id of ["f-from", "f-to", "f-store", "f-channel"]) {
         $(id).addEventListener("change", load);
+        // 배달 지도는 load() 의 18개 묶음에 안 들어갑니다(게으르게 뜨는 화면).
+        // 지도가 이미 떠 있을 때만 다시 그립니다 — 안 열어 봤으면 할 일 없음.
+        $(id).addEventListener("change", () => {
+            if (dmapMap) drawDongOverlays();
+        });
     }
 
     document.querySelectorAll("[data-toggle]").forEach((button) => {
@@ -4753,14 +4758,42 @@ function initHomeTiles() {
 
 // ---- 배달 지도 (6번 영역, QUEUE #55 · docs/dong-map-design.md) -------------
 //
-// 동 단위 주문 분포를 카카오맵 위에 색으로 얹는 화면입니다. 데이터 축(수집
-// 확장 — 주문 상세의 동 추출)이 아직 없어, 지금은
-//   · 데모 모드: 샘플 동 폴리곤이 그려지는지 확인
-//   · 실모드: '수집 전' 안내
-// 까지입니다. SDK 는 화면에 처음 들어올 때 한 번만 로드합니다 — 숨겨진
-// 컨테이너에 지도를 만들면 크기를 못 잡기 때문에(카카오맵 특성) 게으르게 합니다.
+// 동 단위 주문 분포를 카카오맵 위에 색으로 얹는 화면입니다. SDK 는 화면에
+// 처음 들어올 때 한 번만 로드합니다 — 숨겨진 컨테이너에 지도를 만들면 크기를
+// 못 잡기 때문에(카카오맵 특성) 게으르게 합니다.
+//
+// ------------------------------------------------------------- 설계 판단
+//
+// [1] 경계는 **정적 파일**(web/dong_boundaries.json)입니다. 행정동 경계는
+//     거의 안 바뀌는데 DB 에 넣으면 조회마다 폴리곤 수십만 점이 오갑니다.
+//     tools/import_dong_boundaries.py 가 만들고, 좌표를 줄여 3.7MB 입니다.
+//
+// [2] 커버리지를 **숨기지 않습니다**(54 설계 판단 [4] 의 연장). 화면 위에
+//     세 가지를 같이 씁니다:
+//       · (미상)   — 주소에서 동을 아예 못 읽은 주문
+//       · 미매칭   — 동은 읽었는데 사전에 못 붙어 **색이 안 칠해진** 주문
+//       · 추정     — 시군구를 빼고 유일해서 붙인 것(61 의 3단). 정확히 맞은
+//                    것과 신뢰도가 달라 따로 셉니다.
+//     지도만 보면 '색 없는 곳 = 주문 없는 곳' 으로 읽히는데, 실제로는 '못
+//     붙인 곳' 일 수 있습니다. 그 차이가 숫자로 보여야 합니다.
+//
+// [3] 법정동 이름(가정동)과 행정동 이름(가정1동)이 한 화면에 섞여 옵니다.
+//     경계는 행정동 단위뿐이라, 법정동으로 붙은 주문은 그 이름을 가진
+//     **행정동 폴리곤 전부**에 같은 값으로 칠합니다. 나눠 담을 근거가 없어
+//     쪼개지 않고, 누르면 '이 값은 OO동 전체' 라고 밝힙니다.
+//
+// [4] 🔴 매장 마커는 아직 없습니다. 매장 좌표가 어디에도 없고(가맹점 DB 에는
+//     도로명 주소만), 좌표를 얻으려면 주소를 외부(카카오)로 보내야 합니다 —
+//     이 프로젝트에서 외부 호출은 담당자 판단 사항입니다(설계 문서 '남은 것'
+//     1번의 카카오 항목과 같은 이유). 켜는 방법은 문서에 적어 뒀습니다.
+//
+// [5] 배달비는 '—' 입니다. 아직 안 모읍니다(54 의 delivery_fee_won 주석 —
+//     채널마다 필드도 부담 주체도 달라 확인 없이 옮기면 틀립니다, 실수 14).
 
 let dmapStarted = false;
+let dmapMap = null;
+let dmapBoundaries = null;      // 정적 경계 파일 (한 번만 읽습니다)
+let dmapShapes = [];            // 지금 그려져 있는 폴리곤
 
 function initDeliveryMap() {
     for (const b of document.querySelectorAll('.navitem[data-go="map"]')) {
@@ -4796,42 +4829,177 @@ async function loadDeliveryMap() {
         return;
     }
 
-    const map = new kakao.maps.Map($("dmap-container"), {
+    dmapMap = new kakao.maps.Map($("dmap-container"), {
         center: new kakao.maps.LatLng(37.5665, 126.978),   // 서울 시청
         level: 8,
     });
-    drawDongOverlays(map);
+    await drawDongOverlays();
 }
 
-function drawDongOverlays(map) {
-    // 실데이터 API 는 수집 확장(동단위 세션, SQL 54) 뒤에 붙습니다.
-    // 그전까지는 데모 픽스처(window.DEMO_DONG_MAP)만 그립니다.
-    const rows = window.DEMO_DONG_MAP || [];
-    if (!rows.length) {
-        $("dmap-notice").textContent =
-            "아직 동 단위 데이터가 없습니다 — 주문 상세의 동 추출(수집 확장)이 "
-            + "끝나면 이 지도가 채워집니다.";
+/** 정적 경계 파일을 한 번만 읽습니다 (설계 판단 [1]). */
+async function loadDongBoundaries() {
+    if (dmapBoundaries) return dmapBoundaries;
+    const response = await fetch("dong_boundaries.json");
+    if (!response.ok) throw new Error("경계 파일을 못 읽었습니다 (dong_boundaries.json)");
+    const payload = await response.json();
+    dmapBoundaries = payload.dongs || [];
+    dmapBoundaries.source = payload.source || "";
+    return dmapBoundaries;
+}
+
+async function drawDongOverlays() {
+    const map = dmapMap;
+    const notice = $("dmap-notice");
+    const meta = $("dmap-meta");
+    if (!map) return;
+
+    for (const shape of dmapShapes) shape.setMap(null);
+    dmapShapes = [];
+
+    const filters = currentFilters();
+    const [result, boundaries] = await Promise.all([
+        db.rpc("api_dong_month", {
+            p_from: filters.p_ym_from, p_to: filters.p_ym_to,
+            p_store: filters.p_store,
+        }),
+        loadDongBoundaries().catch((exc) => exc),
+    ]);
+
+    if (result.error) {
+        // 61(또는 54)이 아직 안 들어간 환경이면 함수가 없습니다 — 배포가 SQL
+        // 적용보다 먼저 나갈 수 있어 직원 화면에 날 오류를 띄우지 않습니다.
+        const missing = result.error.code === "PGRST202"
+            || /Could not find the function/i.test(result.error.message || "");
+        meta.textContent = "";
+        notice.textContent = missing
+            ? "동 단위 집계가 아직 이 환경에 들어오지 않았습니다. 반영되면 자동으로 나타납니다."
+            : "불러오지 못했습니다: " + (result.error.message || "");
         return;
     }
-    const top = Math.max(...rows.map((r) => r.orders));
-    const bounds = new kakao.maps.LatLngBounds();
-    for (const r of rows) {
-        const path = r.path.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng));
-        for (const point of path) bounds.extend(point);
-        const polygon = new kakao.maps.Polygon({
-            path,
-            strokeWeight: 1.5, strokeColor: "#686cff", strokeOpacity: 0.85,
-            fillColor: "#686cff", fillOpacity: 0.12 + 0.5 * (r.orders / top),
-        });
-        polygon.setMap(map);
-        kakao.maps.event.addListener(polygon, "click", () => {
-            $("dmap-meta").textContent =
-                `${r.name} · 주문 ${int(r.orders)}건 · 배달비 평균 ${int(r.delivery_fee)}원`;
-        });
+    if (boundaries instanceof Error) {
+        meta.textContent = "";
+        notice.textContent = String(boundaries.message);
+        return;
     }
-    map.setBounds(bounds);
-    $("dmap-meta").textContent =
-        `데모 ${int(rows.length)}개 동 — 동을 눌러 보세요 (실데이터는 수집 확장 후)`;
+
+    const data = result.data || {};
+    const summary = data.summary || {};
+    const rows = data.rows || [];
+
+    if (!rows.length) {
+        notice.textContent = "이 기간에 동 단위 집계가 없습니다 — 수집이 한 번 "
+            + "돌면 채워집니다.";
+        meta.textContent = "";
+        return;
+    }
+
+    // ---- 코드별로 합칩니다 (같은 동을 여러 매장·채널·달이 나눠 갖고 있음)
+    const byCode = new Map();
+    let matchedOrders = 0;
+    for (const row of rows) {
+        if (!row.dong_code) continue;
+        matchedOrders += row.orders || 0;
+        const hit = byCode.get(row.dong_code)
+            || { orders: 0, amount: 0, name: `${row.sigungu} ${row.dong}`.trim(),
+                 inferred: false, stores: new Set() };
+        hit.orders += row.orders || 0;
+        hit.amount += row.amount || 0;
+        if (row.match === "sido_dong") hit.inferred = true;
+        hit.stores.add(row.store);
+        byCode.set(row.dong_code, hit);
+    }
+
+    // ---- 법정동으로 붙은 코드는 경계가 없을 수 있습니다 (설계 판단 [3]).
+    //      같은 시군구·같은 이름의 행정동 폴리곤을 찾아 같은 값으로 칠합니다.
+    const byName = new Map();          // '시도|시군구|동' → [경계]
+    const byCodeBoundary = new Map();
+    for (const dong of boundaries) {
+        byCodeBoundary.set(dong.c, dong);
+        const key = `${dong.s}|${dong.g}|${dong.d}`;
+        if (!byName.has(key)) byName.set(key, []);
+        byName.get(key).push(dong);
+    }
+
+    const painted = [];                // {shapes, info}
+    let noShapeOrders = 0;
+    for (const [code, hit] of byCode) {
+        let shapes = byCodeBoundary.has(code) ? [byCodeBoundary.get(code)] : [];
+        if (!shapes.length) {
+            // 법정동 코드 → 이름이 같은 행정동, 없으면 '가정동 → 가정1·2·3동'
+            const row = rows.find((r) => r.dong_code === code);
+            const exact = byName.get(`${row.sido}|${row.sigungu}|${row.dong}`) || [];
+            shapes = exact.length ? exact : boundaries.filter((d) =>
+                d.s === row.sido && d.g === row.sigungu
+                && d.d.replace(/\d{1,2}(?=동$|가동$)/, "") === row.dong);
+        }
+        if (!shapes.length) {
+            noShapeOrders += hit.orders;
+            continue;
+        }
+        painted.push({ shapes, hit, split: shapes.length > 1 });
+    }
+
+    const top = Math.max(1, ...painted.map((p) => p.hit.orders));
+    const bounds = new kakao.maps.LatLngBounds();
+    for (const item of painted) {
+        const strength = 0.12 + 0.5 * (item.hit.orders / top);
+        for (const dong of item.shapes) {
+            for (const polygon of dong.p) {
+                // 첫 고리가 바깥 경계입니다(구멍은 안 그립니다 — 동 색칠엔 과합니다).
+                const path = polygon[0].map(([lng, lat]) =>
+                    new kakao.maps.LatLng(lat, lng));
+                for (const point of path) bounds.extend(point);
+                const shape = new kakao.maps.Polygon({
+                    path,
+                    strokeWeight: 1.2,
+                    strokeColor: item.hit.inferred ? "#c8871f" : "#686cff",
+                    strokeOpacity: 0.85,
+                    fillColor: item.hit.inferred ? "#e0a63a" : "#686cff",
+                    fillOpacity: strength,
+                });
+                shape.setMap(map);
+                dmapShapes.push(shape);
+                kakao.maps.event.addListener(shape, "click", () => {
+                    const stores = item.hit.stores.size;
+                    const notes = [];
+                    if (item.split) notes.push(`이 값은 ${item.hit.name} 전체입니다`);
+                    if (item.hit.inferred) notes.push("시군구 표기가 달라 추정으로 붙임");
+                    meta.textContent =
+                        `${item.hit.name} · 주문 ${int(item.hit.orders)}건 · `
+                        + `${int(item.hit.amount)}원 · 매장 ${int(stores)}곳 · `
+                        + "배달비 —"
+                        + (notes.length ? ` (${notes.join(" · ")})` : "");
+                });
+            }
+        }
+    }
+
+    if (dmapShapes.length) map.setBounds(bounds);
+
+    // ---- 커버리지를 화면에 (설계 판단 [2])
+    const total = summary.orders || 0;
+    const pct = (n) => (total ? `${(100 * n / total).toFixed(1)}%` : "0%");
+    const unknown = summary.unknown_orders || 0;
+    const unmatched = (summary.unmatched_orders || 0) + noShapeOrders;
+    const inferred = summary.inferred_orders || 0;
+
+    meta.textContent = `주문 ${int(total)}건 · 동 ${int(painted.length)}곳 · `
+        + `(미상) ${pct(unknown)} · 미매칭 ${pct(unmatched)} · 추정 ${pct(inferred)}`;
+
+    const bits = [`색이 칠해진 주문 ${pct(matchedOrders - noShapeOrders)}.`];
+    if (unknown) {
+        bits.push(`주소에서 동을 못 읽은 주문 ${int(unknown)}건(${pct(unknown)})은 `
+            + "지도에 없습니다.");
+    }
+    if (unmatched) {
+        bits.push(`동은 읽었지만 사전에 못 붙은 주문 ${int(unmatched)}건`
+            + `(${pct(unmatched)})도 색이 없습니다 — 시군구 별칭을 더하면 붙습니다.`);
+    }
+    if (inferred) {
+        bits.push(`주황색 ${int(inferred)}건은 시군구 표기가 달라 추정으로 붙인 것입니다.`);
+    }
+    bits.push("매장 마커는 매장 좌표가 아직 없어 표시하지 않습니다.");
+    notice.textContent = bits.join(" ");
 }
 
 
