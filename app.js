@@ -294,6 +294,7 @@ async function initDashboard() {
     initIngredients();
     initPosMenu();
     initComms();
+    initDeliveryMap();
     loadAccountHealth();
 
     await load();
@@ -303,12 +304,15 @@ async function initDashboard() {
 // ---------------------------------------------------------------- 수집 요청
 
 // 5개 채널 전부 동작합니다. (요기요는 2026-07-23 완성)
+// 네이버는 매출이 없는 리뷰 전용 채널이라 리뷰 요청에서만 선택됩니다.
+// 최초 로그인(사람)이 끝난 매장만 수집됩니다 — docs/naver-review-api.md 3절.
 const PLUGIN_LIST = [
     { id: "easypos", name: "이지포스", ready: true },
     { id: "baemin", name: "배달의민족", ready: true },
     { id: "imu", name: "아임유", ready: true },
     { id: "coupangeats", name: "쿠팡이츠", ready: true },
     { id: "yogiyo", name: "요기요", ready: true },
+    { id: "naver", name: "네이버(리뷰)", ready: true, reviewOnly: true },
 ];
 
 const STATUS_LABEL = {
@@ -333,9 +337,13 @@ function initRequests() {
     const box = $("r-plugins");
     for (const plugin of PLUGIN_LIST) {
         const label = document.createElement("label");
+        // 리뷰 전용 채널은 매출 요청에 실리면 안 되므로 처음부터 꺼 둡니다 —
+        // syncKind() 가 리뷰 모드에서만 켭니다.
         label.innerHTML =
             `<input type="checkbox" value="${plugin.id}"` +
-            `${plugin.ready ? " checked" : " disabled"}>` +
+            `${plugin.reviewOnly ? ' data-review-only="1"' : ""}` +
+            `${plugin.ready && !plugin.reviewOnly ? " checked" : ""}` +
+            `${plugin.ready ? "" : " disabled"}>` +
             `<span>${escape(plugin.name)}</span>`;
         box.append(label);
     }
@@ -381,8 +389,8 @@ function selectedPlugins() {
 }
 
 // 리뷰 수집기가 실제로 있는 채널. 러너의 REVIEW_PLUGINS 와 같아야 합니다.
-// 조사는 배달 3사 다 끝났고(docs/reviews-api.md) 수집기는 배민·요기요까지입니다.
-const REVIEW_PLUGINS = ["baemin", "yogiyo", "coupangeats"];
+// 네이버는 최초 로그인(사람)이 끝난 매장만 실제로 수집됩니다.
+const REVIEW_PLUGINS = ["baemin", "yogiyo", "coupangeats", "naver"];
 
 // 리뷰 요청 오류에 다음 행동을 붙입니다. 문구는 agent/mitaly_cloud_agent.py
 // handle_review_request() 가 실제로 내보내는 error 문자열에 맞춰 골랐습니다 —
@@ -424,7 +432,9 @@ function syncKind(syncProfileVisibility) {
     }
 
     for (const el of inputs) {
-        const ok = !reviews || REVIEW_PLUGINS.includes(el.value);
+        // 리뷰 전용 채널(네이버)은 매출 모드에서 끕니다.
+        const ok = reviews ? REVIEW_PLUGINS.includes(el.value)
+            : el.dataset.reviewOnly !== "1";
         // 원래 상태(준비 안 된 채널)를 기억해 두었다가 되돌립니다.
         if (el.dataset.ready === undefined) el.dataset.ready = String(!el.disabled);
         el.disabled = !ok || el.dataset.ready === "false";
@@ -530,7 +540,7 @@ function filteredTargets() {
 
 const PLUGIN_SHORT = {
     easypos: "포스", baemin: "배민", imu: "아임유",
-    coupangeats: "쿠팡", yogiyo: "요기요",
+    coupangeats: "쿠팡", yogiyo: "요기요", naver: "네이버",
 };
 
 function renderStoreList() {
@@ -4571,6 +4581,90 @@ function initHomeTiles() {
             });
         });
     }
+}
+
+
+// ---- 배달 지도 (6번 영역, QUEUE #55 · docs/dong-map-design.md) -------------
+//
+// 동 단위 주문 분포를 카카오맵 위에 색으로 얹는 화면입니다. 데이터 축(수집
+// 확장 — 주문 상세의 동 추출)이 아직 없어, 지금은
+//   · 데모 모드: 샘플 동 폴리곤이 그려지는지 확인
+//   · 실모드: '수집 전' 안내
+// 까지입니다. SDK 는 화면에 처음 들어올 때 한 번만 로드합니다 — 숨겨진
+// 컨테이너에 지도를 만들면 크기를 못 잡기 때문에(카카오맵 특성) 게으르게 합니다.
+
+let dmapStarted = false;
+
+function initDeliveryMap() {
+    for (const b of document.querySelectorAll('.navitem[data-go="map"]')) {
+        b.addEventListener("click", () => setTimeout(loadDeliveryMap, 80));
+    }
+}
+
+async function loadDeliveryMap() {
+    if (dmapStarted) return;
+    const key = (window.MITALY_CONFIG || {}).kakaoMapKey || "";
+    const notice = $("dmap-notice");
+    if (!key) {
+        notice.textContent = "카카오맵 JS 키가 아직 없습니다 — config.js 의 "
+            + "kakaoMapKey 가 채워지면 이 자리에 지도가 뜹니다.";
+        return;
+    }
+    dmapStarted = true;
+    try {
+        await new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = "https://dapi.kakao.com/v2/maps/sdk.js?appkey="
+                + encodeURIComponent(key) + "&autoload=false";
+            script.onload = resolve;
+            script.onerror = () => reject(new Error(
+                "SDK 를 불러오지 못했습니다 — 카카오 개발자 콘솔의 JS 키 도메인 "
+                + "등록(현재 주소 포함)을 확인하세요"));
+            document.head.append(script);
+        });
+        await new Promise((resolve) => kakao.maps.load(resolve));
+    } catch (exc) {
+        dmapStarted = false;           // 도메인 등록 뒤 다시 들어오면 재시도
+        notice.textContent = String(exc.message || exc);
+        return;
+    }
+
+    const map = new kakao.maps.Map($("dmap-container"), {
+        center: new kakao.maps.LatLng(37.5665, 126.978),   // 서울 시청
+        level: 8,
+    });
+    drawDongOverlays(map);
+}
+
+function drawDongOverlays(map) {
+    // 실데이터 API 는 수집 확장(동단위 세션, SQL 54) 뒤에 붙습니다.
+    // 그전까지는 데모 픽스처(window.DEMO_DONG_MAP)만 그립니다.
+    const rows = window.DEMO_DONG_MAP || [];
+    if (!rows.length) {
+        $("dmap-notice").textContent =
+            "아직 동 단위 데이터가 없습니다 — 주문 상세의 동 추출(수집 확장)이 "
+            + "끝나면 이 지도가 채워집니다.";
+        return;
+    }
+    const top = Math.max(...rows.map((r) => r.orders));
+    const bounds = new kakao.maps.LatLngBounds();
+    for (const r of rows) {
+        const path = r.path.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng));
+        for (const point of path) bounds.extend(point);
+        const polygon = new kakao.maps.Polygon({
+            path,
+            strokeWeight: 1.5, strokeColor: "#686cff", strokeOpacity: 0.85,
+            fillColor: "#686cff", fillOpacity: 0.12 + 0.5 * (r.orders / top),
+        });
+        polygon.setMap(map);
+        kakao.maps.event.addListener(polygon, "click", () => {
+            $("dmap-meta").textContent =
+                `${r.name} · 주문 ${int(r.orders)}건 · 배달비 평균 ${int(r.delivery_fee)}원`;
+        });
+    }
+    map.setBounds(bounds);
+    $("dmap-meta").textContent =
+        `데모 ${int(rows.length)}개 동 — 동을 눌러 보세요 (실데이터는 수집 확장 후)`;
 }
 
 

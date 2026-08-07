@@ -54,6 +54,7 @@
         <button class="navitem" data-go="sales" type="button">📊 매출</button>
         <button class="navitem" data-go="settlement" type="button">💰 정산</button>
         <button class="navitem" data-go="ads" type="button">📣 광고</button>
+        <button class="navitem" data-go="map" type="button">🗺 배달 지도</button>
         <div class="navgroup">매장운영</div>
         <button class="navitem" data-go="reviews" type="button">⭐ 리뷰</button>
         <button class="navitem" data-go="visits" type="button">🚶 방문·점검</button>
@@ -1140,6 +1141,23 @@
             발송 수단과 열람 추적이 연결되면 채워집니다.
         </p>
         <div class="tableview" id="t-announcements"></div>
+    </section>
+
+    <!-- 배달 지도 — 6번 영역(QUEUE #55, docs/dong-map-design.md). 동 단위 주문
+         분포를 카카오맵 위에 색으로 얹습니다. 데이터 축(수집 확장 — 주문 상세의
+         동 추출)이 아직 없어, 지금은 데모 폴리곤과 '수집 전' 안내까지입니다.
+         SDK 키는 config.js 의 kakaoMapKey (도메인 제한 공개 키). -->
+    <section data-area="map" class="card full" id="delivery-map-card">
+        <header>
+            <h2>배달 주문 지도 (동 단위)</h2>
+            <span class="meta" id="dmap-meta"></span>
+        </header>
+        <p class="hint">
+            주문 상세의 배달주소를 동까지만 모아 색으로 보여줍니다 —
+            진할수록 주문이 많은 동입니다. 동을 누르면 주문수가 위에 표시됩니다.
+        </p>
+        <div id="dmap-container"></div>
+        <p class="notice" id="dmap-notice"></p>
     </section>
 
     <!-- 광고 — 6번 영역(배달플랫폼 운영·광고). 48_ad_spend.sql 위의 화면입니다.

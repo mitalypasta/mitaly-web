@@ -64,6 +64,11 @@ window.MITALY_CONFIG = {
     // 로그인 링크를 받을 수 있는 이메일 도메인 (예: ["mitaly.co.kr"])
     // 비워두면 제한하지 않습니다. 실제 차단은 Supabase Auth 설정에서 합니다.
     allowedEmailDomains: [],
+
+    // 카카오맵 JavaScript 키 (6번 배달 지도, docs/dong-map-design.md).
+    // 도메인 제한이 걸리는 **공개 키**라 여기 둬도 됩니다(anon 키와 같은 성격).
+    // 카카오 개발자 앱 '미태리'(ID 1536423, 카카오맵 무료 쿼터 보유)의 JS 키.
+    kakaoMapKey: "b32e0b4806e549ca7bfaeee1445f5291",
 };
 
 // ---------------------------------------------------------------- 표시

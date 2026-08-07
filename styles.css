@@ -221,6 +221,16 @@ header.top h1 {
     outline-offset: 1px;
 }
 
+/* 배달 지도(6번) — 카카오맵이 이 컨테이너를 채웁니다. 높이가 0이면 지도가
+   안 보이므로 고정 높이가 필요합니다. */
+#dmap-container {
+    width: 100%;
+    height: 480px;
+    border: 1px solid var(--baseline);
+    border-radius: 8px;
+    background: var(--surface-1);
+}
+
 /* 공지 본문(12번) — .field select 와 같은 옷. 본문은 여러 줄이라 textarea. */
 .field textarea {
     font: inherit;
