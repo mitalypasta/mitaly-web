@@ -612,9 +612,15 @@ let storeVisits = [
     { id: 1, store: "샘플01점", visited_on: dateOffset(-70), visited_by: "김SV",
       hygiene_note: "냉장고 온도 정상", self_purchase_note: "자점매입 이상 없음",
       cooking_note: "조리 동선 양호", owner_meeting_note: "점주 특이요청 없음", special_note: null },
+    // 실물 양식 스타일 픽스처(QUEUE #63) — 항목 "- ", 후속 조치 "ㄴ ",
+    // 여러 줄. '보고 복사' 버튼이 만드는 텍스트가 실물 예시와 같은 모양인지
+    // 데모에서 바로 확인하는 용도입니다.
     { id: 2, store: "샘플01점", visited_on: dateOffset(-8), visited_by: "박SV",
-      hygiene_note: "위생 양호", self_purchase_note: "자점매입 확인 중",
-      cooking_note: "조리 정상", owner_meeting_note: "점주 미팅 완료", special_note: "냉장고 소음 발생 — 확인 필요" },
+      hygiene_note: "- 냉동고 성에제거 미흡\nㄴ 성에제거 및 관리방법 교육 진행\n- 후드 청결작업 미흡\nㄴ 이전 방문 시 안내했으나 미진행",
+      self_purchase_note: "- 특이사항 없음",
+      cooking_note: "- 감바스 파스타 : 특이사항 없음\n- 페퍼로니 피자 : 도우 색 고르게 나오도록 체크, 토핑 넓게 교육",
+      owner_meeting_note: "- 네이버 플레이스 광고 재진행\nㄴ 유입 감소로 재진행, 한 달 추이 확인 후 유지/변경 결정",
+      special_note: "- 냉장고 소음 발생 — 확인 필요, 점주와 지속 소통 예정" },
     { id: 3, store: "샘플11점", visited_on: dateOffset(-20), visited_by: "박SV",
       hygiene_note: "위생 양호", self_purchase_note: "이상 없음",
       cooking_note: "조리 정상", owner_meeting_note: null, special_note: null },

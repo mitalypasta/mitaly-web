@@ -2818,6 +2818,7 @@ function stageTag(stage, label, requiresLegal) {
 let visitAllStores = [];              // 전 매장 [{id, name}] — SV 로 거를 때 원본
 let visitSvByStore = new Map();       // 매장 이름 → SV 이름
 let visitStoresBySv = new Map();      // SV 이름 → 매장 이름 Set
+let visitRowsCache = new Map();       // visit_id → 행 원본 — '보고 복사' 재료
 
 async function initVisits() {
     const storeSelect = $("vs-store");
@@ -2857,6 +2858,18 @@ async function initVisits() {
     storeSelect.addEventListener("change", refreshVisits);
     storeSelect.addEventListener("change", refreshVisitStoreMetrics);
     $("vs-submit").addEventListener("click", submitVisit);
+
+    // '보고 복사' — 기록을 실물 양식 텍스트로 만들어 클립보드에 담습니다.
+    // 버튼 글씨로 결과를 알립니다(복사됨 ✓ / 복사 실패) — 별도 알림창 없음.
+    $("t-visits").addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-act='visit-report']");
+        if (!button) return;
+        const row = visitRowsCache.get(button.dataset.visitId);
+        if (!row) return;
+        const ok = await copyTextToClipboard(buildVisitReport(row));
+        button.textContent = ok ? "복사됨 ✓" : "복사 실패";
+        setTimeout(() => { button.textContent = "보고 복사"; }, 1500);
+    });
 
     await refreshVisits();
     await refreshVisitStoreMetrics();
@@ -2963,18 +2976,68 @@ async function refreshVisits() {
         return;
     }
 
+    // '보고 복사' 버튼이 원본 행(줄바꿈 포함)을 되찾을 수 있게 담아 둡니다.
+    visitRowsCache = new Map(list.map((v) => [String(v.visit_id), v]));
+
+    // 절 안의 항목("- …" / "ㄴ …")이 여러 줄이라 줄바꿈을 살려 그립니다.
+    const multiline = (t) => (t ? escape(t).replaceAll("\n", "<br>") : "—");
     table($("t-visits"),
-        ["매장", "방문일", "방문자", "위생점검", "자점매입", "조리점검", "점주미팅", "특이사항"],
+        ["매장", "방문일", "방문자", "위생점검", "자점매입", "조리점검", "점주미팅", "특이사항", "공유"],
         list.map((v) => [
-            v.store_name,
-            v.visited_on,
-            v.visited_by || "—",
-            v.hygiene_note || "—",
-            v.self_purchase_note || "—",
-            v.cooking_note || "—",
-            v.owner_meeting_note || "—",
-            v.special_note || "—",
-        ]));
+            escape(v.store_name),
+            escape(v.visited_on),
+            v.visited_by ? escape(v.visited_by) : "—",
+            multiline(v.hygiene_note),
+            multiline(v.self_purchase_note),
+            multiline(v.cooking_note),
+            multiline(v.owner_meeting_note),
+            multiline(v.special_note),
+            `<button type="button" class="ghost" data-act="visit-report" data-visit-id="${v.visit_id}">보고 복사</button>`,
+        ]),
+        { html: true });
+}
+
+// 점검 보고 텍스트 — 운영지원팀 실물 양식(광주신안점 예시, 답변서 11번)
+// 그대로. 공유 채널이 아직 카카오톡 단톡방이라(9번 답변 "카카오톡으로 공유")
+// '복사 → 단톡방 붙여넣기' 가 발송을 대신합니다(QUEUE #63). 절이 비면
+// 실물 양식의 관례대로 "- 특이사항 없음" 으로 채웁니다.
+function buildVisitReport(v) {
+    const section = (title, text) =>
+        `${title}\n${(text || "").trim() || "- 특이사항 없음"}`;
+    return [
+        `미태리 ${v.store_name} 점검 보고`,
+        `점검일자: ${String(v.visited_on).replaceAll("-", ".")}`
+            + (v.visited_by ? ` · 방문 ${v.visited_by}` : ""),
+        "",
+        section("1. 위생점검", v.hygiene_note),
+        "",
+        section("2. 자점매입", v.self_purchase_note),
+        "",
+        section("3. 조리점검", v.cooking_note),
+        "",
+        section("4. 점주미팅 내용", v.owner_meeting_note),
+        "",
+        section("5. 특이사항", v.special_note),
+    ].join("\n");
+}
+
+async function copyTextToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch {
+        // 클립보드 API 가 막히는 환경(http 로컬 확인·데모 file://)의 예비 경로.
+        const holder = document.createElement("textarea");
+        holder.value = text;
+        holder.style.position = "fixed";
+        holder.style.opacity = "0";
+        document.body.append(holder);
+        holder.select();
+        let ok = false;
+        try { ok = document.execCommand("copy"); } catch { /* 아래 false */ }
+        holder.remove();
+        return ok;
+    }
 }
 
 // 방문 예정 매장의 매출 사전 집계 — 새 조회를 만들지 않고 기존
