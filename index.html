@@ -1298,6 +1298,22 @@
         <div class="tableview tall" id="t-posmenu"></div>
     </section>
 
+    <!-- 오일데이 원복 점검 (QUEUE #62, 56_oilday_check.sql). 오일데이 반값은
+         정상 상품의 가격 변경이 아니라 별도 이벤트 상품을 켜고 끄는 운영이라
+         (2026-08-06 실측), '행사날이 아닌데 켜져 있는 이벤트 상품' 을 봅니다. -->
+    <section data-area="posmenu" class="card full" id="oilday-card">
+        <header>
+            <h2>오일데이 원복 점검</h2>
+            <span class="meta" id="od-meta"></span>
+        </header>
+        <p class="hint" id="od-hint">
+            매월 5일 오일메뉴 3종(알리오·봉골레·감바스) 반값 행사가 끝난 뒤,
+            반값 이벤트 상품이 켜진 채 남아 있는 매장을 찾습니다. 판정 기준
+            시점은 마지막 POS 메뉴 반입 시점입니다.
+        </p>
+        <div class="tableview" id="t-oilday"></div>
+    </section>
+
     <!-- 변경 요청 → 승인 → 실행. 승인만으로는 POS 에 반영되지 않습니다 —
          실제 쓰기는 담당자 입회 아래 첫 건을 넣기 전까지 dry-run 만 쌓입니다. -->
     <section data-area="posmenu" class="card full" id="posmenu-requests-card">

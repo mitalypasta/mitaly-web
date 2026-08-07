@@ -5605,7 +5605,58 @@ async function initPosMenu() {
     initPosMenuActions();
 
     await refreshPosMenuSummary();
-    await Promise.all([refreshPosMenu(), refreshPosMenuRequests()]);
+    await Promise.all([refreshPosMenu(), refreshPosMenuRequests(), refreshOilday()]);
+}
+
+// 오일데이 원복 점검 (QUEUE #62, 56_oilday_check.sql). 반값은 정상 상품의
+// 가격 변경이 아니라 별도 '(이벤트)' 상품을 켜고 끄는 운영이라(2026-08-06
+// 실측 — 정상 가격을 반값으로 고친 사례 0건), 행사날이 아닌데 켜져 있는
+// 오일메뉴 이벤트 상품을 목록으로 보여줍니다.
+async function refreshOilday() {
+    const meta = $("od-meta");
+    const view = $("t-oilday");
+    const { data, error } = await db.rpc("api_oilday_check");
+    if (error) {
+        view.innerHTML = '<p class="hint">불러오지 못했습니다: '
+            + escape(error.message) + "</p>";
+        return;
+    }
+    const check = data || {};
+    const items = check.items || [];
+
+    if (!check.snapshot_at) {
+        meta.textContent = "";
+        view.innerHTML = '<p class="hint">POS 메뉴 반입이 아직 없습니다 — '
+            + "반입되면 자동으로 판정합니다.</p>";
+        return;
+    }
+
+    const snapDate = String(check.snapshot_at).slice(0, 10);
+    meta.textContent = `기준 스냅샷 ${snapDate} · 행사일 매월 ${check.event_day}일`;
+
+    // 행사날 스냅샷이면 켜져 있는 것이 정상입니다 — 판정하지 않습니다(설계 판단 [3]).
+    if (check.is_event_day) {
+        view.innerHTML = '<p class="hint">기준 스냅샷이 행사일(' + int(check.event_day)
+            + "일)에 반입된 것이라 이벤트 상품이 켜져 있는 것이 정상입니다. "
+            + "행사 다음 날 반입분으로 다시 판정합니다.</p>";
+        return;
+    }
+
+    if (!items.length) {
+        view.innerHTML = '<p class="hint">켜진 채 남은 오일메뉴 이벤트 상품이 '
+            + "없습니다 — 전 매장 원복 완료.</p>";
+        return;
+    }
+
+    table(view,
+        ["계정", "매장(분류)", "상품", "가격", "상태"],
+        items.map((it) => [
+            it.account,
+            it.store_name || it.medium_name || "—",
+            it.item_name,
+            won(it.price),
+            it.soldout_name || it.soldout_code || "—",
+        ]));
 }
 
 async function onPosAccountChange() {

@@ -2207,6 +2207,26 @@ const HANDLERS = {
     // 32_recipes.sql — returns table(items jsonb) 이라 [{items: [...]}] 모양.
     api_recipes: () => [{ items: DEMO_RECIPES.map((r) => ({ ...r })) }],
 
+    // 56_oilday_check.sql — 오일데이 원복 점검(QUEUE #62). 행사 다음 날
+    // 스냅샷에서 반값 이벤트 상품이 켜진 채 남은 매장 2곳이 보이는 그림
+    // (2026-08-06 실측에서 실제로 나온 모양 그대로).
+    api_oilday_check: () => ({
+        snapshot_at: tsOffset(0),
+        event_day: 5,
+        is_event_day: false,
+        rule_enabled: true,
+        items: [
+            { account: "굿모닝", large_name: "매장(3채널)[단독/본사 메뉴]",
+              medium_name: "미태리 샘플07점", store_name: "샘플07점",
+              item_name: "봉골레 파스타Event", price: 4400,
+              soldout_code: "0", soldout_name: "정상" },
+            { account: "굿모닝", large_name: "매장(3채널)[단독/본사 메뉴]",
+              medium_name: "미태리 샘플07점", store_name: "샘플07점",
+              item_name: "엑스트라 버진 알리오 올리오Event", price: 4400,
+              soldout_code: "0", soldout_name: "정상" },
+        ],
+    }),
+
     // ---- POS 메뉴 (50_pos_menu.sql) — 함수 규칙 그대로 ----
     api_pos_menu_summary: () => ({
         items: DEMO_POS_MENUS.length,
