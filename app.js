@@ -5604,8 +5604,112 @@ async function initPosMenu() {
     $("pm-q").addEventListener("input", debounce(refreshPosMenu, 250));
     initPosMenuActions();
 
+    $("dm-store").addEventListener("change", refreshDeliveryMenu);
+    $("dm-kind").addEventListener("change", refreshDeliveryMenu);
+
     await refreshPosMenuSummary();
-    await Promise.all([refreshPosMenu(), refreshPosMenuRequests(), refreshOilday()]);
+    await Promise.all([refreshPosMenu(), refreshPosMenuRequests(), refreshOilday(),
+                       refreshDeliveryMenu()]);
+}
+
+// 배달앱 메뉴 대조 (QUEUE #61, 6번 영역, 57_delivery_menu.sql).
+//
+// 종류가 넷이고 **신뢰도가 서로 다릅니다.** 화면에서 섞어 놓으면 사람이
+// 어느 것을 먼저 볼지 못 정하므로 종류를 앞 열에 두고 세어 보여 줍니다.
+//   app_only    POS 상품 목록에 그 이름이 없음 → 점주가 임의로 올린 메뉴
+//   hidden      배달앱 메뉴판에 올려 두고 숨김
+//   channel_gap 같은 매장인데 배민·요기요 중 한쪽에만 있음 (POS 무관, 확실)
+//   price_diff  매장 단독 메뉴의 POS 가격과 다름
+//               ⚠️ 배달 수수료를 얹은 값일 수 있어 '오류' 가 아니라 '차이' 입니다.
+//               본사 메뉴는 아예 안 봅니다 — POS 어느 채널이 배달 가격인지
+//               아직 안 정해졌습니다(57 의 설계 판단 [1], 담당자 확인 대기).
+const DM_KIND_LABEL = {
+    app_only:    "POS 에 없음",
+    hidden:      "앱에서 숨김",
+    channel_gap: "한쪽 앱만",
+    price_diff:  "가격 다름",
+};
+
+let dmData = null;
+
+async function refreshDeliveryMenu() {
+    const view = $("t-delivmenu");
+    const meta = $("dm-meta");
+
+    if (!dmData) {
+        const { data, error } = await db.rpc("api_delivery_menu_check");
+        if (error) {
+            // 57 이 아직 안 들어간 환경이면 함수 자체가 없습니다(PostgREST PGRST202).
+            // 배포가 SQL 적용보다 먼저 나갈 수 있어, 그때 직원 화면에 날 오류가
+            // 뜨지 않도록 '준비 중' 으로 떨어뜨립니다.
+            const missing = error.code === "PGRST202"
+                || /Could not find the function/i.test(error.message || "");
+            meta.textContent = "";
+            view.innerHTML = missing
+                ? '<p class="hint">배달앱 메뉴 대조는 아직 이 환경에 들어오지 '
+                  + "않았습니다. 반영되면 자동으로 나타납니다.</p>"
+                : '<p class="hint">불러오지 못했습니다: '
+                  + escape(error.message) + "</p>";
+            return;
+        }
+        dmData = data || {};
+        fillDeliveryStoreSelect(dmData);
+    }
+
+    if (!dmData.collected_at) {
+        meta.textContent = "";
+        view.innerHTML = '<p class="hint">배달앱 메뉴 반입이 아직 없습니다 — '
+            + "반입되면 자동으로 대조합니다.</p>";
+        return;
+    }
+
+    const counts = dmData.counts || {};
+    const parts = Object.keys(DM_KIND_LABEL)
+        .filter((k) => counts[k])
+        .map((k) => `${DM_KIND_LABEL[k]} ${int(counts[k])}`);
+    meta.textContent = `기준 ${String(dmData.collected_at).slice(0, 10)} · `
+        + `매장 ${int(dmData.stores)}곳 · 메뉴 ${int(dmData.menus)}개`
+        + (parts.length ? ` · ${parts.join(" · ")}` : "");
+
+    const store = $("dm-store").value;
+    const kind = $("dm-kind").value;
+    const items = (dmData.items || []).filter((it) =>
+        (!store || it.store === store) && (!kind || it.kind === kind));
+
+    const all = (dmData.items || []).length;
+    $("dm-shown").textContent = items.length < all
+        ? `${int(items.length)} / ${int(all)}건` : `${int(all)}건`;
+
+    if (!items.length) {
+        view.innerHTML = '<p class="hint">조건에 맞는 항목이 없습니다.</p>';
+        return;
+    }
+
+    table(view,
+        ["종류", "매장", "앱", "메뉴", "분류", "앱 가격", "POS 가격"],
+        items.map((it) => [
+            DM_KIND_LABEL[it.kind] || it.kind,
+            it.store,
+            it.platform === "baemin" ? "배민" : "요기요",
+            it.menu_name + (it.hidden && it.kind !== "hidden" ? " (숨김)" : ""),
+            it.category || "—",
+            // 메뉴 가격은 won() 이 아니라 wonFull() 입니다 — won() 은 만 단위로
+            // 줄여서 67,800원이 '7만' 으로 나옵니다(POS 메뉴 카드와 같은 이유).
+            it.price == null ? "—" : wonFull(it.price),
+            it.pos_price == null ? "—" : wonFull(it.pos_price),
+        ]));
+}
+
+function fillDeliveryStoreSelect(data) {
+    const select = $("dm-store");
+    select.length = 1;
+    const stores = [...new Set((data.items || []).map((it) => it.store))].sort();
+    for (const name of stores) {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        select.append(opt);
+    }
 }
 
 // 오일데이 원복 점검 (QUEUE #62, 56_oilday_check.sql). 반값은 정상 상품의

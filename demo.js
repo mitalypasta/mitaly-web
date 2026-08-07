@@ -1174,6 +1174,47 @@ function computeReceivables() {
 }
 
 const HANDLERS = {
+    // 배달앱 메뉴 대조 (QUEUE #61, 57_delivery_menu.sql). 종류 4가지가 화면에
+    // 어떻게 갈려 보이는지가 이 픽스처의 확인 항목이라 종류마다 한 줄 이상 둡니다.
+    // 값은 2026-08-07 dev 실측(고척점·부안점·구월힐캐슬점)에서 가져온 모양입니다.
+    api_delivery_menu_check: () => ({
+        collected_at: new Date().toISOString(),
+        stores: 3,
+        menus: 190,
+        // 배달 가격 채널이 아직 안 정해졌다는 표시 — 화면 안내가 여기에 걸립니다.
+        price_channel_set: false,
+        counts: { app_only: 3, hidden: 2, channel_gap: 2, price_diff: 2 },
+        items: [
+            { kind: "app_only", store: "미태리 샘플01점", platform: "baemin",
+              menu_name: "사이드 한판 샘플러", category: "[사이드ㅣ 같이 먹기 좋은 메뉴]",
+              price: 7800, pos_price: null, hidden: false },
+            { kind: "app_only", store: "미태리 샘플01점", platform: "baemin",
+              menu_name: "스테이크 홈파티 세트", category: "[세트메뉴 ㅣ 가성비 BEST]",
+              price: 67800, pos_price: null, hidden: false },
+            { kind: "app_only", store: "미태리 샘플02점", platform: "yogiyo",
+              menu_name: "고구마프라이즈", category: "Side 메뉴",
+              price: 4800, pos_price: null, hidden: true },
+            { kind: "hidden", store: "미태리 샘플01점", platform: "baemin",
+              menu_name: "미태리 가든 샐러드", category: "[사이드ㅣ 같이 먹기 좋은 메뉴]",
+              price: 7900, pos_price: null, hidden: true },
+            { kind: "hidden", store: "미태리 샘플02점", platform: "yogiyo",
+              menu_name: "오징어링(5ea)", category: "Side 메뉴",
+              price: 4000, pos_price: null, hidden: true },
+            { kind: "channel_gap", store: "미태리 샘플01점", platform: "yogiyo",
+              menu_name: "[NEW]머쉬룸 바질 리조또", category: "신메뉴",
+              price: 13800, pos_price: null, hidden: false },
+            { kind: "channel_gap", store: "미태리 샘플01점", platform: "baemin",
+              menu_name: "라구 파스타", category: "[토마토 ㅣ 클래식]",
+              price: 11800, pos_price: null, hidden: false },
+            { kind: "price_diff", store: "미태리 샘플03점", platform: "yogiyo",
+              menu_name: "치킨 부리또", category: "부리또",
+              price: 9800, pos_price: 7900, hidden: false },
+            { kind: "price_diff", store: "미태리 샘플03점", platform: "baemin",
+              menu_name: "떡볶이 치킨 그라탕", category: "매장 요청",
+              price: 10300, pos_price: 8800, hidden: false },
+        ],
+    }),
+
     api_filters: () => [{
         ym_min: MONTHS[0],
         ym_max: MONTHS[MONTHS.length - 1],

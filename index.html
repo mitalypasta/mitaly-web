@@ -1314,6 +1314,28 @@
         <div class="tableview" id="t-oilday"></div>
     </section>
 
+    <!-- 배달앱 메뉴 대조 (QUEUE #61, 6번 영역. 57_delivery_menu.sql 이 짝입니다).
+         본사 답변 "초기 세팅은 맞추나 사후 변경 통제가 어렵다" 에 대응하는
+         감지 화면입니다. 배달앱에 쓰지 않고 보여 주기만 합니다(D18). -->
+    <section data-area="posmenu" class="card full" id="delivmenu-card">
+        <header>
+            <h2>배달앱 메뉴 대조</h2>
+            <span class="meta" id="dm-meta"></span>
+        </header>
+        <div class="cardsearch">
+            <select id="dm-store"><option value="">전체 매장</option></select>
+            <select id="dm-kind">
+                <option value="">전체 종류</option>
+                <option value="app_only">POS 에 없는 메뉴</option>
+                <option value="hidden">배달앱에서 숨김</option>
+                <option value="channel_gap">한쪽 앱에만 있음</option>
+                <option value="price_diff">POS 가격과 다름</option>
+            </select>
+            <span class="meta" id="dm-shown"></span>
+        </div>
+        <div class="tableview tall" id="t-delivmenu"></div>
+    </section>
+
     <!-- 변경 요청 → 승인 → 실행. 승인만으로는 POS 에 반영되지 않습니다 —
          실제 쓰기는 담당자 입회 아래 첫 건을 넣기 전까지 dry-run 만 쌓입니다. -->
     <section data-area="posmenu" class="card full" id="posmenu-requests-card">
