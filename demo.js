@@ -603,6 +603,129 @@ function computeResolvedViolations(pStore, pLimit) {
         }));
 }
 
+// ---- 과거 공문 아카이브 데모 (60_board_archive.sql) ----------------------
+//
+// 실제 반입분(138건)의 **성질 네 가지**가 화면에서 다 보이게 골랐습니다.
+// 하나라도 빠지면 그 경우의 화면을 아무도 안 보게 됩니다:
+//
+//   ① OCR 로 뽑은 본문        — 본문 81%가 A4 이미지였습니다(source='OCR')
+//   ② 문서번호가 없는 옛 공문 — 2024년 이전에는 체계 자체가 없었습니다(38건)
+//   ③ 목록에 안 뜨는 글       — 실재하는데 게시판 목록에 없는 글(14건)
+//   ④ 확인필요               — OCR 이 무너진 건(18건). 숨기지 않는 것이 요점
+//
+// 날짜는 relative 가 아니라 고정입니다 — 아카이브는 '지난 3년 5개월' 이라는
+// 기간 자체가 정보라 오늘 기준으로 밀면 뜻이 없어집니다.
+const DEMO_BOARD_NOTICES = [
+    { article_no: 12, posted_on: "2023-05-18", list_no: "8",
+      title: "샘플 사이드 3종 출시 및 중량 변경 안내의 건",
+      doc_title: null, doc_no: null, verified: false,   // ② 옛 공문 — 번호 없음
+      listed: true, need_review: false, source: "원본텍스트", views: 214,
+      attachments: ["샘플_사이드3종_안내.pdf"],
+      body: "안녕하세요. 점주님\n미태리 본사 ㈜샘플입니다.\n\n"
+          + "1. 귀 점포의 무궁한 발전을 기원합니다.\n"
+          + "2. 본사는 아래와 같이 사이드 메뉴 3종을 출시하오니 참고 바랍니다.\n"
+          + "3. 출시 품목\n   ■ 샘플 갈릭브레드   · 판매가 4,000원\n"
+          + "   ■ 샘플 치즈스틱     · 판매가 4,500원\n"
+          + "   ■ 샘플 감자튀김     · 판매가 3,500원\n"
+          + "4. 운영 안내\n   ※ 기존 사이드 재고 소진 후 전환 바랍니다.\n\n"
+          + "이상 안내드리오니 협조 부탁드립니다.\n감사합니다." },
+
+    { article_no: 96, posted_on: "2024-09-25", list_no: "61",
+      title: "샘플 원산지 표기 변경 안내의 건",
+      doc_title: null, doc_no: null, verified: false,
+      listed: true, need_review: true, source: "OCR", views: 187,  // ④ 확인필요
+      attachments: [],
+      // 인식이 무너진 건이 화면에서 어떻게 보이는지 그대로 보여 줍니다.
+      body: "샘플 가맹점 원산지 표기 변경 안내\n\n"
+          + "원 산 지 표 기 는 아 래 와 같 이 변 경 됩 니 다\n"
+          + "1 . 돼 지 고 기 : 국 내 산 → 국 내 산 · 수 입 산 혼 용\n"
+          + "2 . 게 시 위 치 : 메 뉴 판 하 단\n"
+          + "※ 이 본문은 인식이 무너진 예시입니다. 원문을 함께 보세요." },
+
+    { article_no: 120, posted_on: "2025-02-27", list_no: "",
+      title: "★★★샘플 우삼겹 짜파스타 출시 안내★★★",
+      // ①·③ — OCR 본문이고 게시판 목록에는 안 뜨는 글
+      doc_title: "샘플 가맹점 우삼겹 짜파스타 시즌 메뉴 안내 건",
+      doc_no: "20250227_01", verified: true,
+      listed: false, need_review: false, source: "원본텍스트+OCR", views: 302,
+      attachments: ["우삼겹_짜파스타_조리매뉴얼.pdf", "우삼겹_POP.zip"],
+      body: "문서번호 20250227-01                      2025년 02월 27일\n"
+          + "수   신 : 미태리 전 가맹점\n발   신 : ㈜샘플\n"
+          + "제   목 : 샘플 가맹점 우삼겹 짜파스타 시즌 메뉴 안내 건\n"
+          + "────────────────────────────────\n"
+          + "안녕하세요. 점주님\n미태리 본사 ㈜샘플입니다.\n\n"
+          + "1. 귀 점포의 무궁한 발전을 기원합니다.\n"
+          + "2. 시즌 메뉴 '우삼겹 짜파스타' 를 아래와 같이 출시합니다.\n"
+          + "3. 판매 기간\n   ■ 2025-03-04 ~ 소진 시까지\n"
+          + "4. 조리 안내\n   · 우삼겹 120g 을 선굽기 후 면과 함께 볶습니다.\n"
+          + "   ※ 조리매뉴얼 첨부 참고.\n\n감사합니다.\n              ㈜샘플" },
+
+    { article_no: 173, posted_on: "2026-03-25", list_no: "104",
+      title: "샘플 배달앱 리뷰 이벤트 운영 안내의 건",
+      doc_title: null, doc_no: "20260318_02", verified: false,   // 날짜 불일치 배지
+      listed: true, need_review: false, source: "OCR", views: 156,
+      attachments: ["리뷰이벤트_안내문.pdf"],
+      // 줄바꿈 없이 통째로 오는 본문 — .ba-body 의 줄 접기가 필요한 경우입니다.
+      body: "샘플 배달앱 리뷰 이벤트 운영 안내의 건 본사는 배달앱 리뷰 이벤트를"
+          + " 아래와 같이 운영하오니 각 점포에서는 리뷰 이벤트 문구를 배달앱"
+          + " 매장 소개란에 동일하게 등록하여 주시고 증정 품목은 본사 지정"
+          + " 품목으로만 운영하여 주시기 바라며 임의 품목 운영 시 리뷰 이벤트"
+          + " 대상에서 제외될 수 있음을 안내드립니다 문의는 운영지원팀으로"
+          + " 연락 주시기 바랍니다 감사합니다" },
+
+    { article_no: 221, posted_on: "2026-08-06", list_no: "108",
+      title: "최신 표준 레시피 및 간편 레시피 배포 안내의 건",
+      doc_title: "최신 표준 레시피 및 간편 레시피 배포 안내의 건",
+      doc_no: "260806_01", verified: true,
+      listed: true, need_review: false, source: "OCR", views: 88,
+      attachments: ["[3세대]샘플 레시피북_260806.pdf", "[3세대]샘플 간편레시피_260806.pdf",
+                    "[4세대]샘플 레시피북_260806.pdf", "[4세대]샘플 간편레시피_260806.pdf"],
+      body: "문서번호 260806_01                        2026년 08월06일\n"
+          + "수   신 : 미태리 전 가맹점\n발   신 : ㈜샘플\n"
+          + "제   목 : 최신 표준 레시피 및 간편 레시피 배포 안내의 건\n"
+          + "────────────────────────────────\n"
+          + "안녕하세요. 점주님\n미태리 본사 ㈜샘플입니다.\n\n"
+          + "1. 귀 점포의 무궁한 발전을 기원합니다.\n"
+          + "2. 최신 표준 레시피를 아래와 같이 배포하오니 숙지 바랍니다.\n"
+          + "3. 배포 자료\n   ■ 3세대 레시피북 / 간편레시피\n"
+          + "   ■ 4세대 레시피북 / 간편레시피\n"
+          + "4. 운영 안내\n   ※ 기존 레시피북은 폐기하여 주십시오.\n\n"
+          + "감사합니다.\n              ㈜샘플" },
+];
+
+// api_board_notices — 검색은 제목·문서번호·공문제목·본문에서 찾습니다(60 과 동일).
+function computeBoardNotices(pQ, pLimit) {
+    const q = (pQ || "").trim().toLowerCase();
+    const has = (v) => (v || "").toLowerCase().includes(q);
+    const hit = DEMO_BOARD_NOTICES
+        .filter((n) => !q || has(n.title) || has(n.doc_no) || has(n.doc_title) || has(n.body))
+        .sort((a, b) => b.posted_on.localeCompare(a.posted_on) || (b.article_no - a.article_no));
+    const dates = DEMO_BOARD_NOTICES.map((n) => n.posted_on).sort();
+
+    return {
+        total:       DEMO_BOARD_NOTICES.length,
+        matched:     hit.length,
+        need_review: DEMO_BOARD_NOTICES.filter((n) => n.need_review).length,
+        unlisted:    DEMO_BOARD_NOTICES.filter((n) => !n.listed).length,
+        with_doc_no: DEMO_BOARD_NOTICES.filter((n) => n.doc_no).length,
+        span:        { from: dates[0], to: dates[dates.length - 1] },
+        rows: hit.slice(0, pLimit || 60).map((n) => ({
+            article_no: n.article_no, posted_on: n.posted_on, title: n.title,
+            doc_title: n.doc_title, doc_no: n.doc_no, verified: n.verified,
+            listed: n.listed, need_review: n.need_review, source: n.source,
+            attachments: n.attachments,
+            // SQL 의 left(regexp_replace(body,'\s+',' ','g'), 160) 과 같은 모양.
+            excerpt: n.body.replace(/\s+/g, " ").slice(0, 160),
+        })),
+    };
+}
+
+// api_board_notice — 없는 글은 {found:false} 입니다(실제 함수와 같은 모양).
+function computeBoardNotice(pArticleNo) {
+    const n = DEMO_BOARD_NOTICES.find((x) => x.article_no === Number(pArticleNo));
+    return n ? { ...n } : { found: false };
+}
+
 // ---- 방문·점검 기록 데모 (25_store_visits.sql) ---------------------------
 //
 // 같은 매장에 방문이 2건 이상 있는 픽스처를 하나 넣어 둡니다 — 매장을
@@ -1851,6 +1974,10 @@ const HANDLERS = {
         return { ok: true, event_id: p_event_id, reopened: true };
     },
 
+    // 60_board_archive.sql — 둘 다 jsonb 스칼라라 감싸지 않고 그대로 돌려줍니다.
+    api_board_notices: ({ p_q, p_limit }) => computeBoardNotices(p_q, p_limit),
+    api_board_notice: ({ p_article_no }) => computeBoardNotice(p_article_no),
+
     api_store_visits: ({ p_store, p_limit }) => computeStoreVisits(p_store || null, p_limit),
 
     // 34_account_health.sql — jsonb 스칼라라 객체를 그대로 돌려줍니다.
@@ -2524,6 +2651,61 @@ const HANDLERS = {
                     menu, qty,
                     category: (MENUS.find(([n]) => n === menu) || [])[1] || null,
                 })),
+        };
+    },
+
+    // 아워홈 발주량 (59_ourhome_orders.sql). 실제 모양을 그대로 흉내 냅니다 —
+    // 특히 화면이 반드시 보여야 하는 두 가지를 데모에도 넣어 둡니다:
+    //   · 사업장 수 ≠ 매장 수 (한 매장에 아워홈 코드가 둘일 수 있음 — 상계역점 실측)
+    //   · 우리 매장 대장과 안 이어진 사업장 (커버리지를 숨기면 안 됩니다)
+    api_ourhome_orders: ({ p_from, p_to, p_store }) => {
+        const to = Number(p_to) || 202607;
+        const from = Number(p_from) || 202607;
+        const rand = seeded(from * 17 + to * 3);
+
+        const months = [];
+        for (let ym = from; ym <= to; ym = ym % 100 === 12 ? ym + 89 : ym + 1) months.push(ym);
+
+        // 데모 매장 60곳 + 대장에 없는 사업장 2곳(실제로도 이런 곳이 있습니다).
+        const picked = STORES.slice(0, 60).map((s) => ({ store: s.name, matched: true }));
+        picked.push({ store: "샘플랩실", matched: false },
+                    { store: "샘플미연결점", matched: false });
+
+        const rows = picked.map((s, i) => {
+            const qty = months.length * (300 + Math.floor(rand() * 1500));
+            return {
+                store: s.store,
+                // 첫 매장만 사업장코드가 둘 — 재계약으로 코드가 새로 난 경우입니다.
+                busiplcd: i === 0 ? "FNAA1,FNAA2" : `FN${String(i).padStart(3, "0")}`,
+                busipl_count: i === 0 ? 2 : 1,
+                months: months.length,
+                qty,
+                amount: qty * (8000 + Math.floor(rand() * 4000)),
+                matched: s.matched,
+            };
+        }).filter((r) => !p_store || r.store === p_store)
+          .sort((a, b) => b.amount - a.amount);
+
+        const sum = (key) => rows.reduce((acc, r) => acc + r[key], 0);
+        return {
+            ym_min: 202501, ym_max: 202607, from_ym: from, to_ym: to,
+            collected_at: "2026-08-07T14:58:54+09:00",
+            total: {
+                stores: rows.length,
+                busipl: rows.reduce((acc, r) => acc + r.busipl_count, 0),
+                qty: sum("qty"), amount: sum("amount"),
+            },
+            coverage: {
+                stores_total: rows.length,
+                stores_matched: rows.filter((r) => r.matched).length,
+            },
+            months: months.map((ym) => ({
+                ym,
+                busipl: rows.reduce((acc, r) => acc + r.busipl_count, 0),
+                qty: Math.round(sum("qty") / months.length),
+                amount: Math.round(sum("amount") / months.length),
+            })),
+            stores: rows,
         };
     },
 };

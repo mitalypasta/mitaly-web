@@ -292,6 +292,7 @@ async function initDashboard() {
     initSettlement();
     initAds();
     initIngredients();
+    initOurhome();
     initPosMenu();
     initComms();
     initDeliveryMap();
@@ -2511,7 +2512,110 @@ async function initNotices() {
     initViolationResolve();
     initViolationReopen();
 
-    await Promise.all([refreshViolations(), refreshResolvedViolations()]);
+    initBoardArchive();
+    await Promise.all([refreshViolations(), refreshResolvedViolations(),
+                       refreshBoardArchive()]);
+}
+
+// ─── 과거 공문 아카이브 (7번, 60_board_archive.sql) ────────────────────
+//
+// 이 화면이 있는 이유: 공문 초안을 쓸 때 참고할 과거 공문이 어디에도 없었고,
+// 미태리샵 게시판을 사람이 한 장씩 열어 보는 것이 유일한 방법이었습니다.
+//
+// 본문의 81%가 A4 이미지였고 OCR 로 글자를 뽑았습니다. 그래서 '확인필요'
+// 표시가 붙는 건이 있습니다 — 표시를 숨기지 않는 것이 요점입니다. 숨기면
+// AI 든 사람이든 OCR 결과를 원문으로 착각합니다.
+function initBoardArchive() {
+    const run = () => refreshBoardArchive($("ba-q").value.trim());
+    $("ba-search").addEventListener("click", run);
+    $("ba-q").addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+
+    // 목록은 검색할 때마다 새로 그려지므로 클릭은 컨테이너에 한 번만 위임합니다.
+    $("t-board-archive").addEventListener("click", async (event) => {
+        const link = event.target.closest("[data-ba-open]");
+        if (!link) return;
+        event.preventDefault();
+        await openBoardNotice(Number(link.dataset.baOpen));
+    });
+}
+
+async function refreshBoardArchive(q) {
+    const box = $("t-board-archive");
+    const { data, error } = await db.rpc("api_board_notices",
+        { p_q: q || null, p_limit: 60 });
+    if (error) {
+        box.innerHTML = '<p class="hint">불러오지 못했습니다: '
+            + escape(error.message) + "</p>";
+        return;
+    }
+    const rows = (data && data.rows) || [];
+    const span = (data && data.span) || {};
+    $("ba-summary").textContent = data
+        ? `${int(data.total)}건 · ${span.from || "—"} ~ ${span.to || "—"}`
+          + ` · 문서번호 ${int(data.with_doc_no)}건`
+        : "";
+
+    if (!rows.length) {
+        box.innerHTML = q
+            ? `<p class="hint">'${escape(q)}' 로 찾은 공문이 없습니다.</p>`
+            : '<p class="hint">아직 반입된 공문이 없습니다.</p>';
+        $("ba-detail").hidden = true;
+        return;
+    }
+
+    const shown = q ? `${int(data.matched)}건 중 ${rows.length}건` : `최근 ${rows.length}건`;
+    box.innerHTML = `<p class="hint">${shown} 보는 중`
+        + (data.need_review ? ` · 확인필요 ${int(data.need_review)}건` : "")
+        + (data.unlisted ? ` · 게시판 목록에 안 뜨는 글 ${int(data.unlisted)}건` : "")
+        + "</p>";
+    const view = document.createElement("div");
+    box.append(view);
+
+    table(view,
+        ["작성일", "문서번호", "제목", "첨부", "표시"],
+        rows.map((r) => [
+            r.posted_on || "—",
+            r.doc_no
+                ? escape(r.doc_no) + (r.verified ? "" : ' <span class="flag">날짜 불일치</span>')
+                : "—",
+            `<a href="#" data-ba-open="${r.article_no}">${escape(r.title)}</a>`
+            + `<br><span class="meta">${escape(r.excerpt || "")}</span>`,
+            (r.attachments || []).length ? int(r.attachments.length) + "개" : "—",
+            [r.need_review ? '<span class="flag">확인필요</span>' : "",
+             r.listed ? "" : '<span class="tag h-warn">목록에 안 뜸</span>'].join(" ").trim() || "—",
+        ]),
+        { html: true });
+}
+
+async function openBoardNotice(articleNo) {
+    const box = $("ba-detail");
+    box.hidden = false;
+    box.innerHTML = '<p class="hint">불러오는 중…</p>';
+    const { data, error } = await db.rpc("api_board_notice", { p_article_no: articleNo });
+    if (error || !data || data.found === false) {
+        box.innerHTML = '<p class="hint">본문을 불러오지 못했습니다.</p>';
+        return;
+    }
+    const attach = (data.attachments || []).length
+        ? `<p class="meta">첨부 ${data.attachments.length}개: `
+          + data.attachments.map(escape).join(" · ") + "</p>"
+        : "";
+    // OCR 을 거친 본문이면 그렇다고 밝힙니다 — 원문과 다를 수 있다는 것이
+    // 이 화면에서 가장 중요한 정보입니다.
+    const src = data.source && data.source !== "원본텍스트"
+        ? `<p class="hint">이 본문은 공문 이미지를 글자로 옮긴 것입니다`
+          + `(${escape(data.source)})`
+          + (data.need_review ? " — <b>확인필요로 표시된 건입니다. 원문을 함께 보세요.</b>" : "")
+          + "</p>"
+        : "";
+    box.innerHTML =
+        `<header><h2>${escape(data.doc_title || data.title)}</h2>`
+        + `<span class="meta">${data.posted_on || "—"}`
+        + (data.doc_no ? ` · 문서번호 ${escape(data.doc_no)}` : "")
+        + ` · 글번호 ${data.article_no}</span></header>`
+        + src + attach
+        + `<pre class="ba-body">${escape(data.body || "")}</pre>`;
+    box.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // 목록은 매번 새로 그려지므로(refreshViolations), 버튼 클릭은 컨테이너에
@@ -5578,6 +5682,108 @@ async function refreshIngredientUsage() {
     } else {
         $("t-iu-unmatched").innerHTML = "";
     }
+}
+
+// ---------------------------------------------------------------- 발주량 (아워홈)
+//
+// 59_ourhome_orders.sql 위의 화면입니다. 자점매입 감시의 **원천**이고, 판정은
+// 아직 없습니다 — 로스·폐기율이 없으면 정상 폐기와 자점매입이 구분되지 않고,
+// 이 자료에는 품목 단위도 없습니다(59 설계 판단 [4]).
+//
+// 매장 고르개를 stores 표가 아니라 **응답이 준 목록**으로 채웁니다. 아워홈에는
+// 우리 대장에 없는 사업장이 있어서(선릉역점·랩실 등) stores 로 채우면 그 매장을
+// 아예 고를 수 없습니다.
+
+let ohRangeReady = false;
+let ohStoresReady = false;
+
+async function initOurhome() {
+    for (const id of ["oh-from", "oh-to", "oh-store"]) {
+        $(id).addEventListener("change", refreshOurhome);
+    }
+    await refreshOurhome();
+}
+
+async function refreshOurhome() {
+    const args = {};
+    if ($("oh-from").value) args.p_from = Number($("oh-from").value);
+    if ($("oh-to").value) args.p_to = Number($("oh-to").value);
+    if ($("oh-store").value) args.p_store = $("oh-store").value;
+
+    const { data, error } = await db.rpc("api_ourhome_orders", args);
+    if (error) {
+        $("t-ourhome-months").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + "</p>";
+        return;
+    }
+    const d = data || {};
+
+    if (!d.ym_min) {
+        $("oh-meta").textContent = "";
+        $("oh-coverage").textContent = "";
+        $("t-ourhome-months").innerHTML =
+            '<p class="hint">아직 반입된 발주량이 없습니다.</p>';
+        $("t-ourhome-stores").innerHTML = "";
+        return;
+    }
+
+    // 기간 고르개는 첫 응답의 ym_min~ym_max 로 한 번만 채웁니다(이론 사용량과 같음).
+    if (!ohRangeReady) {
+        ohRangeReady = true;
+        const options = [];
+        let ym = d.ym_min;
+        while (ym <= d.ym_max) {
+            options.push(ym);
+            ym = ym % 100 === 12 ? ym + 89 : ym + 1;   // 12월 → 다음 해 1월
+        }
+        for (const id of ["oh-from", "oh-to"]) {
+            const sel = $(id);
+            for (const value of options) {
+                const opt = document.createElement("option");
+                opt.value = String(value);
+                opt.textContent = ymLabel(value);
+                sel.append(opt);
+            }
+        }
+        $("oh-from").value = String(d.from_ym);
+        $("oh-to").value = String(d.to_ym);
+    }
+
+    const stores = Array.isArray(d.stores) ? d.stores : [];
+    if (!ohStoresReady && stores.length) {
+        ohStoresReady = true;
+        const select = $("oh-store");
+        for (const name of stores.map((s) => s.store).sort((a, b) => a.localeCompare(b, "ko"))) {
+            const opt = document.createElement("option");
+            opt.value = name;
+            opt.textContent = name;
+            select.append(opt);
+        }
+    }
+
+    const total = d.total || {};
+    $("oh-meta").textContent =
+        `${ymLabel(d.from_ym)} ~ ${ymLabel(d.to_ym)} · ` +
+        `${int(total.qty)}개 · ${wonFull(total.amount)}`;
+
+    // 커버리지를 숨기지 않습니다 — 아워홈 사업장 수와 우리 매장 수가 다른 것이
+    // 정상이라, 그 차이를 화면이 말하지 않으면 숫자가 틀린 것처럼 보입니다.
+    const cov = d.coverage || {};
+    const unmatched = int(cov.stores_total - cov.stores_matched);
+    $("oh-coverage").textContent =
+        `아워홈 사업장 ${int(total.busipl)}곳 → 매장 ${int(total.stores)}곳` +
+        (cov.stores_matched < cov.stores_total
+            ? ` · 이 중 ${unmatched}곳은 우리 매장 대장과 아직 안 이어졌습니다`
+            : "");
+
+    table($("t-ourhome-months"), ["월", "사업장", "수량", "발주 금액"],
+        (d.months || []).map((m) => [ymLabel(m.ym), int(m.busipl), int(m.qty),
+                                     wonFull(m.amount)]));
+
+    table($("t-ourhome-stores"),
+        ["매장", "사업장코드", "월수", "수량", "발주 금액", "매장 연결"],
+        stores.map((s) => [s.store, s.busiplcd, int(s.months), int(s.qty),
+                           wonFull(s.amount), s.matched ? "○" : "—"]));
 }
 
 // ================================================================ POS 메뉴 (5번 영역)

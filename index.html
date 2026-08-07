@@ -878,6 +878,34 @@
         <div class="tableview" id="t-violations-resolved"></div>
     </section>
 
+    <!-- 과거 공문 아카이브 — 7번. 미태리샵 게시판(board_no=5) 138건을 글자로
+         옮겨 담은 것(60_board_archive.sql). 공문 초안을 쓸 때 '전에 어떻게
+         썼더라' 를 여기서 찾습니다. 본문의 81%가 원래 A4 이미지라 OCR 을
+         거쳤고, 그래서 '확인필요' 표시가 붙는 건이 있습니다. -->
+    <section data-area="notices" class="card full" id="board-archive-card">
+        <header>
+            <h2>과거 공문 아카이브</h2>
+            <span class="meta" id="ba-summary"></span>
+        </header>
+        <p class="hint">
+            미태리샵 게시판에 올라간 공문을 모아 둔 것입니다. 제목·문서번호뿐
+            아니라 <b>본문 안의 낱말로도 찾습니다</b> — '우삼겹', '원산지'처럼
+            내용으로 검색해 보세요. 제목을 누르면 본문 전문이 아래에 열립니다.
+        </p>
+        <div class="reqform">
+            <div class="field">
+                <label for="ba-q">검색어</label>
+                <input type="search" id="ba-q" placeholder="예) 우삼겹 · 원산지 · 260806_01">
+            </div>
+            <div class="field">
+                <label for="ba-search">&nbsp;</label>
+                <button type="button" id="ba-search">찾기</button>
+            </div>
+        </div>
+        <div class="tableview" id="t-board-archive"></div>
+        <div id="ba-detail" hidden></div>
+    </section>
+
     <!-- 방문·점검 기록 — 9번 영역(방문 및 점검 관리). SV·매장 배정 축은
          아직 없어(scope-2026.md 9번) 방문자는 자유 텍스트입니다. 매장을
          고르면 아래 이력 표가 그 매장 최근 방문만 자동으로 다시 불러옵니다
@@ -1199,8 +1227,38 @@
     </section>
 
     <!-- 식자재·발주 — 10번 영역. 32_recipes.sql(레시피 278행 반입됨) +
-         49_ingredient_usage.sql(판매량 × 레시피 = 이론 사용량) 위의 화면입니다.
-         발주량 대조는 발주 자료(아워홈)가 연동돼야 가능해 아직 없습니다. -->
+         49_ingredient_usage.sql(판매량 × 레시피 = 이론 사용량) +
+         59_ourhome_orders.sql(아워홈 본사물류 발주량, QUEUE #67) 위의 화면입니다.
+         '발주량 - 이론사용량 = 자점매입 의심' 의 앞 절반이 이제 있습니다.
+         뒤 절반(판정)은 로스·폐기율이 와야 켜집니다 — 59 설계 판단 [4]. -->
+    <section data-area="ingredients" class="card full" id="ourhome-card">
+        <header>
+            <h2>발주량 (아워홈)</h2>
+            <span class="meta" id="oh-meta"></span>
+        </header>
+        <p class="hint">
+            아워홈 TOS 마감집계에서 받은 매장별 본사물류 발주량입니다.
+            그레인은 매장 × 월이고, 품목별 내역은 이 자료에 없습니다.
+        </p>
+        <div class="reqform">
+            <div class="field">
+                <label for="oh-from">시작</label>
+                <select id="oh-from"></select>
+            </div>
+            <div class="field">
+                <label for="oh-to">종료</label>
+                <select id="oh-to"></select>
+            </div>
+            <div class="field">
+                <label for="oh-store">매장</label>
+                <select id="oh-store"><option value="">전체</option></select>
+            </div>
+        </div>
+        <p class="hint" id="oh-coverage"></p>
+        <div class="tableview" id="t-ourhome-months"></div>
+        <div class="tableview" id="t-ourhome-stores"></div>
+    </section>
+
     <section data-area="ingredients" class="card full" id="recipe-card">
         <header>
             <h2>레시피 소요량</h2>

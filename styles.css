@@ -1383,3 +1383,57 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
     border-radius: 6px;
 }
 .sdb-editing input[type="date"] { width: 150px; }
+
+/* ---------------------------------------------------------------- 공문 아카이브 (7번) */
+/*
+ * 목록에서 제목을 누르면 열리는 본문 패널입니다(60_board_archive.sql).
+ * 카드 안에 카드가 하나 더 뜨는 모양이라 테두리로 경계를 만들어 줍니다.
+ */
+
+#ba-detail {
+    margin-top: 18px;
+    padding: 16px 18px;
+    background: var(--surface-1);
+    border: 1px solid var(--baseline);
+    border-radius: var(--radius);
+}
+
+#ba-detail header { margin-bottom: 10px; }
+#ba-detail h2 { font-size: 16px; margin: 0 0 4px; }
+
+/*
+ * 본문은 <pre> 입니다 — OCR 결과라 줄바꿈 자체가 원본의 생김새(문서번호 줄,
+ * 수신·발신 줄, 번호 매긴 항목)를 담고 있어서 접으면 안 됩니다.
+ *
+ * 다만 `white-space: pre` 그대로 두면 안 됩니다. 한 줄이 200자를 넘는 건이
+ * 있어(원본 텍스트 본문은 줄바꿈 없이 통째로 오는 경우가 있습니다) 카드가
+ * 가로로 터집니다. **pre-wrap + break-word** 로 줄바꿈은 살리고 넘치는 줄만
+ * 접습니다 — 가로 스크롤을 만들면 읽다가 매번 좌우로 끌어야 합니다.
+ *
+ * 세로는 4,480자짜리(최장 건)가 화면을 통째로 밀어내지 않게 높이를 잡고
+ * 그 안에서만 굴립니다.
+ */
+.ba-body {
+    margin: 0;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 14px 16px;
+    font: inherit;
+    font-size: 13px;
+    line-height: 1.75;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    /* 배경은 패널 색을 그대로 씁니다 — 테두리만으로 본문 구역이 갈립니다.
+       라이트·다크 양쪽에서 글자색은 --text-primary 를 따라갑니다. */
+    border: 1px solid var(--gridline);
+    border-radius: 10px;
+}
+
+/* 목록의 발췌 줄 — 제목 아래 회색 한 줄. 두 줄을 넘기면 표가 성기어집니다. */
+#t-board-archive .meta {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
