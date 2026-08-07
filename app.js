@@ -305,7 +305,7 @@ async function initDashboard() {
 
 // 5개 채널 전부 동작합니다. (요기요는 2026-07-23 완성)
 // 네이버는 매출이 없는 리뷰 전용 채널이라 리뷰 요청에서만 선택됩니다.
-// 최초 로그인(사람)이 끝난 매장만 수집됩니다 — docs/naver-review-api.md 3절.
+// 공개 경로라 계정·로그인이 필요 없습니다 — docs/naver-review-api.md 6절.
 const PLUGIN_LIST = [
     { id: "easypos", name: "이지포스", ready: true },
     { id: "baemin", name: "배달의민족", ready: true },
