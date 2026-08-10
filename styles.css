@@ -231,6 +231,43 @@ header.top h1 {
     background: var(--surface-1);
 }
 
+/* 지도 마커 팝업 (S17). 카카오맵 CustomOverlay 의 content 라 카드 밖 좌표계에
+   뜹니다 — 테마 변수로 칠해 라이트/다크를 같이 따라갑니다. yAnchor:1 로 창의
+   아래끝이 마커 자리에 오므로, 마커 그림 높이만큼 transform 으로 띄웁니다. */
+.dmap-popup {
+    position: relative;
+    transform: translateY(-42px);
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow-card);
+    padding: 10px 30px 10px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    max-width: 240px;
+    white-space: normal;
+}
+.dmap-popup .dmap-popup-store {
+    font-weight: 700;
+    color: var(--text-primary);
+    padding-right: 6px;
+}
+.dmap-popup .dmap-popup-note { color: var(--text-muted); }
+.dmap-popup .dmap-popup-close {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    border: 0;
+    background: none;
+    color: var(--text-muted);
+    font-size: 16px;
+    line-height: 1;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+.dmap-popup .dmap-popup-close:hover { color: var(--text-primary); }
+
 /* 공지 본문(12번) — .field select 와 같은 옷. 본문은 여러 줄이라 textarea. */
 .field textarea {
     font: inherit;

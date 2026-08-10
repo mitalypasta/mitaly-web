@@ -1327,22 +1327,31 @@ const HANDLERS = {
 
     // 배달 지도 (QUEUE #55, 54_dong_agg + 61_dong_alias). 합계는 행에서 세어
     // 두 숫자가 어긋나지 않게 합니다 — 커버리지 표시가 이 합에 걸립니다.
-    api_dong_month: () => ({
-        summary: {
-            orders: DEMO_DONG_ROWS.reduce((a, r) => a + r.orders, 0),
-            amount: DEMO_DONG_ROWS.reduce((a, r) => a + r.amount, 0),
-            unknown_orders: DEMO_DONG_ROWS
-                .filter((r) => r.dong === "(미상)").reduce((a, r) => a + r.orders, 0),
-            unmatched_orders: DEMO_DONG_ROWS
-                .filter((r) => r.dong !== "(미상)" && !r.dong_code)
-                .reduce((a, r) => a + r.orders, 0),
-            inferred_orders: DEMO_DONG_ROWS
-                .filter((r) => r.match === "sido_dong").reduce((a, r) => a + r.orders, 0),
-            dongs: new Set(DEMO_DONG_ROWS.filter((r) => r.dong !== "(미상)")
-                .map((r) => `${r.sigungu}|${r.dong}`)).size,
-        },
-        rows: DEMO_DONG_ROWS,
-    }),
+    // 기간·매장 인자를 실제 함수처럼 거릅니다(S17) — 지도 카드의 자체 고르개가
+    // 데모에서도 화면을 실제로 바꿔야 확인이 됩니다. 데모 행이 전부 202607 이라
+    // 다른 달을 고르면 '집계 있는 달' 안내까지 그대로 시험됩니다.
+    api_dong_month: (args = {}) => {
+        const rows = DEMO_DONG_ROWS.filter((r) =>
+            (!args.p_from || r.ym >= args.p_from)
+            && (!args.p_to || r.ym <= args.p_to)
+            && (!args.p_store || r.store === args.p_store));
+        return {
+            summary: {
+                orders: rows.reduce((a, r) => a + r.orders, 0),
+                amount: rows.reduce((a, r) => a + r.amount, 0),
+                unknown_orders: rows
+                    .filter((r) => r.dong === "(미상)").reduce((a, r) => a + r.orders, 0),
+                unmatched_orders: rows
+                    .filter((r) => r.dong !== "(미상)" && !r.dong_code)
+                    .reduce((a, r) => a + r.orders, 0),
+                inferred_orders: rows
+                    .filter((r) => r.match === "sido_dong").reduce((a, r) => a + r.orders, 0),
+                dongs: new Set(rows.filter((r) => r.dong !== "(미상)")
+                    .map((r) => `${r.sigungu}|${r.dong}`)).size,
+            },
+            rows,
+        };
+    },
 
     // 배달앱 메뉴 대조 (QUEUE #61, 57_delivery_menu.sql). 종류 4가지가 화면에
     // 어떻게 갈려 보이는지가 이 픽스처의 확인 항목이라 종류마다 한 줄 이상 둡니다.
@@ -2811,6 +2820,11 @@ export function demoClient() {
                 return DEMO_TASK_KINDS;
             case "task_preauthorizations":
                 return [...demoPreauths];
+            case "agg_store_dong_month":
+                // 지도의 '집계 있는 달' 조회(dongAggRange)가 ym 만 읽습니다.
+                // 이 builder 의 order() 는 무시라 min·max 가 같게 나오는데,
+                // 데모 행이 전부 한 달(202607)이라 결과는 실제와 같습니다.
+                return DEMO_DONG_ROWS.map((r) => ({ ym: r.ym }));
             default:
                 return [{ uploaded_at: new Date().toISOString() }];
         }

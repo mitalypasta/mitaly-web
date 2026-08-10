@@ -241,16 +241,33 @@ async function initDashboard() {
         storeSelect.append(option);
     }
 
+    // 배달 지도 카드의 자체 고르개(S17). 위 필터 줄이 지도 영역에서는 안 보여서
+    // (showArea) 이론 사용량 카드처럼 카드가 직접 갖습니다 — 지도는 이제 이
+    // 고르개만 읽습니다(dmapFilters). 고를 수 있는 달·매장은 전역 필터와 같은
+    // 원천(api_filters)이고 기본값도 같은 규칙(최근 한 달)입니다.
+    fillSelect($("dmap-from"), months, ymLabel);
+    fillSelect($("dmap-to"), months, ymLabel);
+    $("dmap-from").value = String(months[Math.max(0, months.length - 2)]);
+    $("dmap-to").value = String(info.ym_max);
+    for (const name of info.stores || []) {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        $("dmap-store").append(option);
+    }
+    for (const id of ["dmap-from", "dmap-to", "dmap-store"]) {
+        // 지도가 아직 안 떴으면(게으른 로드) 값만 남겨 두면 됩니다 — 첫
+        // 그리기가 어차피 이 고르개를 읽습니다.
+        $(id).addEventListener("change", () => {
+            if (dmapMap) drawDongOverlays();
+        });
+    }
+
     // 내보내기 기본 기간을 데이터 범위에 맞추는 데 씁니다.
     filterRange = { min: info.ym_min, max: info.ym_max };
 
     for (const id of ["f-from", "f-to", "f-store", "f-channel"]) {
         $(id).addEventListener("change", load);
-        // 배달 지도는 load() 의 18개 묶음에 안 들어갑니다(게으르게 뜨는 화면).
-        // 지도가 이미 떠 있을 때만 다시 그립니다 — 안 열어 봤으면 할 일 없음.
-        $(id).addEventListener("change", () => {
-            if (dmapMap) drawDongOverlays();
-        });
     }
 
     document.querySelectorAll("[data-toggle]").forEach((button) => {
@@ -4796,11 +4813,40 @@ let dmapMap = null;
 let dmapBoundaries = null;      // 정적 경계 파일 (한 번만 읽습니다)
 let dmapShapes = [];            // 지금 그려져 있는 폴리곤
 let dmapMarkers = [];           // 지금 찍혀 있는 매장 마커
+let dmapOverlay = null;         // 마커 클릭 팝업 (한 번에 하나, S17)
+let dmapAggRange = null;        // 동 집계가 있는 달 범위 {min,max} — 한 번만 조회
 
 function initDeliveryMap() {
     for (const b of document.querySelectorAll('.navitem[data-go="map"]')) {
         b.addEventListener("click", () => setTimeout(loadDeliveryMap, 80));
     }
+}
+
+function dmapClosePopup() {
+    if (dmapOverlay) { dmapOverlay.setMap(null); dmapOverlay = null; }
+}
+
+/** 지도 카드 자체 고르개를 읽습니다 — 전역 currentFilters() 대신 (S17).
+ *  위 필터 줄이 지도 영역에서는 안 보여서 카드가 직접 갖습니다(initDashboard). */
+function dmapFilters() {
+    let from = Number($("dmap-from").value) || null;
+    let to = Number($("dmap-to").value) || null;
+    if (from && to && from > to) [from, to] = [to, from];
+    return { p_ym_from: from, p_ym_to: to, p_store: $("dmap-store").value || null };
+}
+
+/** 동 집계가 실제로 있는 달의 범위(전 매장 기준). 빈 화면에서 담당자가 기간을
+ *  더듬지 않게 안내에 씁니다. 표 전체를 받지 않고 양 끝 1행씩만 읽습니다 —
+ *  집계 행이 매장×동×월로 늘어나는 표라 전량 조회는 금방 무거워집니다. */
+async function dongAggRange() {
+    if (dmapAggRange) return dmapAggRange;
+    const edge = (ascending) => db.from("agg_store_dong_month").select("ym")
+        .order("ym", { ascending }).limit(1)
+        .then((r) => (r.error || !(r.data || []).length ? null : r.data[0].ym))
+        .catch(() => null);
+    const [min, max] = await Promise.all([edge(true), edge(false)]);
+    dmapAggRange = (min && max) ? { min, max } : {};   // {} = 없음 또는 조회 실패
+    return dmapAggRange;
 }
 
 async function loadDeliveryMap() {
@@ -4849,6 +4895,9 @@ async function loadDeliveryMap() {
                 + `(${location.origin})가 등록돼 있는지 확인하세요.`;
         }
     }, 7000);
+    // 빈 곳을 누르면 마커 팝업을 닫습니다 (마커·폴리곤 클릭은 여기로 안 옵니다
+    // — clickable 오버레이가 이벤트를 삼킵니다).
+    kakao.maps.event.addListener(dmapMap, "click", dmapClosePopup);
     await drawDongOverlays();
 }
 
@@ -4873,8 +4922,13 @@ async function drawDongOverlays() {
     dmapShapes = [];
     for (const marker of dmapMarkers) marker.setMap(null);
     dmapMarkers = [];
+    dmapClosePopup();
 
-    const filters = currentFilters();
+    const filters = dmapFilters();
+    const periodLabel = filters.p_ym_from === filters.p_ym_to
+        ? ymLabel(filters.p_ym_from)
+        : `${ymLabel(filters.p_ym_from)}~${ymLabel(filters.p_ym_to)}`;
+    let aggReady = false;          // 팝업이 '내려받는 중' 과 '집계 없음' 을 가름
 
     // ---- 1단계: 매장 마커 먼저 (설계 판단 [4] · 2026-08-10 경량화)
     //
@@ -4902,14 +4956,51 @@ async function drawDongOverlays() {
         });
         marker.setMap(map);
         dmapMarkers.push(marker);
+        // 마커 옆 정보 창 (S17 — 담당자 실사용 피드백: 아래 한 줄 텍스트는 안
+        // 보입니다). 주문수는 클릭 시점에 storeOrders 클로저를 읽으므로 집계가
+        // 뒤에 도착해도 마커를 다시 그릴 필요가 없습니다(경량화 구조 유지).
         kakao.maps.event.addListener(marker, "click", () => {
+            dmapClosePopup();
+            const el = document.createElement("div");
+            el.className = "dmap-popup";
+            const name = document.createElement("div");
+            name.className = "dmap-popup-store";
+            name.textContent = point.store;
+            el.append(name);
             const mine = storeOrders.get(point.store);
-            // 상호로 찾은 좌표는 정확도가 다릅니다 — 숨기지 않고 밝힙니다.
-            const rough = point.confidence === "keyword" ? " · 위치는 상호검색 결과" : "";
-            meta.textContent = `${point.store} · `
-                + (mine ? `이 기간 주문 ${int(mine)}건` : "이 기간 주문 없음")
-                + ` · ${point.sigungu || ""} ${point.dong || ""}`.trimEnd()
-                + rough;
+            const orders = document.createElement("div");
+            orders.textContent = !aggReady ? "동 집계 내려받는 중…"
+                : mine ? `${periodLabel} 주문 ${int(mine)}건`
+                : `${periodLabel} 동 집계 없음`;
+            el.append(orders);
+            const where = `${point.sigungu || ""} ${point.dong || ""}`.trim();
+            if (where) {
+                const line = document.createElement("div");
+                line.textContent = where;
+                el.append(line);
+            }
+            if (point.confidence === "keyword") {
+                // 상호로 찾은 좌표는 정확도가 다릅니다 — 숨기지 않고 밝힙니다.
+                const line = document.createElement("div");
+                line.className = "dmap-popup-note";
+                line.textContent = "위치는 상호검색 결과";
+                el.append(line);
+            }
+            const close = document.createElement("button");
+            close.type = "button";
+            close.className = "dmap-popup-close";
+            close.textContent = "×";
+            close.setAttribute("aria-label", "닫기");
+            close.addEventListener("click", dmapClosePopup);
+            el.append(close);
+            dmapOverlay = new kakao.maps.CustomOverlay({
+                position: at,
+                content: el,
+                yAnchor: 1,          // 창 아래끝을 마커 자리에 — 나머지는 CSS 가 띄웁니다
+                zIndex: 6,           // 마커(5) 위로
+                clickable: true,     // 닫기 버튼 클릭이 지도 클릭으로 안 새게
+            });
+            dmapOverlay.setMap(map);
         });
     }
     if (dmapMarkers.length) map.setBounds(bounds);
@@ -4934,28 +5025,41 @@ async function drawDongOverlays() {
         notice.textContent = missing
             ? "동 단위 집계가 아직 이 환경에 들어오지 않았습니다. 반영되면 자동으로 나타납니다."
             : "불러오지 못했습니다: " + (result.error.message || "");
+        aggReady = true;               // 팝업은 '집계 없음' 으로 (내려받는 중이 아니라)
         return;                        // 마커는 1단계에서 이미 떠 있습니다
-    }
-    if (boundaries instanceof Error) {
-        meta.textContent = "";
-        notice.textContent = String(boundaries.message);
-        return;
     }
 
     const data = result.data || {};
     const summary = data.summary || {};
     const rows = data.rows || [];
 
-    if (!rows.length) {
-        notice.textContent = "이 기간에 동 단위 집계가 없습니다 — 수집이 한 번 "
-            + "돌면 채워집니다. (매장 마커는 기간과 무관하게 표시됩니다)";
-        meta.textContent = "";
-        return;                        // 마커는 1단계에서 이미 떠 있습니다
-    }
-
     // 마커 팝업의 '이 기간 주문 N건' 을 실제 집계로 채웁니다(1단계 클로저가 읽음).
+    // 경계 파일이 실패해도 집계는 이미 왔으므로 팝업 숫자는 여기서 먼저 채웁니다.
     for (const row of rows) {
         storeOrders.set(row.store, (storeOrders.get(row.store) || 0) + (row.orders || 0));
+    }
+    aggReady = true;
+
+    if (boundaries instanceof Error) {
+        meta.textContent = "";
+        notice.textContent = String(boundaries.message);
+        return;
+    }
+
+    if (!rows.length) {
+        // 어느 달로 가면 보이는지까지 알려줍니다 (S17 — 지금 prod 집계가 한 달
+        // 뿐이라 기본 기간에서는 이 안내만 보입니다. 담당자가 기간을 더듬지 않게).
+        const range = await dongAggRange();
+        const availLabel = range.min === range.max
+            ? `동 집계가 있는 달: ${ymLabel(range.min)}`
+            : `동 집계가 있는 기간: ${ymLabel(range.min)} ~ ${ymLabel(range.max)}`;
+        const avail = !range.min ? ""
+            : ` ${availLabel}${filters.p_store ? " (전 매장 기준)" : ""}.`;
+        notice.textContent = "이 기간에 동 단위 집계가 없습니다 — 수집이 한 번 "
+            + "돌면 채워집니다." + avail
+            + " (매장 마커는 기간과 무관하게 표시됩니다)";
+        meta.textContent = "";
+        return;                        // 마커는 1단계에서 이미 떠 있습니다
     }
 
     // ---- 코드별로 합칩니다 (같은 동을 여러 매장·채널·달이 나눠 갖고 있음)
@@ -5025,6 +5129,7 @@ async function drawDongOverlays() {
                 shape.setMap(map);
                 dmapShapes.push(shape);
                 kakao.maps.event.addListener(shape, "click", () => {
+                    dmapClosePopup();  // 동 숫자를 보려는 참 — 마커 창이 가리지 않게
                     const stores = item.hit.stores.size;
                     const notes = [];
                     if (item.split) notes.push(`이 값은 ${item.hit.name} 전체입니다`);

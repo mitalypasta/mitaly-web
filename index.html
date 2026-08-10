@@ -1178,7 +1178,8 @@
          web/dong_boundaries.json (tools/import_dong_boundaries.py 가 만듦),
          숫자는 api_dong_month(54_dong_agg + 61_dong_alias).
          SDK 키는 config.js 의 kakaoMapKey (도메인 제한 공개 키).
-         위 필터(기간·매장)를 따라갑니다. -->
+         기간·매장은 카드 안 고르개로 고릅니다(S17) — 위 필터 줄이 지도
+         영역에서는 안 보여서(showArea) 이론 사용량 카드와 같은 방식입니다. -->
     <section data-area="map" class="card full" id="delivery-map-card">
         <header>
             <h2>배달 주문 지도 (동 단위)</h2>
@@ -1186,9 +1187,24 @@
         </header>
         <p class="hint">
             주문 상세의 배달주소를 동까지만 모아 색으로 보여줍니다 —
-            진할수록 주문이 많은 동입니다. 동을 누르면 주문수·금액이 위에 표시됩니다.
+            진할수록 주문이 많은 동입니다. 동을 누르면 주문수·금액이 위에,
+            매장 마커를 누르면 그 옆에 정보 창이 뜹니다.
             주황색 동은 시군구 표기가 달라 추정으로 붙인 곳입니다.
         </p>
+        <div class="reqform">
+            <div class="field">
+                <label for="dmap-from">시작</label>
+                <select id="dmap-from"></select>
+            </div>
+            <div class="field">
+                <label for="dmap-to">종료</label>
+                <select id="dmap-to"></select>
+            </div>
+            <div class="field">
+                <label for="dmap-store">매장</label>
+                <select id="dmap-store"><option value="">전체</option></select>
+            </div>
+        </div>
         <div id="dmap-container"></div>
         <p class="notice" id="dmap-notice"></p>
     </section>
