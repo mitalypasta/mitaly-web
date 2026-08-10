@@ -1314,6 +1314,17 @@ function computeReceivables() {
 }
 
 const HANDLERS = {
+    // 매장 좌표 (63_store_points). 마커가 폴리곤 위에 뜨는지와, **좌표가 없는
+    // 매장이 있을 때 안내가 나오는지**를 같이 봅니다 — 샘플02점은 일부러
+    // 좌표를 안 줍니다(주문은 있는데 마커가 없는 경우).
+    api_store_points: () => ({
+        count: 1,
+        rows: [
+            { store_id: 1, store: "샘플01점", lat: 37.4954, lng: 126.9295,
+              sido: "서울", sigungu: "관악구", dong: "신림동", confidence: "road_addr" },
+        ],
+    }),
+
     // 배달 지도 (QUEUE #55, 54_dong_agg + 61_dong_alias). 합계는 행에서 세어
     // 두 숫자가 어긋나지 않게 합니다 — 커버리지 표시가 이 합에 걸립니다.
     api_dong_month: () => ({

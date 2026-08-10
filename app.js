@@ -4782,10 +4782,11 @@ function initHomeTiles() {
 //     **행정동 폴리곤 전부**에 같은 값으로 칠합니다. 나눠 담을 근거가 없어
 //     쪼개지 않고, 누르면 '이 값은 OO동 전체' 라고 밝힙니다.
 //
-// [4] 🔴 매장 마커는 아직 없습니다. 매장 좌표가 어디에도 없고(가맹점 DB 에는
-//     도로명 주소만), 좌표를 얻으려면 주소를 외부(카카오)로 보내야 합니다 —
-//     이 프로젝트에서 외부 호출은 담당자 판단 사항입니다(설계 문서 '남은 것'
-//     1번의 카카오 항목과 같은 이유). 켜는 방법은 문서에 적어 뒀습니다.
+// [4] 매장 마커는 **조회 함수**(api_store_points, 63)로 받습니다. 경계처럼
+//     정적 파일로 두면 안 됩니다 — `web/` 은 로그인과 무관하게 공개되고,
+//     경계는 공공데이터지만 매장 위치는 우리 자산입니다(63 설계 판단 [2]).
+//     좌표는 주소를 카카오로 보내 만든 것이라(담당자 승인 2026-08-07)
+//     63 이 아직 안 들어간 환경에서는 마커 없이 지도만 뜹니다.
 //
 // [5] 배달비는 '—' 입니다. 아직 안 모읍니다(54 의 delivery_fee_won 주석 —
 //     채널마다 필드도 부담 주체도 달라 확인 없이 옮기면 틀립니다, 실수 14).
@@ -4794,6 +4795,7 @@ let dmapStarted = false;
 let dmapMap = null;
 let dmapBoundaries = null;      // 정적 경계 파일 (한 번만 읽습니다)
 let dmapShapes = [];            // 지금 그려져 있는 폴리곤
+let dmapMarkers = [];           // 지금 찍혀 있는 매장 마커
 
 function initDeliveryMap() {
     for (const b of document.querySelectorAll('.navitem[data-go="map"]')) {
@@ -4855,14 +4857,19 @@ async function drawDongOverlays() {
 
     for (const shape of dmapShapes) shape.setMap(null);
     dmapShapes = [];
+    for (const marker of dmapMarkers) marker.setMap(null);
+    dmapMarkers = [];
 
     const filters = currentFilters();
-    const [result, boundaries] = await Promise.all([
+    const [result, boundaries, points] = await Promise.all([
         db.rpc("api_dong_month", {
             p_from: filters.p_ym_from, p_to: filters.p_ym_to,
             p_store: filters.p_store,
         }),
         loadDongBoundaries().catch((exc) => exc),
+        // 63 이 아직 안 들어간 환경이면 마커만 빠지고 지도는 그대로 뜹니다.
+        db.rpc("api_store_points").then((r) => (r.error ? null : r.data))
+            .catch(() => null),
     ]);
 
     if (result.error) {
@@ -4974,7 +4981,41 @@ async function drawDongOverlays() {
         }
     }
 
-    if (dmapShapes.length) map.setBounds(bounds);
+    // ---- 매장 마커 (설계 판단 [4])
+    //
+    // 동 색칠만 보면 '어느 매장의 배달권인지' 가 안 보여 광고비 판단으로
+    // 이어지지 않습니다. 매장 필터가 걸려 있으면 그 매장만 찍습니다.
+    const storeOrders = new Map();
+    for (const row of rows) {
+        storeOrders.set(row.store, (storeOrders.get(row.store) || 0) + (row.orders || 0));
+    }
+    const pointRows = ((points || {}).rows || []).filter((p) =>
+        !filters.p_store || p.store === filters.p_store);
+    for (const point of pointRows) {
+        const at = new kakao.maps.LatLng(point.lat, point.lng);
+        bounds.extend(at);
+        const marker = new kakao.maps.Marker({
+            position: at,
+            title: point.store,          // 마우스를 올리면 이름
+            zIndex: 5,                   // 폴리곤 위로
+            // ⚠️ 이게 없으면 click 리스너를 달아도 **안 불립니다**(기본값 false).
+            //    폴리곤은 기본으로 클릭이 되어서 같은 줄 알고 빠뜨렸었습니다.
+            clickable: true,
+        });
+        marker.setMap(map);
+        dmapMarkers.push(marker);
+        kakao.maps.event.addListener(marker, "click", () => {
+            const mine = storeOrders.get(point.store);
+            // 상호로 찾은 좌표는 정확도가 다릅니다 — 숨기지 않고 밝힙니다.
+            const rough = point.confidence === "keyword" ? " · 위치는 상호검색 결과" : "";
+            meta.textContent = `${point.store} · `
+                + (mine ? `이 기간 주문 ${int(mine)}건` : "이 기간 주문 없음")
+                + ` · ${point.sigungu || ""} ${point.dong || ""}`.trimEnd()
+                + rough;
+        });
+    }
+
+    if (dmapShapes.length || dmapMarkers.length) map.setBounds(bounds);
 
     // ---- 커버리지를 화면에 (설계 판단 [2])
     const total = summary.orders || 0;
@@ -4998,7 +5039,17 @@ async function drawDongOverlays() {
     if (inferred) {
         bits.push(`주황색 ${int(inferred)}건은 시군구 표기가 달라 추정으로 붙인 것입니다.`);
     }
-    bits.push("매장 마커는 매장 좌표가 아직 없어 표시하지 않습니다.");
+    // 마커도 커버리지입니다 — 좌표를 못 찾은 매장은 지도에서 그냥 안 보입니다.
+    const withOrders = storeOrders.size;
+    const marked = pointRows.length;
+    if (!points) {
+        bits.push("매장 마커는 이 환경에 아직 들어오지 않았습니다.");
+    } else if (marked < withOrders) {
+        bits.push(`매장 마커 ${int(marked)}곳 — 이 기간 주문이 있는 `
+            + `${int(withOrders)}곳 중 ${int(withOrders - marked)}곳은 좌표가 없어 안 보입니다.`);
+    } else {
+        bits.push(`매장 마커 ${int(marked)}곳.`);
+    }
     notice.textContent = bits.join(" ");
 }
 
