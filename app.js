@@ -4835,6 +4835,20 @@ async function loadDeliveryMap() {
         center: new kakao.maps.LatLng(37.5665, 126.978),   // 서울 시청
         level: 8,
     });
+    // 카드가 방금 보이기 시작한 참이라 컨테이너가 0 크기로 재졌을 수 있습니다
+    // — 카카오맵은 그 경우 회색 빈 화면이 됩니다. 한 번 다시 재 봅니다.
+    dmapMap.relayout();
+    // 타일이 끝내 안 오면(대개 JS 키의 웹 도메인 미등록) 화면이 말없이
+    // 회색입니다 — 원인을 화면이 직접 말하게 합니다 (2026-08-10 실사용 문의).
+    let dmapTilesOk = false;
+    kakao.maps.event.addListener(dmapMap, "tilesloaded", () => { dmapTilesOk = true; });
+    setTimeout(() => {
+        if (!dmapTilesOk) {
+            notice.textContent = "지도 타일이 오지 않습니다 — 카카오 개발자 콘솔 > "
+                + "앱 설정 > 플랫폼 > Web 에 이 사이트 주소"
+                + `(${location.origin})가 등록돼 있는지 확인하세요.`;
+        }
+    }, 7000);
     await drawDongOverlays();
 }
 
@@ -4861,15 +4875,54 @@ async function drawDongOverlays() {
     dmapMarkers = [];
 
     const filters = currentFilters();
-    const [result, boundaries, points] = await Promise.all([
+
+    // ---- 1단계: 매장 마커 먼저 (설계 판단 [4] · 2026-08-10 경량화)
+    //
+    // 좌표는 94행이라 바로 옵니다. 경계 파일(3.7MB)을 기다렸다 같이 그리면
+    // 그동안 지도가 빈 것처럼 보입니다 — 마커부터 띄우고 색칠은 뒤에 얹습니다.
+    // 팝업의 '이 기간 주문 N건' 은 집계가 도착하면 storeOrders 가 채워지고,
+    // 클릭 시점에 클로저로 읽으므로 마커를 다시 그릴 필요가 없습니다.
+    // (63 이 아직 안 들어간 환경이면 마커만 빠지고 지도는 그대로 뜹니다.)
+    const storeOrders = new Map();
+    const points = await db.rpc("api_store_points")
+        .then((r) => (r.error ? null : r.data)).catch(() => null);
+    const bounds = new kakao.maps.LatLngBounds();
+    const pointRows = ((points || {}).rows || []).filter((p) =>
+        !filters.p_store || p.store === filters.p_store);
+    for (const point of pointRows) {
+        const at = new kakao.maps.LatLng(point.lat, point.lng);
+        bounds.extend(at);
+        const marker = new kakao.maps.Marker({
+            position: at,
+            title: point.store,          // 마우스를 올리면 이름
+            zIndex: 5,                   // 폴리곤 위로
+            // ⚠️ 이게 없으면 click 리스너를 달아도 **안 불립니다**(기본값 false).
+            //    폴리곤은 기본으로 클릭이 되어서 같은 줄 알고 빠뜨렸었습니다.
+            clickable: true,
+        });
+        marker.setMap(map);
+        dmapMarkers.push(marker);
+        kakao.maps.event.addListener(marker, "click", () => {
+            const mine = storeOrders.get(point.store);
+            // 상호로 찾은 좌표는 정확도가 다릅니다 — 숨기지 않고 밝힙니다.
+            const rough = point.confidence === "keyword" ? " · 위치는 상호검색 결과" : "";
+            meta.textContent = `${point.store} · `
+                + (mine ? `이 기간 주문 ${int(mine)}건` : "이 기간 주문 없음")
+                + ` · ${point.sigungu || ""} ${point.dong || ""}`.trimEnd()
+                + rough;
+        });
+    }
+    if (dmapMarkers.length) map.setBounds(bounds);
+    notice.textContent = `매장 마커 ${dmapMarkers.length}곳 표시 — `
+        + "동 경계와 집계를 내려받는 중입니다…";
+
+    // ---- 2단계: 동 집계 + 경계 (여기가 로딩의 대부분 — 경계 3.7MB)
+    const [result, boundaries] = await Promise.all([
         db.rpc("api_dong_month", {
             p_from: filters.p_ym_from, p_to: filters.p_ym_to,
             p_store: filters.p_store,
         }),
         loadDongBoundaries().catch((exc) => exc),
-        // 63 이 아직 안 들어간 환경이면 마커만 빠지고 지도는 그대로 뜹니다.
-        db.rpc("api_store_points").then((r) => (r.error ? null : r.data))
-            .catch(() => null),
     ]);
 
     if (result.error) {
@@ -4881,11 +4934,7 @@ async function drawDongOverlays() {
         notice.textContent = missing
             ? "동 단위 집계가 아직 이 환경에 들어오지 않았습니다. 반영되면 자동으로 나타납니다."
             : "불러오지 못했습니다: " + (result.error.message || "");
-        // 집계 조회가 실패해도 마커는 찍습니다 (아래 !rows.length 와 같은 이유).
-        const markerBounds = new kakao.maps.LatLngBounds();
-        drawStoreMarkers([], markerBounds);
-        if (dmapMarkers.length) map.setBounds(markerBounds);
-        return;
+        return;                        // 마커는 1단계에서 이미 떠 있습니다
     }
     if (boundaries instanceof Error) {
         meta.textContent = "";
@@ -4899,15 +4948,14 @@ async function drawDongOverlays() {
 
     if (!rows.length) {
         notice.textContent = "이 기간에 동 단위 집계가 없습니다 — 수집이 한 번 "
-            + "돌면 채워집니다.";
+            + "돌면 채워집니다. (매장 마커는 기간과 무관하게 표시됩니다)";
         meta.textContent = "";
-        // 집계가 없어도 매장 마커는 찍습니다 — 집계 유무와 매장 위치는
-        // 무관합니다 (2026-08-10 실사용 발견: 여기서 그냥 반환해 버려서
-        // prod 집계가 15행뿐인 동안 마커 94개가 통째로 안 보였습니다).
-        const markerBounds = new kakao.maps.LatLngBounds();
-        drawStoreMarkers([], markerBounds);
-        if (dmapMarkers.length) map.setBounds(markerBounds);
-        return;
+        return;                        // 마커는 1단계에서 이미 떠 있습니다
+    }
+
+    // 마커 팝업의 '이 기간 주문 N건' 을 실제 집계로 채웁니다(1단계 클로저가 읽음).
+    for (const row of rows) {
+        storeOrders.set(row.store, (storeOrders.get(row.store) || 0) + (row.orders || 0));
     }
 
     // ---- 코드별로 합칩니다 (같은 동을 여러 매장·채널·달이 나눠 갖고 있음)
@@ -4957,7 +5005,7 @@ async function drawDongOverlays() {
     }
 
     const top = Math.max(1, ...painted.map((p) => p.hit.orders));
-    const bounds = new kakao.maps.LatLngBounds();
+    // bounds 는 1단계(마커)에서 만든 것을 이어 씁니다 — 폴리곤까지 합쳐 재조정.
     for (const item of painted) {
         const strength = 0.12 + 0.5 * (item.hit.orders / top);
         for (const dong of item.shapes) {
@@ -4991,46 +5039,7 @@ async function drawDongOverlays() {
         }
     }
 
-    // ---- 매장 마커 (설계 판단 [4])
-    //
-    // 동 색칠만 보면 '어느 매장의 배달권인지' 가 안 보여 광고비 판단으로
-    // 이어지지 않습니다. 매장 필터가 걸려 있으면 그 매장만 찍습니다.
-    //
-    // 함수로 뺀 이유: 집계가 빈 기간의 조기 반환(위)에서도 마커는 그려야
-    // 합니다. 함수 선언은 호이스팅되므로 위쪽에서 불러도 됩니다 — 실제
-    // 호출은 Promise.all 이후라 points·filters 는 항상 채워져 있습니다.
-    function drawStoreMarkers(aggRows, markerBounds) {
-        const storeOrders = new Map();
-        for (const row of aggRows) {
-            storeOrders.set(row.store, (storeOrders.get(row.store) || 0) + (row.orders || 0));
-        }
-        const pointRows = ((points || {}).rows || []).filter((p) =>
-            !filters.p_store || p.store === filters.p_store);
-        for (const point of pointRows) {
-            const at = new kakao.maps.LatLng(point.lat, point.lng);
-            markerBounds.extend(at);
-            const marker = new kakao.maps.Marker({
-                position: at,
-                title: point.store,          // 마우스를 올리면 이름
-                zIndex: 5,                   // 폴리곤 위로
-                // ⚠️ 이게 없으면 click 리스너를 달아도 **안 불립니다**(기본값 false).
-                //    폴리곤은 기본으로 클릭이 되어서 같은 줄 알고 빠뜨렸었습니다.
-                clickable: true,
-            });
-            marker.setMap(map);
-            dmapMarkers.push(marker);
-            kakao.maps.event.addListener(marker, "click", () => {
-                const mine = storeOrders.get(point.store);
-                // 상호로 찾은 좌표는 정확도가 다릅니다 — 숨기지 않고 밝힙니다.
-                const rough = point.confidence === "keyword" ? " · 위치는 상호검색 결과" : "";
-                meta.textContent = `${point.store} · `
-                    + (mine ? `이 기간 주문 ${int(mine)}건` : "이 기간 주문 없음")
-                    + ` · ${point.sigungu || ""} ${point.dong || ""}`.trimEnd()
-                    + rough;
-            });
-        }
-    }
-    drawStoreMarkers(rows, bounds);
+    // (매장 마커는 이 함수 1단계에서 이미 그려져 있습니다 — 설계 판단 [4])
 
     if (dmapShapes.length || dmapMarkers.length) map.setBounds(bounds);
 
