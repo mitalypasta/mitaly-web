@@ -4881,6 +4881,10 @@ async function drawDongOverlays() {
         notice.textContent = missing
             ? "동 단위 집계가 아직 이 환경에 들어오지 않았습니다. 반영되면 자동으로 나타납니다."
             : "불러오지 못했습니다: " + (result.error.message || "");
+        // 집계 조회가 실패해도 마커는 찍습니다 (아래 !rows.length 와 같은 이유).
+        const markerBounds = new kakao.maps.LatLngBounds();
+        drawStoreMarkers([], markerBounds);
+        if (dmapMarkers.length) map.setBounds(markerBounds);
         return;
     }
     if (boundaries instanceof Error) {
@@ -4897,6 +4901,12 @@ async function drawDongOverlays() {
         notice.textContent = "이 기간에 동 단위 집계가 없습니다 — 수집이 한 번 "
             + "돌면 채워집니다.";
         meta.textContent = "";
+        // 집계가 없어도 매장 마커는 찍습니다 — 집계 유무와 매장 위치는
+        // 무관합니다 (2026-08-10 실사용 발견: 여기서 그냥 반환해 버려서
+        // prod 집계가 15행뿐인 동안 마커 94개가 통째로 안 보였습니다).
+        const markerBounds = new kakao.maps.LatLngBounds();
+        drawStoreMarkers([], markerBounds);
+        if (dmapMarkers.length) map.setBounds(markerBounds);
         return;
     }
 
@@ -4985,35 +4995,42 @@ async function drawDongOverlays() {
     //
     // 동 색칠만 보면 '어느 매장의 배달권인지' 가 안 보여 광고비 판단으로
     // 이어지지 않습니다. 매장 필터가 걸려 있으면 그 매장만 찍습니다.
-    const storeOrders = new Map();
-    for (const row of rows) {
-        storeOrders.set(row.store, (storeOrders.get(row.store) || 0) + (row.orders || 0));
+    //
+    // 함수로 뺀 이유: 집계가 빈 기간의 조기 반환(위)에서도 마커는 그려야
+    // 합니다. 함수 선언은 호이스팅되므로 위쪽에서 불러도 됩니다 — 실제
+    // 호출은 Promise.all 이후라 points·filters 는 항상 채워져 있습니다.
+    function drawStoreMarkers(aggRows, markerBounds) {
+        const storeOrders = new Map();
+        for (const row of aggRows) {
+            storeOrders.set(row.store, (storeOrders.get(row.store) || 0) + (row.orders || 0));
+        }
+        const pointRows = ((points || {}).rows || []).filter((p) =>
+            !filters.p_store || p.store === filters.p_store);
+        for (const point of pointRows) {
+            const at = new kakao.maps.LatLng(point.lat, point.lng);
+            markerBounds.extend(at);
+            const marker = new kakao.maps.Marker({
+                position: at,
+                title: point.store,          // 마우스를 올리면 이름
+                zIndex: 5,                   // 폴리곤 위로
+                // ⚠️ 이게 없으면 click 리스너를 달아도 **안 불립니다**(기본값 false).
+                //    폴리곤은 기본으로 클릭이 되어서 같은 줄 알고 빠뜨렸었습니다.
+                clickable: true,
+            });
+            marker.setMap(map);
+            dmapMarkers.push(marker);
+            kakao.maps.event.addListener(marker, "click", () => {
+                const mine = storeOrders.get(point.store);
+                // 상호로 찾은 좌표는 정확도가 다릅니다 — 숨기지 않고 밝힙니다.
+                const rough = point.confidence === "keyword" ? " · 위치는 상호검색 결과" : "";
+                meta.textContent = `${point.store} · `
+                    + (mine ? `이 기간 주문 ${int(mine)}건` : "이 기간 주문 없음")
+                    + ` · ${point.sigungu || ""} ${point.dong || ""}`.trimEnd()
+                    + rough;
+            });
+        }
     }
-    const pointRows = ((points || {}).rows || []).filter((p) =>
-        !filters.p_store || p.store === filters.p_store);
-    for (const point of pointRows) {
-        const at = new kakao.maps.LatLng(point.lat, point.lng);
-        bounds.extend(at);
-        const marker = new kakao.maps.Marker({
-            position: at,
-            title: point.store,          // 마우스를 올리면 이름
-            zIndex: 5,                   // 폴리곤 위로
-            // ⚠️ 이게 없으면 click 리스너를 달아도 **안 불립니다**(기본값 false).
-            //    폴리곤은 기본으로 클릭이 되어서 같은 줄 알고 빠뜨렸었습니다.
-            clickable: true,
-        });
-        marker.setMap(map);
-        dmapMarkers.push(marker);
-        kakao.maps.event.addListener(marker, "click", () => {
-            const mine = storeOrders.get(point.store);
-            // 상호로 찾은 좌표는 정확도가 다릅니다 — 숨기지 않고 밝힙니다.
-            const rough = point.confidence === "keyword" ? " · 위치는 상호검색 결과" : "";
-            meta.textContent = `${point.store} · `
-                + (mine ? `이 기간 주문 ${int(mine)}건` : "이 기간 주문 없음")
-                + ` · ${point.sigungu || ""} ${point.dong || ""}`.trimEnd()
-                + rough;
-        });
-    }
+    drawStoreMarkers(rows, bounds);
 
     if (dmapShapes.length || dmapMarkers.length) map.setBounds(bounds);
 
