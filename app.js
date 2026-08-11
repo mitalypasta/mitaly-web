@@ -310,6 +310,8 @@ async function initDashboard() {
     initLifecycle();
     initTasks();
     initNotifications();
+    initRecipients();
+    initConsents();
     initInquiries();
     initSettlement();
     initAds();
@@ -5399,6 +5401,91 @@ function initNotifications() {
         }
     });
     refreshNotifications();
+}
+
+
+// ---- 수신처 (43 notify_recipients + 65 이름·담당 SV) ----------------------
+//
+// 읽기 전용입니다. 명단은 본사 양식을 tools/import_recipients.py 로 반입합니다
+// (D38 — 파일은 반입구, DB 가 원본). 화면에서 고치는 버튼을 만들지 않는 이유는
+// 발송 이력 카드와 같습니다: 발송 대상은 잘못 바꾸면 조용히 멈추는 값입니다.
+
+async function initRecipients() {
+    const { data, error } = await db.rpc("api_notify_recipients");
+    if (error) {
+        $("t-recipients").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
+        return;
+    }
+    const items = Array.isArray(data?.items) ? data.items : [];
+    $("rc-summary").textContent = items.length
+        ? `${int(data.enabled)}곳 사용 중 / 전체 ${int(data.total)}곳` : "";
+    if (!items.length) {
+        $("t-recipients").innerHTML =
+            '<p class="hint">등록된 수신처가 없습니다 — 지금은 보고서·알림이'
+            + ' 만들어져도 아무 데도 가지 않습니다.</p>';
+        return;
+    }
+    table($("t-recipients"),
+        ["종류", "이름", "받는 곳", "담당 SV", "상태", "메모"],
+        items.map((r) => [
+            escape(NOTIFY_KIND_LABEL[r.kind] || r.kind),
+            escape(r.display_name || "—"),
+            escape(r.recipient)
+                + (r.channel !== "mail"
+                    ? ` <span class="meta">${escape(NOTIFY_CHANNEL_LABEL[r.channel] || r.channel)}</span>`
+                    : ""),
+            escape(r.sv_name || "—"),
+            r.enabled ? '<span class="tag up">사용</span>' : '<span class="tag">꺼짐</span>',
+            escape(clip(r.note || "", 40)),
+        ]),
+        { html: true });
+}
+
+
+// ---- 답글 대행 동의 매장 (42_consents + 65 source) ------------------------
+//
+// 답글 등록의 선결 조건인 목록입니다(본사 답변 4번). 여기도 읽기 전용입니다 —
+// 동의·철회는 점주와의 약속이라 화면에서 즉석으로 만들 값이 아닙니다.
+
+async function loadConsents() {
+    const withWithdrawn = $("cs-withdrawn").checked;
+    const { data, error } = await db.rpc("api_review_reply_consents",
+                                         { p_include_withdrawn: withWithdrawn });
+    if (error) {
+        $("t-consents").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
+        return;
+    }
+    const items = Array.isArray(data?.items) ? data.items : [];
+    $("cs-summary").textContent = `동의 ${int(data.live)}곳`
+        + (data.withdrawn ? ` · 철회 ${int(data.withdrawn)}곳` : "");
+    $("cs-shown").textContent = withWithdrawn ? `${int(items.length)}건 표시` : "";
+
+    if (!items.length) {
+        $("t-consents").innerHTML =
+            '<p class="hint">동의 매장이 아직 없습니다. 답글 등록은 이 목록이'
+            + ' 채워진 뒤에 켤 수 있습니다.</p>';
+        return;
+    }
+    table($("t-consents"),
+        ["매장", "동의일", "대표자", "출처", "상태", "비고"],
+        items.map((c) => [
+            escape(c.store),
+            escape(c.signed_at || "—"),
+            escape(c.signer_name || "—"),
+            c.source === "import" ? "본사 명단" : "웹 기록",
+            c.withdrawn_at
+                ? `<span class="tag warn">철회 ${escape(String(c.withdrawn_at).slice(0, 10))}</span>`
+                : '<span class="tag up">동의</span>',
+            escape(clip(c.note || c.withdraw_note || "", 40)),
+        ]),
+        { html: true });
+}
+
+function initConsents() {
+    $("cs-withdrawn").addEventListener("change", loadConsents);
+    loadConsents();
 }
 
 

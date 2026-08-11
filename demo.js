@@ -2407,6 +2407,51 @@ const HANDLERS = {
           error: "알림톡 제공자 미구성", task_id: null },
     ].slice(0, Number(p_limit) || 200),
 
+    // 65_hq_imports.sql — 수신처 목록. 본사 명단을 반입하면 이 모양이 됩니다
+    // (import_recipients.py 가 한 사람을 '받을 것마다 한 줄' 로 폅니다).
+    // 꺼진 행도 하나 섞어 '사용/꺼짐' 이 화면에서 갈리는지 봅니다.
+    api_notify_recipients: () => ({
+        items: [
+            { id: 1, kind: "report", channel: "mail", recipient: "sv1@demo.example",
+              display_name: "샘플 SV1", sv_name: "샘플 SV1", enabled: true,
+              note: "슈퍼바이저", updated_at: tsOffset(-1) },
+            { id: 2, kind: "review_alert", channel: "mail", recipient: "ops@demo.example",
+              display_name: "샘플 팀장", sv_name: null, enabled: true,
+              note: "운영지원팀 팀장", updated_at: tsOffset(-1) },
+            { id: 3, kind: "notice", channel: "mail", recipient: "ops@demo.example",
+              display_name: "샘플 팀장", sv_name: null, enabled: true,
+              note: "운영지원팀 팀장", updated_at: tsOffset(-1) },
+            { id: 4, kind: "store_close", channel: "mail", recipient: "sv2@demo.example",
+              display_name: "샘플 SV2", sv_name: "샘플 SV2", enabled: false,
+              note: "휴직 중", updated_at: tsOffset(-3) },
+        ],
+        enabled: 3,
+        total: 4,
+    }),
+
+    // 42_consents.sql + 65(source). 본사 명단 반입분과 웹 기록, 철회 이력이
+    // 화면에서 갈려 보이는지 확인하는 그림입니다.
+    api_review_reply_consents: ({ p_include_withdrawn }) => {
+        const items = [
+            { consent_id: 1, store_id: 1, store: "샘플01점", signed_at: "2026-08-01",
+              signer_name: "샘플대표1", note: "원본: 운영지원팀 캐비닛",
+              source: "import", withdrawn_at: null, withdraw_note: null,
+              created_at: tsOffset(-6) },
+            { consent_id: 2, store_id: 2, store: "샘플02점", signed_at: "2026-08-03",
+              signer_name: null, note: null, source: "web",
+              withdrawn_at: null, withdraw_note: null, created_at: tsOffset(-4) },
+            { consent_id: 3, store_id: 3, store: "샘플03점", signed_at: "2026-06-10",
+              signer_name: "샘플대표3", note: null, source: "web",
+              withdrawn_at: tsOffset(-2), withdraw_note: "점주 요청",
+              created_at: tsOffset(-40) },
+        ];
+        return {
+            items: p_include_withdrawn ? items : items.filter((c) => !c.withdrawn_at),
+            live: 2,
+            withdrawn: 1,
+        };
+    },
+
     // 48_ad_spend.sql — jsonb 스칼라(객체) 그대로.
     api_ad_spend: () => {
         const sum = (rows, key) => rows.reduce((t, r) => t + (r[key] || 0), 0);

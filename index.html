@@ -365,6 +365,28 @@
             <div class="reviewlist" id="rv-list"></div>
         </section>
 
+        <!-- 답글 대행 동의 매장 — 42_consents.sql + 65(source). 목록은
+             tools/import_consents.py 로 본사 명단을 반입하거나 웹에서 한 건씩
+             기록합니다. 여기는 읽기 전용입니다 — 동의·철회는 되돌리기 어려운
+             기록이라 화면에 버튼을 만들지 않습니다(D9 와 같은 이유). -->
+        <section data-area="reviews" class="card full" id="consent-card">
+            <header>
+                <h2>답글 대행 동의 매장</h2>
+                <span class="meta" id="cs-summary"></span>
+            </header>
+            <p class="hint">
+                동의서를 받은 매장입니다. 답글 등록은 이 목록에 있는 매장만
+                대상이 됩니다. 철회한 매장은 아래 '철회 포함' 을 켜면 이력으로 보입니다.
+            </p>
+            <div class="cardsearch">
+                <label class="recheck">
+                    <input type="checkbox" id="cs-withdrawn"> 철회 포함
+                </label>
+                <span class="meta" id="cs-shown"></span>
+            </div>
+            <div class="tableview" id="t-consents"></div>
+        </section>
+
         <section data-area="sales" data-sub="품목" class="card full">
             <header>
                 <h2>미매핑 품목</h2>
@@ -1645,6 +1667,23 @@
             <span class="meta" id="nf-shown"></span>
         </div>
         <div class="tableview" id="t-notifications"></div>
+    </section>
+
+    <!-- 수신처 — 43_notify_dispatch(notify_recipients) + 65(이름·담당 SV).
+         명단은 tools/import_recipients.py 로 본사 양식을 반입합니다. 웹은
+         읽기만 합니다 — 발송 대상을 화면에서 바꾸면 누가 언제 바꿨는지가
+         남지 않고, 잘못 바꾸면 조용히 발송이 멈춥니다. -->
+    <section data-area="tasks" class="card full" id="recipients-card">
+        <header>
+            <h2>수신처</h2>
+            <span class="meta" id="rc-summary"></span>
+        </header>
+        <p class="hint">
+            지금 이 주소들로 보고서·알림이 나갑니다. 비어 있는 종류는 발송되지
+            않습니다. 명단을 바꾸려면 본사 양식(발송수신처 명단)을 채워
+            담당자에게 주세요.
+        </p>
+        <div class="tableview" id="t-recipients"></div>
     </section>
 
     <!-- 정산 · 로열티 — 3번 영역. 41_settlement.sql 이 짝입니다.
