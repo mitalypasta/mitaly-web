@@ -916,8 +916,105 @@ let demoTasks = [
       body: "8/14(금) 오일데이 행사 안내입니다. 행사 포스터는 금주 중 발송됩니다.",
       store: null, source: "web", status: "waiting_approval", assigned_to: null,
       created_at: tsOffset(-1) },
+    // 카카오 챗봇 접수 (62 · 68). 같은 kakao_user 두 건 — 한 건에 매장을
+    // 지정하면 다른 건이 소급으로 같이 갱신되는 것까지 화면에서 확인합니다.
+    { id: 8, kind: "inquiry", title: "카카오 챗봇 접수 — 포스/키오스크",
+      body: "발화: 접수해 주세요\n블록: 이관\n경로: 포스_자가진단 → 포스_업체안내 → 이관",
+      store: null, source: "kakao_chatbot", status: "received", assigned_to: null,
+      created_at: tsOffset(-2), kakao_user: "demo-user-a" },
+    { id: 9, kind: "inquiry", title: "카카오 챗봇 접수 — 물류",
+      body: "발화: 바지락 파손 접수\n블록: 식자재_접수\n파라미터: {\"품목명\": \"바지락\", \"수량\": \"2박스\"}",
+      store: null, source: "kakao_chatbot", status: "received", assigned_to: null,
+      created_at: tsOffset(-0.3), kakao_user: "demo-user-a" },
 ];
-let nextTaskId = 8;
+let nextTaskId = 10;
+
+// bot_user_key → 매장 이름 (68 kakao_user_stores 의 데모판 — 매장 지정이 채움)
+const demoKakaoUserStores = {};
+
+// 68 assign_kakao_store 의 규칙 그대로: 지정 + 매핑 학습 + 소급(비었거나
+// 직전 매핑 그대로인 건만 — 손으로 다르게 단 건은 덮지 않습니다).
+function demoAssignKakaoStore({ p_task_id, p_store_id }) {
+    const task = demoTasks.find((t) => t.id === Number(p_task_id));
+    if (!task) return { ok: false, reason: "업무를 찾지 못했습니다" };
+    if (task.source !== "kakao_chatbot") {
+        return { ok: false, reason: "카카오 챗봇 접수 건이 아닙니다" };
+    }
+    const store = STORES.find((s) => s.id === Number(p_store_id));
+    if (!store) return { ok: false, reason: "매장을 찾지 못했습니다" };
+
+    task.store = store.name;
+    if (!task.kakao_user) {
+        return { ok: true, task_id: task.id, store_id: store.id,
+                 store_name: store.name, mapping: "none", retro_updated: 0 };
+    }
+
+    const prev = demoKakaoUserStores[task.kakao_user] || null;
+    const mapping = !prev ? "learned" : (prev === store.name ? "unchanged" : "updated");
+    demoKakaoUserStores[task.kakao_user] = store.name;
+
+    let retro = 0;
+    for (const t of demoTasks) {
+        if (t.kakao_user === task.kakao_user && t.id !== task.id
+            && (t.store == null || (prev && t.store === prev))
+            && t.store !== store.name) {
+            t.store = store.name;
+            retro += 1;
+        }
+    }
+    return { ok: true, task_id: task.id, store_id: store.id,
+             store_name: store.name, mapping, retro_updated: retro };
+}
+
+// 카카오 챗봇 통계 (62 api_kakao_skill_stats). 일별을 먼저 만들고 블록·분류를
+// 그 합계에서 나눠, KPI·표·차트의 숫자가 서로 맞아떨어지게 합니다.
+function computeKakaoStats({ p_days }) {
+    const days = Math.max(1, Number(p_days) || 30);
+    const rand = seeded(20260811 * 7 + days);
+    const daily = [];
+    let calls = 0, tasksTotal = 0;
+    for (let i = days - 1; i >= 0; i--) {
+        const date = new Date(Date.now() - i * 86400_000);
+        const weekend = [0, 6].includes(date.getUTCDay());
+        const c = Math.round((weekend ? 2 : 5) + rand() * (weekend ? 3 : 8));
+        if (!c) continue;
+        const t = Math.min(c, Math.round(c * (0.15 + rand() * 0.2)));
+        daily.push({ date: date.toISOString().slice(0, 10), calls: c, tasks: t });
+        calls += c;
+        tasksTotal += t;
+    }
+    const formTasks = Math.round(tasksTotal * 0.35);      // 식자재_접수 몫
+    const intakeTasks = tasksTotal - formTasks;           // 이관 몫
+    const share = (r) => Math.round(calls * r);
+    const byBlock = [
+        { block: "시작",          calls: share(0.24), tasks: 0 },
+        { block: "포스_시작",     calls: share(0.11), tasks: 0 },
+        { block: "포스_자가진단", calls: share(0.08), tasks: 0 },
+        { block: "포스_업체안내", calls: share(0.05), tasks: 0 },
+        { block: "오일데이_시작", calls: share(0.07), tasks: 0 },
+        { block: "식자재_시작",   calls: share(0.06), tasks: 0 },
+        { block: "식자재_접수",   calls: Math.max(formTasks, share(0.04)), tasks: formTasks },
+        { block: "메뉴_시작",     calls: share(0.04), tasks: 0 },
+        { block: "이관",          calls: Math.max(intakeTasks, share(0.08)), tasks: intakeTasks },
+        { block: "해결_종료",     calls: share(0.12), tasks: 0 },
+        { block: "폴백 블록",     calls: share(0.03), tasks: 0 },
+    ];
+    const assigned = byBlock.reduce((a, b) => a + b.calls, 0);
+    byBlock[0].calls = Math.max(1, byBlock[0].calls + calls - assigned);
+    byBlock.sort((a, b) => b.calls - a.calls || a.block.localeCompare(b.block));
+
+    const byCategory = [];
+    let used = 0;
+    for (const [category, ratio] of [["포스/키오스크", 0.4], ["물류", 0.35], ["배달앱", 0.15]]) {
+        const n = Math.round(tasksTotal * ratio);
+        if (n > 0) { byCategory.push({ category, tasks: n }); used += n; }
+    }
+    if (tasksTotal - used > 0) byCategory.push({ category: "기타", tasks: tasksTotal - used });
+    byCategory.sort((a, b) => b.tasks - a.tasks);
+
+    return { days, calls, tasks_created: tasksTotal,
+             by_block: byBlock, by_category: byCategory, daily };
+}
 
 let demoTaskEvents = [
     { id: 1, task_id: 1, from: "received", to: "in_progress", note: null,
@@ -2135,6 +2232,10 @@ const HANDLERS = {
             created_at: e.created_at,
         })),
     advance_task: (args) => demoAdvanceTask(args),
+
+    // 62·68 — 카카오 챗봇 통계 + 접수 건 매장 지정
+    api_kakao_skill_stats: (args) => computeKakaoStats(args),
+    assign_kakao_store: (args) => demoAssignKakaoStore(args),
 
     // 53_announcements.sql — 공지 접수·목록 (12번). 승인 상태는 업무에서
     // 실시간으로 읽습니다 — 승인하면 목록의 상태 태그가 같이 바뀝니다.

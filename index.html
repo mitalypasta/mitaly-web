@@ -1573,6 +1573,29 @@
             <h3 id="task-events-title"></h3>
             <div class="tableview" id="t-task-events"></div>
         </div>
+        <!-- 카카오 접수 건의 매장 지정 (68_kakao_store_map). 카카오는 봇 사용자
+             키만 주고 매장을 안 알려주므로, 여기서 한 번 지정하면 매핑이 학습돼
+             같은 사용자의 다음 접수부터 자동으로 붙습니다. -->
+        <div id="task-store-panel" hidden>
+            <h3 id="task-store-title"></h3>
+            <p class="hint">
+                지정하면 같은 카카오 사용자의 다음 접수부터 자동으로 이 매장이
+                붙고, 매장이 비어 있던 과거 접수도 함께 갱신됩니다.
+            </p>
+            <div class="reqform">
+                <div class="field grow">
+                    <label for="task-store-input">매장</label>
+                    <input type="text" id="task-store-input" list="task-store-options"
+                           placeholder="매장 이름을 입력하면 목록이 좁혀집니다">
+                    <datalist id="task-store-options"></datalist>
+                </div>
+                <div class="field">
+                    <label>&nbsp;</label>
+                    <button type="button" id="task-store-save">지정</button>
+                </div>
+            </div>
+            <p class="notice" id="task-store-notice"></p>
+        </div>
     </section>
 
     <!-- AI 1차 응대 검토 — 1번 영역. 38_inquiry_answers.sql + tools/answer_inquiry.py.
@@ -1602,6 +1625,53 @@
             <span class="meta" id="iq-shown"></span>
         </div>
         <div id="iq-list"></div>
+    </section>
+
+    <!-- 카카오 챗봇 통계 — 1번 영역. 62_kakao_intake 의 api_kakao_skill_stats
+         위의 화면입니다. 오픈빌더 분석 메뉴에도 블록 통계가 있지만, '접수까지
+         갔는가'(이탈)와 '무슨 분류였는가' 는 우리 쪽 이벤트 로그에만 있습니다. -->
+    <section data-area="tasks" class="card full" id="kakao-stats-card">
+        <header>
+            <h2>카카오 챗봇 통계</h2>
+            <span class="meta" id="ks-meta"></span>
+        </header>
+        <p class="hint">
+            챗봇 스킬이 불린 전 건이 대상입니다. 블록별 표에서 호출만 있고
+            접수로 이어지지 않은 블록이 이탈 지점입니다.
+        </p>
+        <div class="cardsearch">
+            <select id="ks-days">
+                <option value="7">최근 7일</option>
+                <option value="30" selected>최근 30일</option>
+                <option value="90">최근 90일</option>
+            </select>
+            <span class="meta" id="ks-shown"></span>
+        </div>
+        <div class="kpis">
+            <div class="tile">
+                <div class="label">호출</div>
+                <div class="value" id="ks-calls">—</div>
+                <div class="sub">스킬이 불린 횟수 (블록 이동 포함)</div>
+            </div>
+            <div class="tile">
+                <div class="label">접수</div>
+                <div class="value" id="ks-tasks">—</div>
+                <div class="sub">업무로 이어진 건</div>
+            </div>
+            <div class="tile">
+                <div class="label">접수율</div>
+                <div class="value" id="ks-rate">—</div>
+                <div class="sub">호출 대비 접수</div>
+            </div>
+        </div>
+        <div class="legend" id="legend-kakao-daily"></div>
+        <svg class="plot" id="c-kakao-daily" role="img" aria-label="카카오 챗봇 일별 호출·접수"></svg>
+        <div id="ks-detail" hidden>
+            <h3>블록별 호출·접수</h3>
+            <div class="tableview" id="t-kakao-blocks"></div>
+            <h3>분류별 접수</h3>
+            <svg class="plot" id="c-kakao-category" role="img" aria-label="분류별 접수"></svg>
+        </div>
     </section>
 
     <!-- 승인 사전 고지 (D35) — 담당자가 '승인된 내용' 이라고 고지한 범위를

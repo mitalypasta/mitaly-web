@@ -309,6 +309,7 @@ async function initDashboard() {
     initAccountPresence();
     initLifecycle();
     initTasks();
+    initKakaoStats();
     initNotifications();
     initRecipients();
     initConsents();
@@ -1811,7 +1812,8 @@ function drawMonthly(rows, c) {
     drawLine($("c-monthly"), { xLabels: months.map(ymLabel), series, colors: c });
 }
 
-function drawLine(svg, { xLabels, series, colors }) {
+// fmt/fmtFull: 축·끝점과 툴팁의 값 표기. 기본은 원화 — 건수 차트는 바꿔 씁니다.
+function drawLine(svg, { xLabels, series, colors, fmt = won, fmtFull = wonFull }) {
     const width = svg.clientWidth || 720;
     const height = 300;
     const pad = { top: 18, right: 64, bottom: 30, left: 62 };
@@ -1836,7 +1838,7 @@ function drawLine(svg, { xLabels, series, colors }) {
             ` stroke="${colors.grid}" stroke-width="1"/>`,
             `<text x="${pad.left - 8}" y="${y(t) + 4}" text-anchor="end"` +
             ` font-size="11" fill="${colors.muted}"` +
-            ` style="font-variant-numeric:tabular-nums">${won(t)}</text>`
+            ` style="font-variant-numeric:tabular-nums">${fmt(t)}</text>`
         );
     }
 
@@ -1864,7 +1866,7 @@ function drawLine(svg, { xLabels, series, colors }) {
             ` fill="${s.color}" stroke="${colors.surface}" stroke-width="2"/>`,
             `<text x="${x(last) + 10}" y="${y(s.values[last]) + 4}"` +
             ` font-size="11" fill="${colors.secondary}"` +
-            ` style="font-variant-numeric:tabular-nums">${won(s.values[last])}</text>`
+            ` style="font-variant-numeric:tabular-nums">${fmt(s.values[last])}</text>`
         );
     }
 
@@ -1885,10 +1887,10 @@ function drawLine(svg, { xLabels, series, colors }) {
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
     svg.setAttribute("height", String(height));
     svg.innerHTML = parts.join("");
-    hookLineHover(svg, { xLabels, series, x, pad, plotW, plotH });
+    hookLineHover(svg, { xLabels, series, x, pad, plotW, plotH, fmtFull });
 }
 
-function hookLineHover(svg, { xLabels, series, x, pad, plotW, plotH }) {
+function hookLineHover(svg, { xLabels, series, x, pad, plotW, plotH, fmtFull = wonFull }) {
     if (!svg) return;
     const crosshair = svg.querySelector(".crosshair");
 
@@ -1911,7 +1913,7 @@ function hookLineHover(svg, { xLabels, series, x, pad, plotW, plotH }) {
         showTip(event, `<strong>${escape(xLabels[best])}</strong>` +
             series.map((s) =>
                 `<div class="row"><i style="background:${s.color}"></i>` +
-                `${escape(s.name)} ${wonFull(s.values[best])}</div>`).join(""));
+                `${escape(s.name)} ${fmtFull(s.values[best])}</div>`).join(""));
     });
 
     svg.addEventListener("mouseleave", () => {
@@ -1944,7 +1946,8 @@ function drawBars(svg, { rows, color, horizontal, colors, unit = "",
             parts.push(
                 // 막대 끝만 둥글게, 기준선 쪽은 각지게
                 `<path d="${roundedRight(pad.left, top, barW, 24, 4)}" fill="${color}"` +
-                ` data-tip="${escape(row.label)}|${row.value}"/>`,
+                ` data-tip="${escape(row.label)}|${row.value}"` +
+                (unitSuffix ? ` data-suffix="${escape(unitSuffix)}"` : "") + "/>",
                 `<text x="${pad.left - 8}" y="${top + 16}" text-anchor="end"` +
                 ` font-size="12" fill="${colors.secondary}">${escape(clip(row.label, 12))}</text>`,
                 `<text x="${pad.left + barW + 8}" y="${top + 16}" font-size="11"` +
@@ -1980,7 +1983,8 @@ function drawBars(svg, { rows, color, horizontal, colors, unit = "",
             const h = Math.max(2, plotH * (row.value / top));
             parts.push(
                 `<path d="${roundedTop(cx - barW / 2, y(row.value), barW, h, 4)}" fill="${color}"` +
-                ` data-tip="${escape(row.label + unit)}|${row.value}"/>`
+                ` data-tip="${escape(row.label + unit)}|${row.value}"` +
+                (unitSuffix ? ` data-suffix="${escape(unitSuffix)}"` : "") + "/>"
             );
             if (rows.length <= 12 || i % Math.ceil(rows.length / 12) === 0) {
                 parts.push(
@@ -3720,11 +3724,13 @@ const TASK_STATUS_LABEL = {
 
 const TASK_SOURCE_LABEL = {
     web: "웹", kakao: "카카오", phone: "전화", sms: "문자", auto: "자동",
+    kakao_chatbot: "카카오 챗봇",   // 62_kakao_intake 가 만드는 접수
 };
 
 let taskKinds = [];        // task_kinds 표. 종류 select 와 승인 필요 여부에 씁니다.
 let taskPreauths = [];     // task_preauthorizations 표(철회된 것 포함 — 표에 같이 보입니다).
 let taskRows = [];         // 마지막으로 받은 목록. 필터는 이것만 다시 그립니다.
+const taskStoresByName = new Map();   // 매장 이름 → id (매장 지정 datalist 의 짝)
 
 // 어느 버튼을 보여줄지. '승인 요청' 은 승인이 필요한 종류에서만 뜻이 있습니다.
 function taskActions(status, needsApproval) {
@@ -3781,10 +3787,20 @@ async function initTasks() {
         filterOpt.value = s.name;      // api_tasks 의 p_store 는 매장 이름입니다
         filterOpt.textContent = s.name;
         $("tk-filter-store").append(filterOpt);
+
+        // 매장 지정 패널의 검색 입력 (datalist — 치는 대로 좁혀집니다)
+        taskStoresByName.set(s.name, s.id);
+        const dlOpt = document.createElement("option");
+        dlOpt.value = s.name;
+        $("task-store-options").append(dlOpt);
     }
 
     $("tk-submit").addEventListener("click", submitTask);
     $("pa-submit").addEventListener("click", submitPreauth);
+    $("task-store-save").addEventListener("click", saveTaskStore);
+    $("task-store-input").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") saveTaskStore();
+    });
     // 상태·매장은 서버에서 걸러야 하고(200건 상한 안쪽으로 좁히려고),
     // '미처리만' 은 이미 받아 둔 것을 다시 그리기만 합니다.
     $("tk-filter-status").addEventListener("change", refreshTaskList);
@@ -3902,6 +3918,13 @@ function taskActionButtons(t) {
         }
     }
 
+    // 카카오 접수 건은 매장을 여기서 답니다 (68 — 지정하면 매핑이 학습돼
+    // 같은 사용자의 다음 접수부터 자동으로 붙습니다).
+    if (t.source === "kakao_chatbot") {
+        buttons.push(`<button class="ghost" data-act="task-store" data-task-id="${t.task_id}"`
+            + ` data-task-title="${escape(t.title)}">${t.store_name ? "매장 변경" : "매장 지정"}</button>`);
+    }
+
     buttons.push(`<button class="ghost" data-act="task-events" data-task-id="${t.task_id}"`
         + ` data-task-title="${escape(t.title)}">이력</button>`);
     return buttons.join(" ");
@@ -3915,6 +3938,13 @@ function initTaskActions() {
         if (historyButton) {
             await showTaskEvents(Number(historyButton.dataset.taskId),
                 historyButton.dataset.taskTitle);
+            return;
+        }
+
+        const storeButton = event.target.closest("button[data-act='task-store']");
+        if (storeButton) {
+            openTaskStorePanel(Number(storeButton.dataset.taskId),
+                storeButton.dataset.taskTitle);
             return;
         }
 
@@ -4015,6 +4045,69 @@ async function showTaskEvents(taskId, title) {
             e.note || "—",
         ]));
     panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+// ---- 카카오 접수 건의 매장 지정 (68_kakao_store_map) ----------------------
+//
+// 카카오는 봇 사용자 키만 주고 매장을 안 알려줍니다. 점주에게 묻는 방식
+// (카카오 쪽 플로우)은 운영 결정 대기라, 지금은 여기서 한 번 지정하면
+// 서버가 키↔매장 매핑을 학습해 다음 접수부터 자동으로 붙입니다.
+// 어느 건에 무엇을 하는지는 전부 서버(assign_kakao_store)가 판정합니다 —
+// 소급 범위 규칙(개별 수정을 덮지 않음)을 화면이 흉내내지 않습니다.
+
+function openTaskStorePanel(taskId, title) {
+    const panel = $("task-store-panel");
+    panel.hidden = false;
+    panel.dataset.taskId = String(taskId);
+    $("task-store-title").textContent = `매장 지정 — ${title || `#${taskId}`}`;
+    const current = taskRows.find((t) => t.task_id === taskId);
+    $("task-store-input").value = current?.store_name || "";
+    const notice = $("task-store-notice");
+    notice.className = "notice";
+    notice.textContent = "";
+    panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    $("task-store-input").focus();
+}
+
+async function saveTaskStore() {
+    const panel = $("task-store-panel");
+    const taskId = Number(panel.dataset.taskId);
+    const name = $("task-store-input").value.trim();
+    const notice = $("task-store-notice");
+    const storeId = taskStoresByName.get(name);
+
+    if (!storeId) {
+        notice.className = "notice error";
+        notice.textContent = name
+            ? `「${name}」 매장을 찾지 못했습니다 — 목록에 있는 이름 그대로 고르세요.`
+            : "매장 이름을 입력하세요.";
+        return;
+    }
+
+    const button = $("task-store-save");
+    button.disabled = true;
+    notice.className = "notice";
+    notice.textContent = "지정하는 중…";
+
+    const { data, error } = await db.rpc("assign_kakao_store",
+        { p_task_id: taskId, p_store_id: storeId });
+
+    button.disabled = false;
+    if (error || (data && data.ok === false)) {
+        notice.className = "notice error";
+        notice.textContent = error ? error.message : (data.reason || "지정하지 못했습니다");
+        return;
+    }
+
+    notice.className = "notice";
+    notice.textContent = `${data.store_name}으로 지정했습니다.`
+        + (data.retro_updated
+            ? ` 같은 사용자의 과거 접수 ${int(data.retro_updated)}건도 함께 갱신했습니다.`
+            : "")
+        + (data.mapping === "none"
+            ? " (봇 사용자 키가 없는 건이라 이 건에만 적용됩니다)"
+            : "");
+    await refreshTaskList();
 }
 
 async function submitTask() {
@@ -4162,6 +4255,96 @@ async function submitPreauth() {
     $("pa-note").value = "";
     await refreshPreauths();
     drawTaskList();
+}
+
+// ================================================================ 카카오 챗봇 통계 (1번 영역)
+//
+// 62_kakao_intake 의 api_kakao_skill_stats 위의 화면입니다. 이벤트(스킬 호출)
+// 그레인이라 위쪽 기간·매장 필터를 따르지 않고(방문·업무와 같은 이유)
+// 일수 select 만 둡니다. 블록별 '접수' 는 그 블록 호출이 직접 만든 업무 수라,
+// 갈래 시작 블록의 접수가 0 인 것은 정상입니다(접수는 이관·식자재_접수 몫).
+
+async function initKakaoStats() {
+    $("ks-days").addEventListener("change", refreshKakaoStats);
+    await refreshKakaoStats();
+}
+
+async function refreshKakaoStats() {
+    const days = Number($("ks-days").value) || 30;
+    const { data, error } = await db.rpc("api_kakao_skill_stats", { p_days: days });
+    if (error) {
+        $("ks-meta").textContent = "불러오지 못했습니다: " + error.message;
+        return;
+    }
+    drawKakaoStats(data || {});
+}
+
+function drawKakaoStats(stats) {
+    const calls = Number(stats.calls) || 0;
+    const tasks = Number(stats.tasks_created) || 0;
+    $("ks-calls").textContent = int(calls);
+    $("ks-tasks").textContent = int(tasks);
+    $("ks-rate").textContent = calls ? `${Math.round((tasks / calls) * 100)}%` : "—";
+    $("ks-meta").textContent = `최근 ${int(stats.days)}일`;
+
+    if (!calls) {
+        $("ks-shown").textContent =
+            "아직 호출이 없습니다 — 봇테스트나 운영채널 연결 뒤에 채워집니다.";
+        $("legend-kakao-daily").innerHTML = "";
+        $("c-kakao-daily").innerHTML = "";
+        $("c-kakao-daily").removeAttribute("height");
+        $("ks-detail").hidden = true;
+        return;
+    }
+    $("ks-shown").textContent = "";
+    $("ks-detail").hidden = false;
+
+    const c = palette();
+
+    // 일별 추이. 함수는 호출이 있는 날만 주므로 빈 날을 0 으로 채워 그립니다 —
+    // 빈 날이 접히면 추이가 실제보다 촘촘해 보입니다. 날짜 키는 서버가 주는
+    // UTC 기준 그대로 씁니다(toISOString 도 UTC — 어긋나지 않습니다).
+    const byDate = new Map((stats.daily || []).map((d) => [String(d.date), d]));
+    const days = Number(stats.days) || 30;
+    const xLabels = [], dailyCalls = [], dailyTasks = [];
+    for (let i = days - 1; i >= 0; i--) {
+        const key = new Date(Date.now() - i * 86400_000).toISOString().slice(0, 10);
+        const row = byDate.get(key);
+        xLabels.push(key.slice(5).replace("-", "."));
+        dailyCalls.push(row ? Number(row.calls) || 0 : 0);
+        dailyTasks.push(row ? Number(row.tasks) || 0 : 0);
+    }
+    const series = [
+        { name: "호출", color: c.s1, values: dailyCalls },
+        { name: "접수", color: c.s2, values: dailyTasks },
+    ];
+    const legend = $("legend-kakao-daily");
+    legend.innerHTML = "";
+    for (const s of series) {
+        const span = document.createElement("span");
+        span.innerHTML = `<i style="background:${s.color}"></i>${s.name}`;
+        legend.append(span);
+    }
+    drawLine($("c-kakao-daily"), {
+        xLabels, series, colors: c,
+        fmt: int, fmtFull: (v) => `${int(v)}건`,
+    });
+
+    // 블록별 — 호출만 있고 접수가 없는 갈래가 어디서 끊기는지 보는 표입니다.
+    table($("t-kakao-blocks"),
+        ["블록", "호출", "접수"],
+        (stats.by_block || []).map((b) => [b.block, int(b.calls), int(b.tasks)]));
+
+    // 분류별 접수 (본사 7종)
+    const cats = (stats.by_category || [])
+        .map((r) => ({ label: r.category, value: Number(r.tasks) || 0 }));
+    if (cats.length) {
+        drawBars($("c-kakao-category"),
+            { rows: cats, color: c.s1, horizontal: true, colors: c, unitSuffix: "건" });
+    } else {
+        $("c-kakao-category").innerHTML = "";
+        $("c-kakao-category").removeAttribute("height");
+    }
 }
 
 // ================================================================ AI 1차 응대 (1번 영역)
