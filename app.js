@@ -5587,31 +5587,35 @@ function initNotifications() {
 }
 
 
-// ---- 수신처 (43 notify_recipients + 65 이름·담당 SV) ----------------------
+// ---- 수신처 (43 notify_recipients + 65 이름·담당 SV + 72 웹 입력) ---------
 //
-// 읽기 전용입니다. 명단은 본사 양식을 tools/import_recipients.py 로 반입합니다
-// (D38 — 파일은 반입구, DB 가 원본). 화면에서 고치는 버튼을 만들지 않는 이유는
-// 발송 이력 카드와 같습니다: 발송 대상은 잘못 바꾸면 조용히 멈추는 값입니다.
+// 본사 양식 반입(tools/import_recipients.py)과 웹 직접 입력을 병행합니다
+// (담당자 지시 2026-08-13 ①). 저장은 사람 단위(같은 메일의 종류 행을 한 번에
+// 맞춤 — 72 설계 판단 [2]), 켜고 끄기는 행 단위입니다. 삭제 버튼은 없습니다 —
+// 끄면 발송이 멈추고, 껐다 켠 자취가 updated_at 으로 남습니다.
 
-async function initRecipients() {
+let rcItems = [];
+
+async function refreshRecipients() {
     const { data, error } = await db.rpc("api_notify_recipients");
     if (error) {
         $("t-recipients").innerHTML =
             '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
         return;
     }
-    const items = Array.isArray(data?.items) ? data.items : [];
-    $("rc-summary").textContent = items.length
+    rcItems = Array.isArray(data?.items) ? data.items : [];
+    $("rc-summary").textContent = rcItems.length
         ? `${int(data.enabled)}곳 사용 중 / 전체 ${int(data.total)}곳` : "";
-    if (!items.length) {
+    if (!rcItems.length) {
         $("t-recipients").innerHTML =
             '<p class="hint">등록된 수신처가 없습니다 — 지금은 보고서·알림이'
-            + ' 만들어져도 아무 데도 가지 않습니다.</p>';
+            + ' 만들어져도 아무 데도 가지 않습니다. 위 칸에서 바로 넣을 수'
+            + ' 있습니다.</p>';
         return;
     }
     table($("t-recipients"),
-        ["종류", "이름", "받는 곳", "담당 SV", "상태", "메모"],
-        items.map((r) => [
+        ["종류", "이름", "받는 곳", "담당 SV", "상태", "메모", ""],
+        rcItems.map((r) => [
             escape(NOTIFY_KIND_LABEL[r.kind] || r.kind),
             escape(r.display_name || "—"),
             escape(r.recipient)
@@ -5621,15 +5625,94 @@ async function initRecipients() {
             escape(r.sv_name || "—"),
             r.enabled ? '<span class="tag up">사용</span>' : '<span class="tag">꺼짐</span>',
             escape(clip(r.note || "", 40)),
+            `<button type="button" class="ghost" data-act="toggle" data-id="${r.id}">`
+                + (r.enabled ? "끄기" : "켜기") + "</button> "
+                + `<button type="button" class="ghost" data-act="edit" data-id="${r.id}">고치기</button>`,
         ]),
         { html: true });
+}
+
+// '고치기' 는 그 사람의 행들을 위 입력 칸에 올려놓습니다 — 저장이 사람 단위라
+// 화면도 사람 단위로 고치는 것이 맞습니다(체크 상태 = 지금 켜진 종류).
+function rcFillForm(recipient) {
+    const rows = rcItems.filter(
+        (r) => r.recipient === recipient && r.channel === "mail");
+    if (!rows.length) return;
+    const base = rows.find((r) => r.enabled) || rows[0];
+    $("rc-name").value = base.display_name || "";
+    $("rc-mail").value = recipient;
+    $("rc-sv").value = base.sv_name || "";
+    $("rc-note").value = base.note || "";
+    const on = new Set(rows.filter((r) => r.enabled).map((r) => r.kind));
+    for (const box of $("rc-kinds").querySelectorAll("input[type=checkbox]"))
+        box.checked = on.has(box.value);
+    $("rc-notice").textContent =
+        `${base.display_name || recipient} 을(를) 위 칸에 올렸습니다 — 고친 뒤 저장을 누르세요.`;
+}
+
+async function saveRecipient() {
+    const notice = $("rc-notice");
+    notice.textContent = "";
+    const kinds = [...$("rc-kinds").querySelectorAll("input:checked")]
+        .map((box) => box.value);
+    const { data, error } = await db.rpc("api_notify_recipient_save", {
+        p_recipient: $("rc-mail").value,
+        p_kinds: kinds,
+        p_display_name: $("rc-name").value,
+        p_sv_name: $("rc-sv").value,
+        p_note: $("rc-note").value,
+    });
+    if (error) {
+        notice.textContent = "저장하지 못했습니다: " + error.message;
+        return;
+    }
+    if (!data?.ok) {
+        notice.textContent = data?.reason || "저장하지 못했습니다.";
+        return;
+    }
+    notice.textContent = `저장했습니다 — ${data.recipient} · 받을 것 ${data.kinds_on}종`
+        + (data.kinds_off ? ` (끈 것 ${data.kinds_off}종)` : "");
+    $("rc-name").value = "";
+    $("rc-mail").value = "";
+    $("rc-sv").value = "";
+    $("rc-note").value = "";
+    for (const box of $("rc-kinds").querySelectorAll("input[type=checkbox]"))
+        box.checked = false;
+    await refreshRecipients();
+}
+
+async function initRecipients() {
+    $("rc-save").addEventListener("click", saveRecipient);
+    $("t-recipients").addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-act]");
+        if (!button) return;
+        const row = rcItems.find((r) => r.id === Number(button.dataset.id));
+        if (!row) return;
+        if (button.dataset.act === "edit") {
+            rcFillForm(row.recipient);
+            return;
+        }
+        button.disabled = true;
+        const { data, error } = await db.rpc("api_notify_recipient_toggle", {
+            p_id: row.id, p_enabled: !row.enabled });
+        if (error || !data?.ok) {
+            $("rc-notice").textContent = "바꾸지 못했습니다: "
+                + (error?.message || data?.reason || "");
+            button.disabled = false;
+            return;
+        }
+        await refreshRecipients();
+    });
+    await refreshRecipients();
 }
 
 
 // ---- 답글 대행 동의 매장 (42_consents + 65 source) ------------------------
 //
-// 답글 등록의 선결 조건인 목록입니다(본사 답변 4번). 여기도 읽기 전용입니다 —
-// 동의·철회는 점주와의 약속이라 화면에서 즉석으로 만들 값이 아닙니다.
+// 답글 등록의 선결 조건인 목록입니다(본사 답변 4번). 본사 명단 반입과 웹
+// 기록을 병행합니다(담당자 지시 2026-08-13 ②). 쓰기는 42 의 DEFINER 함수
+// 2종(record/withdraw)만 부릅니다 — 이력 규칙(철회는 남기고, 재동의는 철회
+// 뒤에만, 반입이 철회를 자동으로 안 되살림)은 전부 서버 쪽 그대로입니다.
 
 async function loadConsents() {
     const withWithdrawn = $("cs-withdrawn").checked;
@@ -5648,11 +5731,12 @@ async function loadConsents() {
     if (!items.length) {
         $("t-consents").innerHTML =
             '<p class="hint">동의 매장이 아직 없습니다. 답글 등록은 이 목록이'
-            + ' 채워진 뒤에 켤 수 있습니다.</p>';
+            + ' 채워진 뒤에 켤 수 있습니다. 동의서를 받았으면 위 칸에서 바로'
+            + ' 기록하세요.</p>';
         return;
     }
     table($("t-consents"),
-        ["매장", "동의일", "대표자", "출처", "상태", "비고"],
+        ["매장", "동의일", "대표자", "출처", "상태", "비고", ""],
         items.map((c) => [
             escape(c.store),
             escape(c.signed_at || "—"),
@@ -5662,13 +5746,79 @@ async function loadConsents() {
                 ? `<span class="tag warn">철회 ${escape(String(c.withdrawn_at).slice(0, 10))}</span>`
                 : '<span class="tag up">동의</span>',
             escape(clip(c.note || c.withdraw_note || "", 40)),
+            c.withdrawn_at
+                ? `<button type="button" class="ghost" data-act="again" data-store="${escape(c.store)}">다시 동의</button>`
+                : `<button type="button" class="ghost" data-act="withdraw" data-id="${c.consent_id}" data-store="${escape(c.store)}">철회</button>`,
         ]),
         { html: true });
 }
 
-function initConsents() {
+async function saveConsent() {
+    const notice = $("cs-notice");
+    notice.textContent = "";
+    const { data, error } = await db.rpc("record_review_reply_consent", {
+        p_store: $("cs-store").value,
+        p_signed_at: $("cs-date").value || null,
+        p_signer: $("cs-signer").value,
+        p_note: $("cs-note").value,
+    });
+    if (error) {
+        notice.textContent = "기록하지 못했습니다: " + error.message;
+        return;
+    }
+    if (!data?.ok) {
+        notice.textContent = data?.reason || "기록하지 못했습니다.";
+        return;
+    }
+    notice.textContent = `동의를 기록했습니다 — ${$("cs-store").value.trim()}`;
+    $("cs-store").value = "";
+    $("cs-signer").value = "";
+    $("cs-note").value = "";
+    await loadConsents();
+}
+
+async function initConsents() {
     $("cs-withdrawn").addEventListener("change", loadConsents);
-    loadConsents();
+    $("cs-save").addEventListener("click", saveConsent);
+    $("t-consents").addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-act]");
+        if (!button) return;
+        if (button.dataset.act === "again") {
+            // 재동의는 새 동의서가 근거입니다 — 새 줄로만 기록합니다(42 [1]).
+            $("cs-store").value = button.dataset.store;
+            $("cs-date").value = "";
+            $("cs-notice").textContent =
+                `${button.dataset.store} 를 위 칸에 올렸습니다 — 새 동의서의 동의일을 넣고 기록하세요.`;
+            $("cs-store").scrollIntoView({ behavior: "smooth", block: "center" });
+            return;
+        }
+        const why = prompt(`${button.dataset.store} 의 동의를 철회합니다.\n`
+            + "철회하면 그 매장 답글 등록이 바로 멈춥니다. 사유(선택):");
+        if (why === null) return;      // 취소
+        button.disabled = true;
+        const { data, error } = await db.rpc("withdraw_review_reply_consent", {
+            p_consent_id: Number(button.dataset.id),
+            p_note: why,
+        });
+        if (error || !data?.ok) {
+            $("cs-notice").textContent = "철회하지 못했습니다: "
+                + (error?.message || data?.reason || "");
+            button.disabled = false;
+            return;
+        }
+        $("cs-notice").textContent = `철회했습니다 — ${button.dataset.store}`;
+        await loadConsents();
+    });
+
+    // 매장 이름 자동완성 — 목록에서 고르면 오타로 '매장을 찾지 못했습니다' 를
+    // 겪지 않습니다(기록 함수는 이름 정확 일치).
+    const { data: stores } = await db.from("stores").select("name").order("name");
+    for (const s of stores || []) {
+        const opt = document.createElement("option");
+        opt.value = s.name;
+        $("cs-store-list").append(opt);
+    }
+    await loadConsents();
 }
 
 
