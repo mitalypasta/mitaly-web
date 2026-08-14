@@ -144,13 +144,11 @@ export async function drawStoreMap() {
         return;
     }
 
-    const bounds = new kakao.maps.LatLngBounds();
     const pointRows = ((points || {}).rows || []).filter((p) =>
         !filters.p_store || p.store === filters.p_store);
 
     for (const point of pointRows) {
         const at = new kakao.maps.LatLng(point.lat, point.lng);
-        bounds.extend(at);
         const marker = new kakao.maps.Marker({
             position: at,
             title: point.store,          // 마우스를 올리면 이름
@@ -216,7 +214,13 @@ export async function drawStoreMap() {
         });
     }
 
-    if (dmapMarkers.length) map.setBounds(bounds);
+    // 전 매장에 화면을 맞추면(setBounds) 전국이 다 들어와 너무 멀어집니다
+    // (2026-08-14 담당자). 처음 화면은 초기 center(서울)를 그대로 두고,
+    // 매장을 하나 고른 때만 그 매장으로 옮깁니다.
+    if (filters.p_store && dmapMarkers.length) {
+        map.setCenter(dmapMarkers[0].getPosition());
+        if (map.getLevel() > 5) map.setLevel(5);
+    }
 
     // 좌표를 못 찾은 매장은 지도에서 그냥 안 보입니다 — 몇 곳인지는 밝힙니다.
     const withSales = [...storeSales.values()].filter((r) => (Number(r.amount) || 0) > 0).length;
