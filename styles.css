@@ -387,6 +387,32 @@ header.top h1 {
     margin: 0 0 12px;
 }
 
+/* 접기 카드 — 자주 열지 않는 카드(새 접수·사전 고지)를 여는 순간만 펼칩니다.
+   목록을 위로 끌어올려 화면을 처음 열었을 때 한눈에 들어오게 하는 장치입니다. */
+.cardfold > summary {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    cursor: pointer;
+    list-style: none;
+}
+.cardfold > summary::-webkit-details-marker { display: none; }
+.cardfold > summary h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+}
+.cardfold > summary h2::before {
+    content: "+";
+    display: inline-block;
+    width: 1.1em;
+    color: var(--text-muted);
+    font-weight: 400;
+}
+.cardfold[open] > summary h2::before { content: "\2212"; }   /* − */
+.cardfold-body { margin-top: 14px; }
+
 /* 범례 — 시리즈가 2개 이상이면 항상 표시합니다.
    색만으로 구분하게 두지 않기 위한 장치입니다. */
 .legend {
@@ -889,6 +915,9 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
 
 /* 승인된 것은 실선으로 바꿔 검토가 끝났음을 보입니다. */
 .rvdraft.ok { border-style: solid; }
+
+/* 발송 큐에 오른 것은 실선 + 강조색 테두리로 대기 중임을 보입니다. */
+.rvdraft.sent { border-style: solid; border-color: var(--primary); }
 
 .rvdraft-head {
     display: flex;

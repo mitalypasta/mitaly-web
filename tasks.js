@@ -119,10 +119,34 @@ export async function initTasks() {
     $("tk-filter-status").addEventListener("change", refreshTaskList);
     $("tk-filter-store").addEventListener("change", refreshTaskList);
     $("tk-filter-overdue").addEventListener("change", drawTaskList);
+    // 현황 칸을 누르면 그 묶음만 목록에 남깁니다 — 필터 select 를 뒤지지 않고
+    // 한눈에 본 숫자에서 바로 그 목록으로 갑니다. (홈 타일과 같은 방식으로
+    // 각 필터가 이미 쓰는 change 이벤트를 그대로 흉내 냅니다.)
+    for (const tile of document.querySelectorAll('#tasks-summary-card [data-task-filter]')) {
+        tile.addEventListener("click", () => applyTaskTileFilter(tile.dataset.taskFilter));
+    }
     initTaskActions();
     initPreauthActions();
 
     await Promise.all([refreshTasksSummary(), refreshTaskList(), refreshPreauths()]);
+}
+
+// 현황 칸 → 목록 필터. '미처리' 는 한 상태가 아니라 진행 중 건에 걸친 묶음이라
+// 상태를 '진행 중' 으로 두고 미처리 체크만 켭니다. 나머지는 그 상태로 좁힙니다.
+function applyTaskTileFilter(which) {
+    const status = $("tk-filter-status");
+    const overdue = $("tk-filter-overdue");
+    if (which === "overdue") {
+        status.value = "open";
+        overdue.checked = true;
+    } else {
+        status.value = which;
+        overdue.checked = false;
+    }
+    // status change 하나면 refreshTaskList → drawTaskList 가 돌며 미처리 체크까지
+    // 같이 반영됩니다(drawTaskList 가 그릴 때 두 필터를 함께 읽습니다).
+    status.dispatchEvent(new Event("change"));
+    $("task-list-card").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 export async function refreshTasksSummary() {

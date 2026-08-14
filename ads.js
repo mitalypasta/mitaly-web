@@ -1,13 +1,18 @@
 // 광고 (6번 영역) — app.js 에서 뽑아낸 첫 '영역' 모듈
 // (docs/web-split-plan.md 3단계). db + foundation 만 import 하면 영역 하나가
 // 자기 파일로 독립합니다. 다른 영역도 같은 꼴로 뽑아낼 수 있습니다.
+//
+// 본사에 광고비 집행내역 자료가 애초에 없음이 확정돼(2026-08-11 담당자) 반입
+// 대기가 아니라 웹에서 직접 넣습니다(큐 #92). 쓰기는 76 의 DEFINER 함수 2종
+// (api_ad_spend_save·api_ad_spend_delete)만 부릅니다. 엑셀 반입과 같은 표에
+// 공존하고 출처는 source 로 갈립니다('web' vs 파일명).
 
 import { db, } from "./client.js";
-import { won, wonFull, int, ymLabel } from "./format.js";
+import { won, wonFull, int, ymLabel, ymDash } from "./format.js";
 import { escape } from "./util.js";
 import { table, $ } from "./dom.js";
 
-export async function initAds() {
+async function loadAds() {
     const { data, error } = await db.rpc("api_ad_spend", {});
     const meta = $("ads-meta");
     if (error) {
@@ -19,11 +24,11 @@ export async function initAds() {
 
     const rows = Array.isArray(data?.rows) ? data.rows : [];
     if (!rows.length) {
-        meta.textContent = "자료 반입 전";
+        meta.textContent = "";
         $("ads-kpis").hidden = true;
         $("t-ads-channel").innerHTML = "";
         $("t-ads").innerHTML =
-            '<p class="hint">아직 반입된 광고 자료가 없습니다.</p>';
+            '<p class="hint">아직 넣은 광고 자료가 없습니다. 위 칸에서 추가하세요.</p>';
         return;
     }
 
@@ -42,10 +47,87 @@ export async function initAds() {
     table($("t-ads-channel"), ["채널", "광고비", "노출", "클릭", "광고 경유 주문"],
         byChannel.map((c) => [c.channel, wonFull(c.cost), int(c.impressions),
                               int(c.clicks), int(c.orders)]));
-    table($("t-ads"), ["월", "매장", "채널", "캠페인", "광고비", "노출", "클릭", "주문"],
-        rows.map((r) => [ymLabel(r.ym), r.store, r.channel, r.campaign || "—",
-                         wonFull(r.cost),
-                         r.impressions == null ? "—" : int(r.impressions),
-                         r.clicks == null ? "—" : int(r.clicks),
-                         r.orders == null ? "—" : int(r.orders)]));
+    table($("t-ads"),
+        ["월", "매장", "채널", "캠페인", "광고비", "노출", "클릭", "주문", "출처", ""],
+        rows.map((r) => [
+            ymLabel(r.ym), escape(r.store), escape(r.channel),
+            escape(r.campaign || "—"), wonFull(r.cost),
+            r.impressions == null ? "—" : int(r.impressions),
+            r.clicks == null ? "—" : int(r.clicks),
+            r.orders == null ? "—" : int(r.orders),
+            r.source === "web" ? "웹 입력" : escape(r.source || "반입"),
+            `<button type="button" class="ghost" data-act="del" data-id="${r.id}"`
+                + ` data-label="${escape(r.store)} ${ymLabel(r.ym)} ${escape(r.channel)}">삭제</button>`,
+        ]),
+        { html: true });
+}
+
+async function saveAd() {
+    const notice = $("ads-notice");
+    notice.textContent = "";
+    const ymRaw = $("ads-in-ym").value;              // "2026-01"
+    const ym = ymRaw ? Number(ymRaw.replace("-", "")) : null;
+    const num = (id) => {
+        const v = $(id).value.trim();
+        return v === "" ? null : Number(v);
+    };
+
+    const { data, error } = await db.rpc("api_ad_spend_save", {
+        p_store:       $("ads-in-store").value,
+        p_ym:          ym,
+        p_channel:     $("ads-in-channel").value,
+        p_cost:        num("ads-in-cost") ?? 0,
+        p_campaign:    $("ads-in-campaign").value,
+        p_impressions: num("ads-in-impressions"),
+        p_clicks:      num("ads-in-clicks"),
+        p_orders:      num("ads-in-orders"),
+    });
+    if (error) {
+        notice.textContent = "넣지 못했습니다: " + error.message;
+        return;
+    }
+    if (!data?.ok) {
+        notice.textContent = data?.reason || "넣지 못했습니다.";
+        return;
+    }
+    notice.textContent =
+        `넣었습니다 — ${$("ads-in-store").value.trim()} ${ymDash(ym)} ${$("ads-in-channel").value.trim()}`;
+    // 매장·월·채널은 다음 줄을 이어 넣기 좋게 남기고, 값 칸만 비웁니다.
+    for (const id of ["ads-in-campaign", "ads-in-cost", "ads-in-impressions",
+                      "ads-in-clicks", "ads-in-orders"]) {
+        $(id).value = "";
+    }
+    await loadAds();
+}
+
+export async function initAds() {
+    $("ads-save").addEventListener("click", saveAd);
+
+    $("t-ads").addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-act='del']");
+        if (!button) return;
+        if (!confirm(`삭제합니다 — ${button.dataset.label}`)) return;
+        button.disabled = true;
+        const { data, error } = await db.rpc("api_ad_spend_delete",
+                                             { p_id: Number(button.dataset.id) });
+        if (error || !data?.ok) {
+            $("ads-notice").textContent =
+                "삭제하지 못했습니다: " + (error?.message || data?.reason || "");
+            button.disabled = false;
+            return;
+        }
+        $("ads-notice").textContent = `삭제했습니다 — ${button.dataset.label}`;
+        await loadAds();
+    });
+
+    // 매장 이름 자동완성 — 목록에서 고르면 '매장을 찾지 못했습니다' 오타를
+    // 겪지 않습니다(저장 함수는 이름 정확 일치).
+    const { data: stores } = await db.from("stores").select("name").order("name");
+    const list = $("ads-store-list");
+    for (const s of stores || []) {
+        const opt = document.createElement("option");
+        opt.value = s.name;
+        list.append(opt);
+    }
+    await loadAds();
 }

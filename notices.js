@@ -25,6 +25,71 @@ function ruleHasKind(rule, kind) {
     return !!rule && [rule.stage1, rule.stage2, rule.stage3].some((s) => s && s.kind === kind);
 }
 
+// ─── 위반 기록 문서 첨부 (78_notice_files.sql) ────────────────────────
+//
+// 파일 바이트는 비공개 버킷 notice-files 에, 메타는 notice_attachments 표에
+// 둡니다. 허용 형식·크기는 서버(버킷 정책)에서도 막지만 여기서 먼저 걸러
+// 잘못된 파일로 왕복하지 않게 합니다. db.storage 가 없는 데모 모드에서는
+// 파일 처리를 통째로 건너뜁니다(콘솔 오류 0).
+const NOTICE_BUCKET = "notice-files";
+const NOTICE_MAX_BYTES = 20 * 1024 * 1024;   // 서버 file_size_limit 과 같은 20MB
+const EXT_MIME = {
+    pdf: "application/pdf",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+};
+
+function fileExt(name) {
+    const i = (name || "").lastIndexOf(".");
+    return i < 0 ? "" : name.slice(i + 1).toLowerCase();
+}
+
+// 위반 표가 지금 보여 주는 위반 id 묶음의 첨부만 받아 위반 id → [첨부] 로
+// 묶어 돌려줍니다. 데모/미적용 환경(에러)에서는 빈 Map — 화면은 '—' 로 그려집니다.
+async function fetchAttachments(ids) {
+    if (!db.storage || !ids.length) return new Map();
+    const { data, error } = await db.rpc("api_notice_attachments", { p_violation_ids: ids });
+    const map = new Map();
+    if (error || !Array.isArray(data)) return map;
+    for (const a of data) {
+        if (!map.has(a.violation_id)) map.set(a.violation_id, []);
+        map.get(a.violation_id).push(a);
+    }
+    return map;
+}
+
+function attachmentCell(atts) {
+    if (!atts || !atts.length) return "—";
+    return atts.map((a) =>
+        `<a href="#" data-att-path="${escape(a.object_path)}"`
+        + ` data-att-name="${escape(a.file_name)}">${escape(a.file_name)}</a>`
+    ).join("<br>");
+}
+
+// 첨부 링크 클릭 → 서명 URL 로 새 창에서 열람. word 는 미리보기가 안 되니
+// 원본 이름으로 내려받게 하고, pdf·jpg 는 새 창에서 바로 보이게 둡니다.
+function initAttachmentOpen() {
+    const open = async (event) => {
+        const link = event.target.closest("[data-att-path]");
+        if (!link || !db.storage) return;
+        event.preventDefault();
+        const name = link.dataset.attName || "";
+        const ext = fileExt(name);
+        const opts = (ext === "doc" || ext === "docx") ? { download: name } : {};
+        const { data, error } = await db.storage.from(NOTICE_BUCKET)
+            .createSignedUrl(link.dataset.attPath, 60, opts);
+        if (error || !data) {
+            window.alert("첨부를 열지 못했습니다: " + (error ? error.message : ""));
+            return;
+        }
+        window.open(data.signedUrl, "_blank", "noopener");
+    };
+    $("t-violations").addEventListener("click", open);
+    $("t-violations-resolved").addEventListener("click", open);
+}
+
 export async function initNotices() {
     const storeSelect = $("v-store");
     const { data: stores, error: storeErr } = await db.from("stores")
@@ -54,6 +119,7 @@ export async function initNotices() {
     $("v-submit").addEventListener("click", submitViolation);
     initViolationResolve();
     initViolationReopen();
+    initAttachmentOpen();
 
     initBoardArchive();
     await Promise.all([refreshViolations(), refreshResolvedViolations(),
@@ -283,14 +349,17 @@ async function refreshResolvedViolations() {
         return;
     }
 
+    const atts = await fetchAttachments(list.map((v) => v.event_id));
+
     table($("t-violations-resolved"),
-        ["매장", "위반유형", "발생일", "종료일", "메모", "처리"],
+        ["매장", "위반유형", "발생일", "종료일", "메모", "첨부", "처리"],
         list.map((v) => [
             v.store_name,
             v.violation_type,
             v.occurred_on,
             v.resolved_on,
             v.note ? escape(v.note) : "—",
+            attachmentCell(atts.get(v.event_id)),
             `<button type="button" class="ghost" data-act="reopen" data-event-id="${v.event_id}">다시 열기</button>`,
         ]),
         { html: true });
@@ -340,12 +409,31 @@ async function submitViolation() {
     const rule = noticeRules.find((r) => r.violation_type === violationType);
     const isSequential = ruleHasKind(rule, "sequential");
 
+    // 파일은 db.storage 가 있을 때만 다룹니다(데모 모드는 건너뜀). 올리기 전에
+    // 확장자·크기를 먼저 걸러 잘못된 파일로 위반 저장까지 갔다가 되돌리지
+    // 않게 합니다. 서버(버킷 정책)가 같은 기준으로 한 번 더 막습니다.
+    const files = db.storage ? Array.from($("v-files").files || []) : [];
+    for (const f of files) {
+        const ext = fileExt(f.name);
+        if (!EXT_MIME[ext]) {
+            notice.className = "notice error";
+            notice.textContent = `'${f.name}' 는 올릴 수 없는 형식입니다. `
+                + "pdf · word(doc/docx) · jpg 만 됩니다.";
+            return;
+        }
+        if (f.size > NOTICE_MAX_BYTES) {
+            notice.className = "notice error";
+            notice.textContent = `'${f.name}' 가 20MB 를 넘습니다.`;
+            return;
+        }
+    }
+
     button.disabled = true;
     notice.className = "notice";
     notice.textContent = "저장하는 중…";
 
     const { data: { session } } = await db.auth.getSession();
-    const { error } = await db.from("violation_events").insert({
+    const row = {
         store_id: Number(storeId),
         violation_type: violationType,
         occurred_on: occurred,
@@ -355,21 +443,62 @@ async function submitViolation() {
             ? logoField.value === "true" : null,
         note: $("v-note").value.trim() || null,
         created_by: session?.user?.id,
-    });
+    };
 
-    button.disabled = false;
-    if (error) {
-        notice.className = "notice error";
-        notice.textContent = "저장하지 못했습니다: " + error.message;
-        return;
+    // 첨부가 있으면 위반 id 가 필요하므로 넣고 그 id 를 돌려받습니다. 없으면
+    // 종전대로 넣기만 합니다(데모 builder 는 select 체이닝을 안 받으므로 이
+    // 갈래가 데모에서도 안전합니다 — files 는 데모에서 항상 비어 있습니다).
+    let eventId = null;
+    if (files.length) {
+        const { data, error } = await db.from("violation_events")
+            .insert(row).select("id").single();
+        if (error) {
+            button.disabled = false;
+            notice.className = "notice error";
+            notice.textContent = "저장하지 못했습니다: " + error.message;
+            return;
+        }
+        eventId = data.id;
+    } else {
+        const { error } = await db.from("violation_events").insert(row);
+        if (error) {
+            button.disabled = false;
+            notice.className = "notice error";
+            notice.textContent = "저장하지 못했습니다: " + error.message;
+            return;
+        }
     }
 
-    notice.className = "notice";
-    notice.textContent = "저장했습니다.";
+    // 파일 올리기 — 버킷 키는 무작위 UUID(원본 이름은 표에만). 실패한 파일은
+    // 모아 두었다가 안내하되, 위반 기록 자체는 이미 저장됐습니다.
+    const failed = [];
+    for (const f of files) {
+        const ext = fileExt(f.name);
+        const objectPath = `${eventId}/${crypto.randomUUID()}.${ext}`;
+        const up = await db.storage.from(NOTICE_BUCKET)
+            .upload(objectPath, f, { contentType: EXT_MIME[ext], upsert: false });
+        if (up.error) { failed.push(f.name); continue; }
+        const meta = await db.from("notice_attachments").insert({
+            violation_id: eventId,
+            object_path: objectPath,
+            file_name: f.name,
+            mime_type: EXT_MIME[ext],
+            byte_size: f.size,
+            uploaded_by: session?.user?.id,
+        });
+        if (meta.error) failed.push(f.name);
+    }
+
+    button.disabled = false;
+    notice.className = failed.length ? "notice error" : "notice";
+    notice.textContent = failed.length
+        ? `저장했습니다. 다만 첨부 ${failed.length}개는 올리지 못했습니다: ${failed.join(", ")}`
+        : (files.length ? `저장했습니다. 첨부 ${files.length}개 올림.` : "저장했습니다.");
     $("v-note").value = "";
     $("v-resolved").value = "";
     seqField.value = "";
     logoField.value = "";
+    $("v-files").value = "";
     await Promise.all([refreshViolations(), refreshResolvedViolations()]);
 }
 
@@ -406,8 +535,10 @@ export async function refreshViolations() {
         return;
     }
 
+    const atts = await fetchAttachments(list.map((v) => v.event_id));
+
     table($("t-violations"),
-        ["매장", "위반유형", "발생일", "경과일", "단계", "확인 필요", "메모", "처리"],
+        ["매장", "위반유형", "발생일", "경과일", "단계", "확인 필요", "메모", "첨부", "처리"],
         list.map((v) => [
             v.store_name,
             v.violation_type,
@@ -418,6 +549,7 @@ export async function refreshViolations() {
                 ? `<span class="flag" title="${escape(v.manual_review_reason || "")}">담당자 확인</span>`
                 : "—",
             v.note ? escape(v.note) : "—",
+            attachmentCell(atts.get(v.event_id)),
             noticeActions(v, liveTask.get(`${v.event_id}|${v.stage}`)),
         ]),
         { html: true });

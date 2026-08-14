@@ -272,32 +272,44 @@ async function initDashboard() {
         if (width && width !== lastWidth) { lastWidth = width; redraw(); }
     }).observe(document.querySelector(".grid"));
 
-    initRequests();
-    initExport();
-    initDrafts();
+    // 홈 타일 배선과 지도 nav 배선은 조회가 없어(클릭 리스너뿐) 먼저 겁니다.
     initHomeTiles();
-    initNotices();
-    initVisits();
-    initStoreDb();
-    initAccountPresence();
-    initLifecycle();
-    initTasks();
-    initKakaoStats();
-    initNotifications();
-    initRecipients();
-    initConsents();
-    initInquiries();
-    initSettlement();
-    initAds();
-    initIngredients();
-    initOurhome();
-    initPosMenu();
-    initComms();
     initDeliveryMap();
-    loadAccountHealth();
 
-    await load();
+    // 보이는 화면(홈·매출)의 위 4칸을 먼저 그립니다. 안 보이는 20여 개 영역의
+    // 첫 조회는 그 첫 그리기 뒤로 미룹니다 — 안 그러면 부팅 때 영역들이
+    // 한꺼번에 조회를 던져 브라우저 연결(도메인당 6개)과 Supabase 를 나눠
+    // 쓰느라 눈앞의 매출 4칸이 늦게 뜹니다(2026-08-14 실측: 부팅 rpc 60건
+    // 중 35건이 지금 안 보이는 영역 몫이고, 그게 매출 4칸 조회보다 먼저 큐에
+    // 실렸습니다). 첫 그리기 뒤에 시작하므로 영역 조회는 대시보드 나머지와
+    // 겹쳐 돌아 예전만큼 일찍 채워지고, 매출 4칸만 먼저 자리를 차지합니다.
+    // 홈 타일의 '업무·문의 수'가 먼저 차도록 그 둘을 앞에 둡니다. 나머지는
+    // 원래 순서를 지킵니다(수집요청→내보내기는 매장 고르개 상태를 공유).
+    await load(() => runAfterPaint([
+        initTasks, initInquiries,
+        initRequests, initExport, initDrafts, loadAccountHealth,
+        initNotices, initVisits, initStoreDb, initAccountPresence,
+        initLifecycle, initKakaoStats, initNotifications, initRecipients,
+        initConsents, initSettlement, initAds, initIngredients,
+        initOurhome, initPosMenu, initComms,
+    ]));
     loadLastUpdated();
+}
+
+// 보이는 화면을 그린 뒤, 안 보이는 영역들의 첫 조회를 몇 개씩 끊어 실행합니다.
+// 브라우저 연결 상한이 자연히 몰림을 막지만, 무거운 영역(POS 는 조회 6개)이
+// 한 틱에 겹치지 않게 나눕니다. 각 init 는 배선 + 첫 조회라, 하나가 실패해도
+// 다른 영역으로 옮지 않게 감쌉니다.
+function runAfterPaint(inits) {
+    let i = 0;
+    const pump = () => {
+        const end = Math.min(i + 4, inits.length);
+        for (; i < end; i++) {
+            try { inits[i](); } catch (e) { console.error(e); }
+        }
+        if (i < inits.length) setTimeout(pump, 0);
+    };
+    setTimeout(pump, 0);
 }
 
 // ---------------------------------------------------------------- 수집 요청
@@ -854,7 +866,10 @@ function currentFilters() {
 // load() 차례표. 늦게 끝난 옛 조회를 버리는 데 씁니다.
 let loadSeq = 0;
 
-async function load() {
+// onFirstPaint 는 부팅 때 첫 그리기(위 4칸) 직후 한 번만 부르는 콜백입니다.
+// 필터를 바꿀 때는 load 가 change 리스너로 직접 걸려 Event 가 넘어오므로,
+// 함수일 때만 부릅니다(그 경우에만 영역 지연 조회를 시작).
+async function load(onFirstPaint) {
     const args = currentFilters();
     document.body.classList.add("loading");
     $("app-notice").textContent = "";
@@ -946,6 +961,10 @@ async function load() {
 
     S.lastData = pack(results, args, pending);
     draw(S.lastData);
+
+    // 위 4칸이 자리를 잡았으니, 안 보이는 영역들의 첫 조회를 이제 시작합니다
+    // (부팅 첫 그리기 때만 — 필터 변경 땐 Event 라 typeof 로 걸러집니다).
+    if (typeof onFirstPaint === "function") onFirstPaint();
 
     // 나머지. 여기서 실패해도 이미 그린 것은 지우지 않습니다 —
     // 위쪽 숫자는 멀쩡한데 화면을 통째로 비우면 더 나쁩니다.
@@ -1251,41 +1270,59 @@ function drawReviews(d, c) {
 
 // ---- AI 답글 초안 ------------------------------------------------------
 //
-// ⚠️ 여기서 '승인' 은 배달앱에 올리는 것이 아닙니다. '올려도 좋다' 는 표시일
-//    뿐이고, 실제 등록을 하는 코드는 아직 어디에도 없습니다(DECISIONS.md D9).
-//    문구에서도 그렇게 읽히게 씁니다 — 눌렀는데 손님에게 갔다고 오해하면 안 됩니다.
+// '승인' 은 "등록해도 좋다" 는 표시, '전송' 은 발송 큐에 올려 자리 PC 가 실제로
+// 등록하게 하는 것입니다(QUEUE #94). 전송해도 라이브 스위치가 켜지기 전까지는
+// 자리 PC 가 큐만 잡고 등록은 담당자 입회 뒤에 열립니다 — 그 게이트는 러너와
+// DB(review_dispatch_config)에 있습니다(D9). '발송 취소' 로 큐에서 뺄 수 있습니다.
 
 const DRAFT_STATUS = {
     draft: "검토 대기",
-    approved: "승인됨 (등록은 아직 안 합니다)",
-    scheduled: "등록 예약",
+    approved: "승인됨",
+    scheduled: "발송 대기",
     posting: "등록 중",
     posted: "등록 완료",
     failed: "등록 실패",
     rejected: "반려",
 };
 
-// 사람이 더는 못 건드리는 상태
-const DRAFT_LOCKED = ["scheduled", "posting", "posted", "failed"];
+// 등록이 끝났거나 진행 중이라 사람이 더는 못 건드리는 상태
+const DRAFT_LOCKED = ["posting", "posted", "failed"];
 
 function draftBox(draft) {
     const status = draft.status || "draft";
-    const locked = DRAFT_LOCKED.includes(status);
+    const hardLocked = DRAFT_LOCKED.includes(status);
+    const queued = status === "scheduled";        // 발송 큐 — 취소만 됩니다
+    const editable = !hardLocked && !queued;       // draft / approved
     const label = DRAFT_STATUS[status] || status;
+    const cls = status === "approved" ? " ok" : queued ? " sent" : "";
 
-    return `<div class="rvdraft${status === "approved" ? " ok" : ""}" data-draft="${draft.id}">
+    let actions = "";
+    if (editable) {
+        // '승인' 은 아직 검토 안 끝난 초안(draft)에만. 이미 승인된 것은 '전송'만
+        // 하면 됩니다.
+        actions = `<div class="rvdraft-actions">
+          <button type="button" data-act="send">전송</button>
+          ${status === "draft"
+            ? '<button type="button" class="ghost" data-act="approve">승인</button>' : ""}
+          <button type="button" class="ghost" data-act="save">수정 저장</button>
+          <button type="button" class="ghost" data-act="reject">반려</button>
+          <span class="rvdraft-msg"></span>
+        </div>`;
+    } else if (queued) {
+        actions = `<div class="rvdraft-actions">
+          <button type="button" class="ghost" data-act="cancel">발송 취소</button>
+          <span class="rvdraft-msg"></span>
+        </div>`;
+    }
+
+    return `<div class="rvdraft${cls}" data-draft="${draft.id}">
         <div class="rvdraft-head">
           <span class="tag">AI 초안</span>
           <span class="rvmeta">${escape(label)}</span>
         </div>
-        <textarea class="rvdraft-text" rows="3"${locked ? " readonly" : ""}
+        <textarea class="rvdraft-text" rows="3"${editable ? "" : " readonly"}
                   aria-label="답글 초안">${escape(draft.contents || "")}</textarea>
-        ${locked ? "" : `<div class="rvdraft-actions">
-          <button type="button" data-act="approve">승인</button>
-          <button type="button" class="ghost" data-act="save">수정 저장</button>
-          <button type="button" class="ghost" data-act="reject">반려</button>
-          <span class="rvdraft-msg"></span>
-        </div>`}
+        ${actions}
       </div>`;
 }
 
@@ -1307,6 +1344,11 @@ function initDrafts() {
                 + "반려하면 이 리뷰는 다음 초안 생성 때 다시 씁니다.", "");
             if (reason === null) return;   // 취소
         }
+        if (act === "send"
+            && !window.confirm("이 답글을 전송하시겠습니까?\n"
+                + "발송 큐에 올라가고 자리 PC가 배달앱에 등록합니다.")) {
+            return;
+        }
 
         buttons.forEach((b) => { b.disabled = true; });
         message.className = "rvdraft-msg";
@@ -1316,10 +1358,14 @@ function initDrafts() {
             ? db.rpc("approve_reply_draft", { p_draft_id: id })
             : act === "reject"
                 ? db.rpc("reject_reply_draft", { p_draft_id: id, p_reason: reason })
-                : db.rpc("edit_reply_draft", {
-                    p_draft_id: id,
-                    p_contents: box.querySelector(".rvdraft-text").value,
-                });
+                : act === "send"
+                    ? db.rpc("send_reply_draft", { p_draft_id: id })
+                    : act === "cancel"
+                        ? db.rpc("cancel_send_reply_draft", { p_draft_id: id })
+                        : db.rpc("edit_reply_draft", {
+                            p_draft_id: id,
+                            p_contents: box.querySelector(".rvdraft-text").value,
+                        });
 
         const { data, error } = await call;
         buttons.forEach((b) => { b.disabled = false; });
@@ -1338,7 +1384,13 @@ function initDrafts() {
 
         message.className = "rvdraft-msg ok";
         message.textContent = act === "approve" ? "승인했습니다"
-            : act === "reject" ? "반려했습니다" : "저장했습니다";
+            : act === "reject" ? "반려했습니다"
+            : act === "cancel" ? "발송을 취소했습니다"
+            : act === "send"
+                ? (data && data.consent === false
+                    ? "전송했습니다 · 동의서 등록 뒤 자리 PC가 올립니다"
+                    : "전송했습니다 · 자리 PC가 등록합니다")
+                : "저장했습니다";
         await load();     // 목록·요약을 다시 받습니다
     });
 }

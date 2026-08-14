@@ -88,13 +88,14 @@ const DEMO_RECIPES = [
 // 광고 데모(48_ad_spend.sql) — 실서버는 자료 반입 전이라 빈 표가 정상이고,
 // 데모는 반대로 '채워진' 화면이 제대로 그려지는지 봅니다.
 const DEMO_ADS = [
-    { ym: 202607, store: "샘플01점", channel: "배민", campaign: "우리가게클릭", cost: 330000, impressions: 41200, clicks: 1180, orders: 96 },
-    { ym: 202607, store: "샘플01점", channel: "쿠팡이츠", campaign: "매장 부스트", cost: 210000, impressions: 28800, clicks: 640, orders: 51 },
-    { ym: 202607, store: "샘플02점", channel: "배민", campaign: "우리가게클릭", cost: 275000, impressions: 35400, clicks: 990, orders: 74 },
-    { ym: 202607, store: "샘플03점", channel: "요기요", campaign: "", cost: 120000, impressions: 15100, clicks: 310, orders: 22 },
-    { ym: 202606, store: "샘플01점", channel: "배민", campaign: "우리가게클릭", cost: 310000, impressions: 39900, clicks: 1050, orders: 88 },
-    { ym: 202606, store: "샘플02점", channel: "쿠팡이츠", campaign: "매장 부스트", cost: 190000, impressions: 24500, clicks: 570, orders: 43 },
+    { id: 1, ym: 202607, store: "샘플01점", channel: "배민", campaign: "우리가게클릭", cost: 330000, impressions: 41200, clicks: 1180, orders: 96, source: "web" },
+    { id: 2, ym: 202607, store: "샘플01점", channel: "쿠팡이츠", campaign: "매장 부스트", cost: 210000, impressions: 28800, clicks: 640, orders: 51, source: "web" },
+    { id: 3, ym: 202607, store: "샘플02점", channel: "배민", campaign: "우리가게클릭", cost: 275000, impressions: 35400, clicks: 990, orders: 74, source: "web" },
+    { id: 4, ym: 202607, store: "샘플03점", channel: "요기요", campaign: "", cost: 120000, impressions: 15100, clicks: 310, orders: 22, source: "web" },
+    { id: 5, ym: 202606, store: "샘플01점", channel: "배민", campaign: "우리가게클릭", cost: 310000, impressions: 39900, clicks: 1050, orders: 88, source: "web" },
+    { id: 6, ym: 202606, store: "샘플02점", channel: "쿠팡이츠", campaign: "매장 부스트", cost: 190000, impressions: 24500, clicks: 570, orders: 43, source: "web" },
 ];
+let nextAdId = 7;
 
 // 점주 연락처 데모(44_store_contacts.sql) — 전부 가짜 값입니다.
 const demoContacts = [
@@ -1950,6 +1951,31 @@ const HANDLERS = {
         return { ok: true, status: "draft" };
     },
 
+    // 전송(발송 큐 적재) · 발송 취소 (77_review_send_queue.sql). 실제 함수와
+    // 같은 규칙: draft/approved 에서만 scheduled 로, scheduled 에서만 취소.
+    // 샘플01·02점만 동의서가 있다고 보고 consent 를 돌려줍니다(웹 경고 확인용).
+    send_reply_draft: (args) => {
+        const draft = demoFindDraft(args.p_draft_id);
+        if (!draft) return { ok: false, reason: "초안을 찾지 못했습니다" };
+        if (!["draft", "approved"].includes(draft.status)) {
+            return { ok: false, reason: `상태가 ${draft.status} 여서 전송할 수 없습니다` };
+        }
+        const review = DEMO_REVIEWS.find((r) => (r.drafts || []).includes(draft));
+        const consent = ["샘플01점", "샘플02점"].includes(review ? review.store : "");
+        draft.status = "scheduled";
+        return { ok: true, status: "scheduled", consent,
+                 can_reply: review ? review.can_reply !== false : true };
+    },
+    cancel_send_reply_draft: (args) => {
+        const draft = demoFindDraft(args.p_draft_id);
+        if (!draft) return { ok: false, reason: "초안을 찾지 못했습니다" };
+        if (draft.status !== "scheduled") {
+            return { ok: false, reason: `상태가 ${draft.status} 여서 발송을 취소할 수 없습니다` };
+        }
+        draft.status = "approved";
+        return { ok: true, status: "approved" };
+    },
+
     api_by_weekday: (args) => {
         const total = HANDLERS.api_summary(args)[0].amount;
         const sum = Object.values(WEEKDAY_SHAPE).reduce((a, b) => a + b, 0);
@@ -2572,6 +2598,47 @@ const HANDLERS = {
             by_channel: channels,
             rows: [...DEMO_ADS].sort((a, b) => b.ym - a.ym),
         };
+    },
+
+    // 76_ad_spend_entry.sql — 웹 직접 입력·삭제(큐 #92).
+    api_ad_spend_save: ({ p_store, p_ym, p_channel, p_cost, p_campaign,
+                          p_impressions, p_clicks, p_orders }) => {
+        const store = (p_store || "").trim();
+        if (!store) return { ok: false, reason: "매장을 찾지 못했습니다: (빈 값)" };
+        const ym = Number(p_ym);
+        if (!ym || ym < 200001 || ym > 209912 || ym % 100 < 1 || ym % 100 > 12) {
+            return { ok: false, reason: "연월을 확인하세요 (YYYYMM 형식)." };
+        }
+        const channel = (p_channel || "").trim();
+        if (!channel) return { ok: false, reason: "채널을 입력하세요." };
+        const cost = Number(p_cost);
+        if (!(cost >= 0)) return { ok: false, reason: "광고비는 0 이상이어야 합니다." };
+        const campaign = (p_campaign || "").trim();
+        const numOrNull = (v) => (v == null || v === "" ? null : Number(v));
+        const existing = DEMO_ADS.find(
+            (r) => r.ym === ym && r.store === store && r.channel === channel
+                && (r.campaign || "") === campaign);
+        const row = {
+            ym, store, channel, campaign, cost,
+            impressions: numOrNull(p_impressions),
+            clicks: numOrNull(p_clicks),
+            orders: numOrNull(p_orders),
+            source: "web",
+        };
+        if (existing) {
+            Object.assign(existing, row);
+            return { ok: true, id: existing.id };
+        }
+        row.id = nextAdId++;
+        DEMO_ADS.push(row);
+        return { ok: true, id: row.id };
+    },
+
+    api_ad_spend_delete: ({ p_id }) => {
+        const i = DEMO_ADS.findIndex((r) => r.id === Number(p_id));
+        if (i === -1) return { ok: false, reason: "그런 행이 없습니다" };
+        const [gone] = DEMO_ADS.splice(i, 1);
+        return { ok: true, id: gone.id };
     },
 
     // 32_recipes.sql — returns table(items jsonb) 이라 [{items: [...]}] 모양.
