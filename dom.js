@@ -3,6 +3,9 @@
 
 import { escape } from "./util.js";
 
+// id 로 요소를 잡는 짧은 헬퍼. 화면 모듈 어디서나 씁니다.
+export const $ = (id) => document.getElementById(id);
+
 // 툴팁은 화면에 하나뿐인 요소를 씁니다. 이 모듈은 app.js 가 부르는 그래프
 // 코드보다 먼저 평가되지만, module 스크립트는 문서 파싱 뒤에 실행되므로
 // 이 시점엔 #tooltip 이 이미 있습니다(app.js 의 옛 `$("tooltip")` 와 같은 시점).

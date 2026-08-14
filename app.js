@@ -9,42 +9,16 @@
 // 순수 헬퍼·표·차트는 별도 모듈로 빠졌습니다 — docs/web-split-plan.md.
 import { won, wonFull, int, ymLabel, catLabel } from "./format.js";
 import { escape, clip, debounce, niceTicks } from "./util.js";
-import { table } from "./dom.js";
+import { table, $ } from "./dom.js";
 import { palette, renderHeat, drawLine, drawBars } from "./charts.js";
 
-// index.html?demo=1 로 열면 Supabase 없이 가짜 데이터로 화면만 봅니다.
-const DEMO = new URLSearchParams(location.search).get("demo") === "1";
+// Supabase 클라이언트(데모 분기·설정 게이트)는 client.js 로 빠졌습니다 —
+// docs/web-split-plan.md 3단계. db 를 쓰는 화면 모듈이 같은 인스턴스를 씁니다.
+import { db, CONFIG } from "./client.js";
+// 화면 모듈 하나를 뽑아낸 첫 예: 광고(6번 영역). 나머지 영역도 같은 꼴로
+// (db + foundation 을 import) 뽑아낼 수 있습니다 — docs/web-split-plan.md.
+import { initAds } from "./ads.js";
 
-const CONFIG = window.MITALY_CONFIG || {};
-
-let db;
-if (DEMO) {
-    const { demoClient } = await import("./demo.js");
-    db = demoClient();
-} else {
-    if (!CONFIG.url || !CONFIG.anonKey || CONFIG.url.includes("여기에")) {
-        const missing = !CONFIG.url || CONFIG.url.includes("여기에")
-            ? "<code>url</code>과 <code>anonKey</code>"
-            : "<code>anonKey</code>";
-        // 인터넷에 올라간 화면인데 값이 비어 있으면, 대개 키를 채우기 전에
-        // 올린 폴더가 그대로 남아 있는 경우입니다. 실제로 한 번 겪었습니다.
-        const deployed = !["localhost", "127.0.0.1"].includes(location.hostname);
-        document.body.innerHTML =
-            '<div class="gate"><h1>설정이 필요합니다</h1>' +
-            `<p><code>web/config.js</code> 의 ${missing} 가 비어 있습니다.</p>` +
-            (deployed
-                ? "<p><b>내 PC의 config.js에는 키를 넣었는데 이 화면이 보인다면, " +
-                  "키를 넣기 전 폴더가 올라가 있는 것입니다. web 폴더를 다시 올리세요.</b></p>"
-                : "<p>Supabase &gt; Settings &gt; API Keys 의 <b>anon</b> 또는 " +
-                  "<b>publishable</b> 키입니다. (secret 키가 아닙니다)</p>") +
-            '<p>먼저 화면만 보려면 <a href="?demo=1">데모 모드</a>로 여세요.</p></div>';
-        throw new Error("config.js 가 설정되지 않았습니다.");
-    }
-    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
-    db = createClient(CONFIG.url, CONFIG.anonKey);
-}
-
-const $ = (id) => document.getElementById(id);
 const gate = $("gate");
 const app = $("app");
 
@@ -5912,51 +5886,9 @@ function initReport() {
 //
 // 48_ad_spend.sql 위의 읽기 화면입니다. 자료(마케팅팀 광고 집행 대장)가 반입
 // 되기 전에는 빈 표가 정상이라, 그때는 타일·표를 숨기고 안내 한 줄만 남깁니다.
-// 위쪽 기간·매장 필터를 따르지 않는 이유는 방문·점검과 같습니다 — 자료가
-// 쌓여 한 화면을 넘기 시작하면 그때 기간 선택을 붙입니다.
-
-async function initAds() {
-    const { data, error } = await db.rpc("api_ad_spend", {});
-    const meta = $("ads-meta");
-    if (error) {
-        meta.textContent = "";
-        $("t-ads").innerHTML =
-            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + "</p>";
-        return;
-    }
-
-    const rows = Array.isArray(data?.rows) ? data.rows : [];
-    if (!rows.length) {
-        meta.textContent = "자료 반입 전";
-        $("ads-kpis").hidden = true;
-        $("t-ads-channel").innerHTML = "";
-        $("t-ads").innerHTML =
-            '<p class="hint">아직 반입된 광고 자료가 없습니다.</p>';
-        return;
-    }
-
-    const summary = data.summary || {};
-    const yms = rows.map((r) => r.ym);
-    meta.textContent = `${int(rows.length)}행`;
-    $("ads-kpis").hidden = false;
-    $("ads-cost").textContent = won(summary.cost);
-    $("ads-range").textContent =
-        `${ymLabel(Math.min(...yms))} ~ ${ymLabel(Math.max(...yms))}`;
-    $("ads-impressions").textContent = int(summary.impressions);
-    $("ads-clicks").textContent = int(summary.clicks);
-    $("ads-orders").textContent = int(summary.orders);
-
-    const byChannel = Array.isArray(data.by_channel) ? data.by_channel : [];
-    table($("t-ads-channel"), ["채널", "광고비", "노출", "클릭", "광고 경유 주문"],
-        byChannel.map((c) => [c.channel, wonFull(c.cost), int(c.impressions),
-                              int(c.clicks), int(c.orders)]));
-    table($("t-ads"), ["월", "매장", "채널", "캠페인", "광고비", "노출", "클릭", "주문"],
-        rows.map((r) => [ymLabel(r.ym), r.store, r.channel, r.campaign || "—",
-                         wonFull(r.cost),
-                         r.impressions == null ? "—" : int(r.impressions),
-                         r.clicks == null ? "—" : int(r.clicks),
-                         r.orders == null ? "—" : int(r.orders)]));
-}
+//
+// (initAds 는 ads.js 로 이동 — 위 import. 영역 하나를 자기 파일로 뽑아낸
+//  첫 예입니다. db + foundation 만 import 하면 됩니다 — web-split-plan.md 3단계.)
 
 // ================================================================ 식자재·발주 (10번 영역)
 //
