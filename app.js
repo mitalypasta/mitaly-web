@@ -218,7 +218,7 @@ async function initDashboard() {
         // 지도가 아직 안 떴으면(게으른 로드) 값만 남겨 두면 됩니다 — 첫
         // 그리기가 어차피 이 고르개를 읽습니다.
         $(id).addEventListener("change", () => {
-            if (dmapMap) drawDongOverlays();
+            if (dmapMap) drawStoreMap();
         });
     }
 
@@ -4056,48 +4056,34 @@ function initHomeTiles() {
 }
 
 
-// ---- 배달 지도 (6번 영역, QUEUE #55 · docs/dong-map-design.md) -------------
+// ---- 매장 지도 (6번 영역) ---------------------------------------------------
 //
-// 동 단위 주문 분포를 카카오맵 위에 색으로 얹는 화면입니다. SDK 는 화면에
-// 처음 들어올 때 한 번만 로드합니다 — 숨겨진 컨테이너에 지도를 만들면 크기를
-// 못 잡기 때문에(카카오맵 특성) 게으르게 합니다.
+// 매장 위치를 카카오맵에 마커로 찍고, 마커를 누르면 그 매장의 선택 기간
+// 매출을 옆 창에 보여주는 화면입니다. SDK 는 화면에 처음 들어올 때 한 번만
+// 로드합니다 — 숨겨진 컨테이너에 지도를 만들면 크기를 못 잡기 때문에
+// (카카오맵 특성) 게으르게 합니다.
+//
+// 🔺 옛 '동 단위 색칠'(choropleth)은 걷어냈습니다(2026-08-14). 과거 배달
+//    주소에 동 정보가 없어 대부분 (미상)이었고, 채우려면 --dong 재수집이
+//    필요한데 그건 안 하기로 했습니다. 그래서 재수집 없이 바로 쓸 수 있는
+//    '매장 위치 + 매출'만 남겼습니다. (동 집계 함수 api_dong_month·경계 파일
+//    dong_boundaries.json 은 그대로 두되 이 화면은 더 안 부릅니다.)
 //
 // ------------------------------------------------------------- 설계 판단
 //
-// [1] 경계는 **정적 파일**(web/dong_boundaries.json)입니다. 행정동 경계는
-//     거의 안 바뀌는데 DB 에 넣으면 조회마다 폴리곤 수십만 점이 오갑니다.
-//     tools/import_dong_boundaries.py 가 만들고, 좌표를 줄여 3.7MB 입니다.
+// [1] 매장 마커는 **조회 함수**(api_store_points, 63)로 받습니다. `web/` 은
+//     로그인과 무관하게 공개되므로 매장 위치를 정적 파일로 두지 않습니다
+//     (63 설계 판단 [2]). 좌표는 주소를 카카오로 보내 만든 것이라(담당자
+//     승인 2026-08-07) 63 이 아직 안 들어간 환경에서는 안내만 뜹니다.
 //
-// [2] 커버리지를 **숨기지 않습니다**(54 설계 판단 [4] 의 연장). 화면 위에
-//     세 가지를 같이 씁니다:
-//       · (미상)   — 주소에서 동을 아예 못 읽은 주문
-//       · 미매칭   — 동은 읽었는데 사전에 못 붙어 **색이 안 칠해진** 주문
-//       · 추정     — 시군구를 빼고 유일해서 붙인 것(61 의 3단). 정확히 맞은
-//                    것과 신뢰도가 달라 따로 셉니다.
-//     지도만 보면 '색 없는 곳 = 주문 없는 곳' 으로 읽히는데, 실제로는 '못
-//     붙인 곳' 일 수 있습니다. 그 차이가 숫자로 보여야 합니다.
-//
-// [3] 법정동 이름(가정동)과 행정동 이름(가정1동)이 한 화면에 섞여 옵니다.
-//     경계는 행정동 단위뿐이라, 법정동으로 붙은 주문은 그 이름을 가진
-//     **행정동 폴리곤 전부**에 같은 값으로 칠합니다. 나눠 담을 근거가 없어
-//     쪼개지 않고, 누르면 '이 값은 OO동 전체' 라고 밝힙니다.
-//
-// [4] 매장 마커는 **조회 함수**(api_store_points, 63)로 받습니다. 경계처럼
-//     정적 파일로 두면 안 됩니다 — `web/` 은 로그인과 무관하게 공개되고,
-//     경계는 공공데이터지만 매장 위치는 우리 자산입니다(63 설계 판단 [2]).
-//     좌표는 주소를 카카오로 보내 만든 것이라(담당자 승인 2026-08-07)
-//     63 이 아직 안 들어간 환경에서는 마커 없이 지도만 뜹니다.
-//
-// [5] 배달비는 '—' 입니다. 아직 안 모읍니다(54 의 delivery_fee_won 주석 —
-//     채널마다 필드도 부담 주체도 달라 확인 없이 옮기면 틀립니다, 실수 14).
+// [2] 매출은 **api_store_metrics**(매출 비교표와 같은 함수)를 지도 카드 자체
+//     기간으로 부릅니다. 마커 클릭 시점에 클로저로 읽어, 매출이 뒤늦게 도착해도
+//     마커를 다시 그릴 필요가 없습니다. 홀·배달을 나눠 보여줍니다.
 
 let dmapStarted = false;
 let dmapMap = null;
-let dmapBoundaries = null;      // 정적 경계 파일 (한 번만 읽습니다)
-let dmapShapes = [];            // 지금 그려져 있는 폴리곤
 let dmapMarkers = [];           // 지금 찍혀 있는 매장 마커
 let dmapOverlay = null;         // 마커 클릭 팝업 (한 번에 하나, S17)
-let dmapAggRange = null;        // 동 집계가 있는 달 범위 {min,max} — 한 번만 조회
 
 function initDeliveryMap() {
     for (const b of document.querySelectorAll('.navitem[data-go="map"]')) {
@@ -4116,20 +4102,6 @@ function dmapFilters() {
     let to = Number($("dmap-to").value) || null;
     if (from && to && from > to) [from, to] = [to, from];
     return { p_ym_from: from, p_ym_to: to, p_store: $("dmap-store").value || null };
-}
-
-/** 동 집계가 실제로 있는 달의 범위(전 매장 기준). 빈 화면에서 담당자가 기간을
- *  더듬지 않게 안내에 씁니다. 표 전체를 받지 않고 양 끝 1행씩만 읽습니다 —
- *  집계 행이 매장×동×월로 늘어나는 표라 전량 조회는 금방 무거워집니다. */
-async function dongAggRange() {
-    if (dmapAggRange) return dmapAggRange;
-    const edge = (ascending) => db.from("agg_store_dong_month").select("ym")
-        .order("ym", { ascending }).limit(1)
-        .then((r) => (r.error || !(r.data || []).length ? null : r.data[0].ym))
-        .catch(() => null);
-    const [min, max] = await Promise.all([edge(true), edge(false)]);
-    dmapAggRange = (min && max) ? { min, max } : {};   // {} = 없음 또는 조회 실패
-    return dmapAggRange;
 }
 
 async function loadDeliveryMap() {
@@ -4181,28 +4153,18 @@ async function loadDeliveryMap() {
     // 빈 곳을 누르면 마커 팝업을 닫습니다 (마커·폴리곤 클릭은 여기로 안 옵니다
     // — clickable 오버레이가 이벤트를 삼킵니다).
     kakao.maps.event.addListener(dmapMap, "click", dmapClosePopup);
-    await drawDongOverlays();
+    await drawStoreMap();
 }
 
-/** 정적 경계 파일을 한 번만 읽습니다 (설계 판단 [1]). */
-async function loadDongBoundaries() {
-    if (dmapBoundaries) return dmapBoundaries;
-    const response = await fetch("dong_boundaries.json");
-    if (!response.ok) throw new Error("경계 파일을 못 읽었습니다 (dong_boundaries.json)");
-    const payload = await response.json();
-    dmapBoundaries = payload.dongs || [];
-    dmapBoundaries.source = payload.source || "";
-    return dmapBoundaries;
-}
-
-async function drawDongOverlays() {
+// 매장 마커를 찍고, 마커를 누르면 그 매장의 선택 기간 매출을 옆 창에 보여줍니다.
+// (옛 동 단위 색칠은 걷어냈습니다 — 과거 배달주소에 동 정보가 없어 대부분
+//  (미상)이었습니다. 재수집 없이 쓸 수 있는 '매장 위치 + 매출'만 남깁니다.)
+async function drawStoreMap() {
     const map = dmapMap;
     const notice = $("dmap-notice");
     const meta = $("dmap-meta");
     if (!map) return;
 
-    for (const shape of dmapShapes) shape.setMap(null);
-    dmapShapes = [];
     for (const marker of dmapMarkers) marker.setMap(null);
     dmapMarkers = [];
     dmapClosePopup();
@@ -4211,37 +4173,43 @@ async function drawDongOverlays() {
     const periodLabel = filters.p_ym_from === filters.p_ym_to
         ? ymLabel(filters.p_ym_from)
         : `${ymLabel(filters.p_ym_from)}~${ymLabel(filters.p_ym_to)}`;
-    let aggReady = false;          // 팝업이 '내려받는 중' 과 '집계 없음' 을 가름
 
-    // ---- 1단계: 매장 마커 먼저 (설계 판단 [4] · 2026-08-10 경량화)
-    //
-    // 좌표는 94행이라 바로 옵니다. 경계 파일(3.7MB)을 기다렸다 같이 그리면
-    // 그동안 지도가 빈 것처럼 보입니다 — 마커부터 띄우고 색칠은 뒤에 얹습니다.
-    // 팝업의 '이 기간 주문 N건' 은 집계가 도착하면 storeOrders 가 채워지고,
-    // 클릭 시점에 클로저로 읽으므로 마커를 다시 그릴 필요가 없습니다.
-    // (63 이 아직 안 들어간 환경이면 마커만 빠지고 지도는 그대로 뜹니다.)
-    const storeOrders = new Map();
-    const points = await db.rpc("api_store_points")
-        .then((r) => (r.error ? null : r.data)).catch(() => null);
+    // 좌표(마커)와 매장별 매출을 함께 받습니다. 매출은 마커 클릭 시점에 클로저로
+    // 읽으므로, 뒤늦게 도착해도 마커를 다시 그릴 필요가 없습니다.
+    const storeSales = new Map();
+    const [points, metrics] = await Promise.all([
+        db.rpc("api_store_points").then((r) => (r.error ? null : r.data)).catch(() => null),
+        db.rpc("api_store_metrics", {
+            p_ym_from: filters.p_ym_from,
+            p_ym_to: filters.p_ym_to,
+            p_channel: null,
+        }).then((r) => (r.error ? [] : (r.data || []))).catch(() => []),
+    ]);
+    for (const row of (metrics || [])) storeSales.set(row.store, row);
+
+    if (!points) {
+        notice.textContent = "매장 좌표가 이 환경에 아직 들어오지 않았습니다"
+            + " (api_store_points).";
+        meta.textContent = "";
+        return;
+    }
+
     const bounds = new kakao.maps.LatLngBounds();
     const pointRows = ((points || {}).rows || []).filter((p) =>
         !filters.p_store || p.store === filters.p_store);
+
     for (const point of pointRows) {
         const at = new kakao.maps.LatLng(point.lat, point.lng);
         bounds.extend(at);
         const marker = new kakao.maps.Marker({
             position: at,
             title: point.store,          // 마우스를 올리면 이름
-            zIndex: 5,                   // 폴리곤 위로
-            // ⚠️ 이게 없으면 click 리스너를 달아도 **안 불립니다**(기본값 false).
-            //    폴리곤은 기본으로 클릭이 되어서 같은 줄 알고 빠뜨렸었습니다.
+            zIndex: 5,
+            // ⚠️ 이게 없으면 click 리스너를 달아도 안 불립니다(기본값 false).
             clickable: true,
         });
         marker.setMap(map);
         dmapMarkers.push(marker);
-        // 마커 옆 정보 창 (S17 — 담당자 실사용 피드백: 아래 한 줄 텍스트는 안
-        // 보입니다). 주문수는 클릭 시점에 storeOrders 클로저를 읽으므로 집계가
-        // 뒤에 도착해도 마커를 다시 그릴 필요가 없습니다(경량화 구조 유지).
         kakao.maps.event.addListener(marker, "click", () => {
             dmapClosePopup();
             const el = document.createElement("div");
@@ -4250,20 +4218,31 @@ async function drawDongOverlays() {
             name.className = "dmap-popup-store";
             name.textContent = point.store;
             el.append(name);
-            const mine = storeOrders.get(point.store);
-            const orders = document.createElement("div");
-            orders.textContent = !aggReady ? "동 집계 내려받는 중…"
-                : mine ? `${periodLabel} 주문 ${int(mine)}건`
-                : `${periodLabel} 동 집계 없음`;
-            el.append(orders);
+
+            const row = storeSales.get(point.store);
+            const sales = document.createElement("div");
+            const amount = Number((row || {}).amount) || 0;
+            sales.textContent = row
+                ? `${periodLabel} 매출 ${won(amount)}원`
+                : `${periodLabel} 매출 없음`;
+            el.append(sales);
+            if (row) {
+                const hall = Number(row.hall_amount) || 0;
+                const delivery = Number(row.delivery_amount) || 0;
+                const split = document.createElement("div");
+                split.className = "dmap-popup-note";
+                split.textContent = `홀 ${won(hall)}원 · 배달 ${won(delivery)}원`;
+                el.append(split);
+            }
+
             const where = `${point.sigungu || ""} ${point.dong || ""}`.trim();
             if (where) {
                 const line = document.createElement("div");
+                line.className = "dmap-popup-note";
                 line.textContent = where;
                 el.append(line);
             }
             if (point.confidence === "keyword") {
-                // 상호로 찾은 좌표는 정확도가 다릅니다 — 숨기지 않고 밝힙니다.
                 const line = document.createElement("div");
                 line.className = "dmap-popup-note";
                 line.textContent = "위치는 상호검색 결과";
@@ -4279,192 +4258,22 @@ async function drawDongOverlays() {
             dmapOverlay = new kakao.maps.CustomOverlay({
                 position: at,
                 content: el,
-                yAnchor: 1,          // 창 아래끝을 마커 자리에 — 나머지는 CSS 가 띄웁니다
-                zIndex: 6,           // 마커(5) 위로
-                clickable: true,     // 닫기 버튼 클릭이 지도 클릭으로 안 새게
+                yAnchor: 1,
+                zIndex: 6,
+                clickable: true,
             });
             dmapOverlay.setMap(map);
         });
     }
+
     if (dmapMarkers.length) map.setBounds(bounds);
-    notice.textContent = `매장 마커 ${dmapMarkers.length}곳 표시 — `
-        + "동 경계와 집계를 내려받는 중입니다…";
 
-    // ---- 2단계: 동 집계 + 경계 (여기가 로딩의 대부분 — 경계 3.7MB)
-    const [result, boundaries] = await Promise.all([
-        db.rpc("api_dong_month", {
-            p_from: filters.p_ym_from, p_to: filters.p_ym_to,
-            p_store: filters.p_store,
-        }),
-        loadDongBoundaries().catch((exc) => exc),
-    ]);
-
-    if (result.error) {
-        // 61(또는 54)이 아직 안 들어간 환경이면 함수가 없습니다 — 배포가 SQL
-        // 적용보다 먼저 나갈 수 있어 직원 화면에 날 오류를 띄우지 않습니다.
-        const missing = result.error.code === "PGRST202"
-            || /Could not find the function/i.test(result.error.message || "");
-        meta.textContent = "";
-        notice.textContent = missing
-            ? "동 단위 집계가 아직 이 환경에 들어오지 않았습니다. 반영되면 자동으로 나타납니다."
-            : "불러오지 못했습니다: " + (result.error.message || "");
-        aggReady = true;               // 팝업은 '집계 없음' 으로 (내려받는 중이 아니라)
-        return;                        // 마커는 1단계에서 이미 떠 있습니다
-    }
-
-    const data = result.data || {};
-    const summary = data.summary || {};
-    const rows = data.rows || [];
-
-    // 마커 팝업의 '이 기간 주문 N건' 을 실제 집계로 채웁니다(1단계 클로저가 읽음).
-    // 경계 파일이 실패해도 집계는 이미 왔으므로 팝업 숫자는 여기서 먼저 채웁니다.
-    for (const row of rows) {
-        storeOrders.set(row.store, (storeOrders.get(row.store) || 0) + (row.orders || 0));
-    }
-    aggReady = true;
-
-    if (boundaries instanceof Error) {
-        meta.textContent = "";
-        notice.textContent = String(boundaries.message);
-        return;
-    }
-
-    if (!rows.length) {
-        // 어느 달로 가면 보이는지까지 알려줍니다 (S17 — 지금 prod 집계가 한 달
-        // 뿐이라 기본 기간에서는 이 안내만 보입니다. 담당자가 기간을 더듬지 않게).
-        const range = await dongAggRange();
-        const availLabel = range.min === range.max
-            ? `동 집계가 있는 달: ${ymLabel(range.min)}`
-            : `동 집계가 있는 기간: ${ymLabel(range.min)} ~ ${ymLabel(range.max)}`;
-        const avail = !range.min ? ""
-            : ` ${availLabel}${filters.p_store ? " (전 매장 기준)" : ""}.`;
-        notice.textContent = "이 기간에 동 단위 집계가 없습니다 — 수집이 한 번 "
-            + "돌면 채워집니다." + avail
-            + " (매장 마커는 기간과 무관하게 표시됩니다)";
-        meta.textContent = "";
-        return;                        // 마커는 1단계에서 이미 떠 있습니다
-    }
-
-    // ---- 코드별로 합칩니다 (같은 동을 여러 매장·채널·달이 나눠 갖고 있음)
-    const byCode = new Map();
-    let matchedOrders = 0;
-    for (const row of rows) {
-        if (!row.dong_code) continue;
-        matchedOrders += row.orders || 0;
-        const hit = byCode.get(row.dong_code)
-            || { orders: 0, amount: 0, name: `${row.sigungu} ${row.dong}`.trim(),
-                 inferred: false, stores: new Set() };
-        hit.orders += row.orders || 0;
-        hit.amount += row.amount || 0;
-        if (row.match === "sido_dong") hit.inferred = true;
-        hit.stores.add(row.store);
-        byCode.set(row.dong_code, hit);
-    }
-
-    // ---- 법정동으로 붙은 코드는 경계가 없을 수 있습니다 (설계 판단 [3]).
-    //      같은 시군구·같은 이름의 행정동 폴리곤을 찾아 같은 값으로 칠합니다.
-    const byName = new Map();          // '시도|시군구|동' → [경계]
-    const byCodeBoundary = new Map();
-    for (const dong of boundaries) {
-        byCodeBoundary.set(dong.c, dong);
-        const key = `${dong.s}|${dong.g}|${dong.d}`;
-        if (!byName.has(key)) byName.set(key, []);
-        byName.get(key).push(dong);
-    }
-
-    const painted = [];                // {shapes, info}
-    let noShapeOrders = 0;
-    for (const [code, hit] of byCode) {
-        let shapes = byCodeBoundary.has(code) ? [byCodeBoundary.get(code)] : [];
-        if (!shapes.length) {
-            // 법정동 코드 → 이름이 같은 행정동, 없으면 '가정동 → 가정1·2·3동'
-            const row = rows.find((r) => r.dong_code === code);
-            const exact = byName.get(`${row.sido}|${row.sigungu}|${row.dong}`) || [];
-            shapes = exact.length ? exact : boundaries.filter((d) =>
-                d.s === row.sido && d.g === row.sigungu
-                && d.d.replace(/\d{1,2}(?=동$|가동$)/, "") === row.dong);
-        }
-        if (!shapes.length) {
-            noShapeOrders += hit.orders;
-            continue;
-        }
-        painted.push({ shapes, hit, split: shapes.length > 1 });
-    }
-
-    const top = Math.max(1, ...painted.map((p) => p.hit.orders));
-    // bounds 는 1단계(마커)에서 만든 것을 이어 씁니다 — 폴리곤까지 합쳐 재조정.
-    for (const item of painted) {
-        const strength = 0.12 + 0.5 * (item.hit.orders / top);
-        for (const dong of item.shapes) {
-            for (const polygon of dong.p) {
-                // 첫 고리가 바깥 경계입니다(구멍은 안 그립니다 — 동 색칠엔 과합니다).
-                const path = polygon[0].map(([lng, lat]) =>
-                    new kakao.maps.LatLng(lat, lng));
-                for (const point of path) bounds.extend(point);
-                const shape = new kakao.maps.Polygon({
-                    path,
-                    strokeWeight: 1.2,
-                    strokeColor: item.hit.inferred ? "#c8871f" : "#686cff",
-                    strokeOpacity: 0.85,
-                    fillColor: item.hit.inferred ? "#e0a63a" : "#686cff",
-                    fillOpacity: strength,
-                });
-                shape.setMap(map);
-                dmapShapes.push(shape);
-                kakao.maps.event.addListener(shape, "click", () => {
-                    dmapClosePopup();  // 동 숫자를 보려는 참 — 마커 창이 가리지 않게
-                    const stores = item.hit.stores.size;
-                    const notes = [];
-                    if (item.split) notes.push(`이 값은 ${item.hit.name} 전체입니다`);
-                    if (item.hit.inferred) notes.push("시군구 표기가 달라 추정으로 붙임");
-                    meta.textContent =
-                        `${item.hit.name} · 주문 ${int(item.hit.orders)}건 · `
-                        + `${int(item.hit.amount)}원 · 매장 ${int(stores)}곳 · `
-                        + "배달비 —"
-                        + (notes.length ? ` (${notes.join(" · ")})` : "");
-                });
-            }
-        }
-    }
-
-    // (매장 마커는 이 함수 1단계에서 이미 그려져 있습니다 — 설계 판단 [4])
-
-    if (dmapShapes.length || dmapMarkers.length) map.setBounds(bounds);
-
-    // ---- 커버리지를 화면에 (설계 판단 [2])
-    const total = summary.orders || 0;
-    const pct = (n) => (total ? `${(100 * n / total).toFixed(1)}%` : "0%");
-    const unknown = summary.unknown_orders || 0;
-    const unmatched = (summary.unmatched_orders || 0) + noShapeOrders;
-    const inferred = summary.inferred_orders || 0;
-
-    meta.textContent = `주문 ${int(total)}건 · 동 ${int(painted.length)}곳 · `
-        + `(미상) ${pct(unknown)} · 미매칭 ${pct(unmatched)} · 추정 ${pct(inferred)}`;
-
-    const bits = [`색이 칠해진 주문 ${pct(matchedOrders - noShapeOrders)}.`];
-    if (unknown) {
-        bits.push(`주소에서 동을 못 읽은 주문 ${int(unknown)}건(${pct(unknown)})은 `
-            + "지도에 없습니다.");
-    }
-    if (unmatched) {
-        bits.push(`동은 읽었지만 사전에 못 붙은 주문 ${int(unmatched)}건`
-            + `(${pct(unmatched)})도 색이 없습니다 — 시군구 별칭을 더하면 붙습니다.`);
-    }
-    if (inferred) {
-        bits.push(`주황색 ${int(inferred)}건은 시군구 표기가 달라 추정으로 붙인 것입니다.`);
-    }
-    // 마커도 커버리지입니다 — 좌표를 못 찾은 매장은 지도에서 그냥 안 보입니다.
-    const withOrders = storeOrders.size;
-    const marked = pointRows.length;
-    if (!points) {
-        bits.push("매장 마커는 이 환경에 아직 들어오지 않았습니다.");
-    } else if (marked < withOrders) {
-        bits.push(`매장 마커 ${int(marked)}곳 — 이 기간 주문이 있는 `
-            + `${int(withOrders)}곳 중 ${int(withOrders - marked)}곳은 좌표가 없어 안 보입니다.`);
-    } else {
-        bits.push(`매장 마커 ${int(marked)}곳.`);
-    }
-    notice.textContent = bits.join(" ");
+    // 좌표를 못 찾은 매장은 지도에서 그냥 안 보입니다 — 몇 곳인지는 밝힙니다.
+    const withSales = [...storeSales.values()].filter((r) => (Number(r.amount) || 0) > 0).length;
+    const total = [...storeSales.values()].reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    meta.textContent = `매장 ${int(dmapMarkers.length)}곳 · ${periodLabel} `
+        + `매출 있는 매장 ${int(withSales)}곳 · 합계 ${won(total)}원`;
+    notice.textContent = "마커를 누르면 그 매장의 선택 기간 매출이 옆에 뜹니다.";
 }
 
 

@@ -54,7 +54,7 @@
         <button class="navitem" data-go="sales" type="button">📊 매출</button>
         <button class="navitem" data-go="settlement" type="button">💰 정산</button>
         <button class="navitem" data-go="ads" type="button">📣 광고</button>
-        <button class="navitem" data-go="map" type="button">🗺 배달 지도</button>
+        <button class="navitem" data-go="map" type="button">🗺 매장 지도</button>
         <div class="navgroup">매장운영</div>
         <button class="navitem" data-go="reviews" type="button">⭐ 리뷰</button>
         <button class="navitem" data-go="visits" type="button">🚶 방문·점검</button>
@@ -1221,23 +1221,22 @@
         <div class="tableview" id="t-announcements"></div>
     </section>
 
-    <!-- 배달 지도 — 6번 영역(QUEUE #55, docs/dong-map-design.md). 동 단위 주문
-         분포를 카카오맵 위에 색으로 얹습니다. 경계는 정적 파일
-         web/dong_boundaries.json (tools/import_dong_boundaries.py 가 만듦),
-         숫자는 api_dong_month(54_dong_agg + 61_dong_alias).
+    <!-- 매장 지도 — 6번 영역. 매장 좌표(api_store_points, 63)를 카카오맵에
+         마커로 찍고, 마커를 누르면 그 매장의 선택 기간 매출(api_store_metrics)을
+         옆 창에 보여줍니다. 옛 동 단위 색칠은 걷어냈습니다 — 과거 배달주소에
+         동 정보가 없어 대부분 (미상)이라 재수집 없이는 쓸 수 없었습니다.
          SDK 키는 config.js 의 kakaoMapKey (도메인 제한 공개 키).
          기간·매장은 카드 안 고르개로 고릅니다(S17) — 위 필터 줄이 지도
          영역에서는 안 보여서(showArea) 이론 사용량 카드와 같은 방식입니다. -->
     <section data-area="map" class="card full" id="delivery-map-card">
         <header>
-            <h2>배달 주문 지도 (동 단위)</h2>
+            <h2>매장 지도</h2>
             <span class="meta" id="dmap-meta"></span>
         </header>
         <p class="hint">
-            주문 상세의 배달주소를 동까지만 모아 색으로 보여줍니다 —
-            진할수록 주문이 많은 동입니다. 동을 누르면 주문수·금액이 위에,
-            매장 마커를 누르면 그 옆에 정보 창이 뜹니다.
-            주황색 동은 시군구 표기가 달라 추정으로 붙인 곳입니다.
+            매장 위치를 지도에 찍습니다. 마커를 누르면 그 매장의 선택 기간
+            매출(홀·배달 나눔)이 옆에 뜹니다. 위치가 상호검색으로 찾은 곳은
+            창에 그렇게 표시합니다.
         </p>
         <div class="reqform">
             <div class="field">
