@@ -36,3 +36,10 @@ export function catLabel(value) {
     if (!value) return "미분류";
     return CATEGORY_LABELS[value] || value;
 }
+
+// 202601 → "2026-01". input[type=month] 와 파일명에 쓰는 하이픈 형식.
+// (화면 표시용 ymLabel 은 '2026.01' 점 형식이라 별개입니다.)
+export function ymDash(ymInt) {
+    const s = String(ymInt);
+    return `${s.slice(0, 4)}-${s.slice(4, 6)}`;
+}

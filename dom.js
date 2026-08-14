@@ -48,3 +48,19 @@ export function showTip(event, html) {
 }
 
 export function hideTip() { tooltip.hidden = true; }
+
+// 매장 이름 목록으로 select 를 채웁니다. allLabel 이 있으면 '전체' 항목을
+// 맨 앞에 둡니다. 매장 정보·연락처 화면이 같이 씁니다.
+export function fillStoreSelect(select, names, allLabel) {
+    select.innerHTML = "";
+    if (allLabel) {
+        const o = document.createElement("option");
+        o.value = ""; o.textContent = allLabel;
+        select.appendChild(o);
+    }
+    for (const name of names || []) {
+        const o = document.createElement("option");
+        o.value = name; o.textContent = name;
+        select.appendChild(o);
+    }
+}

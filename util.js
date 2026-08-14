@@ -28,3 +28,16 @@ export function niceTicks(max, count) {
     if (out[out.length - 1] < max) out.push(out[out.length - 1] + step);
     return out;
 }
+
+// 연월 정수(YYYYMM) min~max 사이의 모든 달. 대시보드·정산이 씁니다.
+export function monthsBetween(min, max) {
+    const out = [];
+    let year = Math.floor(min / 100);
+    let month = min % 100;
+    while (year * 100 + month <= max) {
+        out.push(year * 100 + month);
+        month += 1;
+        if (month > 12) { month = 1; year += 1; }
+    }
+    return out;
+}
