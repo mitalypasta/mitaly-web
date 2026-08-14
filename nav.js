@@ -91,6 +91,22 @@ export function initHomeTiles() {
     for (const [tileId, cardId] of Object.entries(targets)) {
         const tile = document.getElementById(tileId);
         if (!tile) continue;
+
+        // 값이 0이면 타일의 상태 강조(빨강 등)를 중립으로 되돌립니다 — 처리할 게
+        // 없는데 경보색을 두면 정작 급한 타일이 안 도드라집니다. 값은 여러
+        // 모듈이 비동기로 채우므로(app/tasks/inquiries), 한 곳에서 관찰만 합니다.
+        const valueEl = tile.querySelector(".value");
+        if (valueEl) {
+            const sync = () => {
+                const n = valueEl.textContent.replace(/[^\d-]/g, "");
+                tile.dataset.count = (n === "" || n === "0") ? "0" : "1";
+            };
+            sync();
+            new MutationObserver(sync).observe(valueEl, {
+                childList: true, characterData: true, subtree: true,
+            });
+        }
+
         tile.addEventListener("click", () => {
             showArea(tile.dataset.goTarget || "sales");
             if (tileId === "home-tile-negative") {
@@ -111,6 +127,29 @@ export function initHomeTiles() {
             }
             requestAnimationFrame(() => {
                 document.getElementById(cardId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+            });
+        });
+    }
+
+    // 이상 신호 목록(급감 매장·부정 리뷰) 행 클릭 — 행이 다시 그려지므로
+    // 컨테이너 한 곳에 위임합니다. 타일과 같은 규칙으로 화면 필터까지 맞춥니다.
+    const anoms = document.getElementById("home-card");
+    if (anoms) {
+        anoms.addEventListener("click", (e) => {
+            const row = e.target.closest(".home-anom-row");
+            if (!row) return;
+            showArea(row.dataset.go);
+            if (row.dataset.kind === "review") {
+                $("rv-rating").value = "low";
+                $("rv-rating").dispatchEvent(new Event("change"));
+            }
+            if (row.dataset.kind === "alert") {
+                $("alerts-only").checked = true;
+                $("alerts-only").dispatchEvent(new Event("change"));
+            }
+            const card = row.dataset.card;
+            requestAnimationFrame(() => {
+                document.getElementById(card)?.scrollIntoView({ behavior: "smooth", block: "start" });
             });
         });
     }

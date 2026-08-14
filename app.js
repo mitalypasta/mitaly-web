@@ -1137,6 +1137,34 @@ function drawHome(d) {
             .map((s) => s.store),
     ).size;
     $("home-declining").textContent = int(declining);
+
+    // ---- 이상 신호 목록 (급감 매장 · 부정 리뷰) ----
+    // 타일은 '몇 건'만 알려주고, 여기서 실제 무엇인지 바로 훑고 눌러 들어갑니다.
+    // 이미 받아 둔 alerts·reviews 를 다시 쓰므로 새 조회가 없습니다. 행 클릭은
+    // nav.js(initHomeTiles)가 위임으로 이어 해당 화면 필터까지 맞춰 줍니다.
+    const declRows = [];
+    for (const s of alerts) {
+        for (const ch of (s.channels || [])) {
+            if (ch.mom_direction === "급감") declRows.push({ store: s.store, channel: ch.channel, pct: ch.mom_pct_change, base: "전월" });
+            else if (ch.yoy_direction === "급감") declRows.push({ store: s.store, channel: ch.channel, pct: ch.yoy_pct_change, base: "전년" });
+        }
+    }
+    $("home-anom-declining").innerHTML = declRows.length
+        ? declRows.slice(0, 6).map((r) =>
+            `<button type="button" class="home-anom-row" data-go="sales" data-kind="alert" data-card="alerts-card">
+               <span class="ar-main">${escape(r.store)} · ${escape(r.channel)}</span>
+               <span class="ar-side pct-down">${escape(r.base)} ${pctText(r.pct)}</span>
+             </button>`).join("")
+        : '<p class="home-anom-empty">급감으로 판정된 매장이 없습니다.</p>';
+
+    const negRows = (d.reviews || []).filter((r) => Number(r.rating) <= 3);
+    $("home-anom-reviews").innerHTML = negRows.length
+        ? negRows.slice(0, 6).map((r) =>
+            `<button type="button" class="home-anom-row" data-go="reviews" data-kind="review" data-card="review-card">
+               <span class="ar-main"><span class="ar-star">★${r.rating ?? "—"}</span> ${escape(r.store || "")}</span>
+               <span class="ar-side ar-text">${escape(clip(r.contents || "내용 없음", 34))}</span>
+             </button>`).join("")
+        : '<p class="home-anom-empty">부정 리뷰가 없습니다.</p>';
 }
 
 // ---- 리뷰 관리 --------------------------------------------------------

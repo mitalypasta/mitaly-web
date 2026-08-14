@@ -31,11 +31,21 @@
 
     --good:            #0e9d6b;
     --critical:        #e5484d;
+    --attn:            #b45309;   /* 주의(호박) — 실패 빨강과 구분되는 조치 필요 상태 */
+
+    --surface-2:       #f7f8fa;   /* 카드 안 옅은 패널·인셋 */
+    --good-tint:       rgba(14, 157, 107, 0.10);
+    --attn-tint:       rgba(180, 83, 9, 0.10);
+    --urgent-tint:     rgba(229, 72, 77, 0.10);
 
     --radius:          14px;
+    --radius-sm:       9px;       /* 버튼·입력 */
+    --radius-pill:     999px;
     --gap:             16px;
     --shadow-card:     0 1px 2px rgba(18, 25, 38, 0.04),
                        0 4px 16px rgba(18, 25, 38, 0.05);
+    --shadow-raise:    0 2px 4px rgba(18, 25, 38, 0.06),
+                       0 10px 28px rgba(18, 25, 38, 0.10);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -61,9 +71,17 @@
 
         --good:            #2bd695;
         --critical:        #ff6369;
+        --attn:            #d98a2b;
+
+        --surface-2:       #22242c;
+        --good-tint:       rgba(43, 214, 149, 0.16);
+        --attn-tint:       rgba(217, 138, 43, 0.16);
+        --urgent-tint:     rgba(255, 99, 105, 0.16);
 
         --shadow-card:     0 1px 2px rgba(0, 0, 0, 0.3),
                            0 4px 16px rgba(0, 0, 0, 0.25);
+        --shadow-raise:    0 2px 4px rgba(0, 0, 0, 0.4),
+                           0 10px 28px rgba(0, 0, 0, 0.4);
     }
 }
 
@@ -89,9 +107,17 @@
 
     --good:            #2bd695;
     --critical:        #ff6369;
+    --attn:            #d98a2b;
+
+    --surface-2:       #22242c;
+    --good-tint:       rgba(43, 214, 149, 0.16);
+    --attn-tint:       rgba(217, 138, 43, 0.16);
+    --urgent-tint:     rgba(255, 99, 105, 0.16);
 
     --shadow-card:     0 1px 2px rgba(0, 0, 0, 0.3),
                        0 4px 16px rgba(0, 0, 0, 0.25);
+    --shadow-raise:    0 2px 4px rgba(0, 0, 0, 0.4),
+                       0 10px 28px rgba(0, 0, 0, 0.4);
 }
 
 * { box-sizing: border-box; }
@@ -141,23 +167,44 @@ body {
 
 header.top {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 12px;
     margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
 }
 
 header.top h1 {
-    font-size: 20px;
-    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
     margin: 0;
 }
 
+/* 브랜드 앵커 — 인디고 마크. 제목만 있던 헤더에 시선의 기준점을 만듭니다. */
+header.top h1::before {
+    content: "";
+    width: 10px;
+    height: 22px;
+    border-radius: 3px;
+    background: linear-gradient(180deg, var(--series-1), var(--series-2));
+    flex: none;
+}
+
 .meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     color: var(--text-secondary);
     font-size: 13px;
 }
+
+.meta #who { color: var(--text-muted); }
 
 .linkish {
     background: none;
@@ -170,6 +217,23 @@ header.top h1 {
 }
 
 .linkish:hover { color: var(--text-primary); }
+
+/* 헤더 우측 컨트롤(화면 전환·로그아웃)은 밑줄 링크 대신 옅은 칩으로.
+   밑줄 링크는 본문 링크와 헷갈리고 눌러야 하는 버튼임이 덜 드러납니다. */
+.meta .linkish {
+    text-decoration: none;
+    padding: 5px 11px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    box-shadow: var(--shadow-card);
+}
+
+.meta .linkish:hover {
+    color: var(--text-primary);
+    border-color: var(--baseline);
+}
 
 /* ---------------------------------------------------------------- 필터 */
 
@@ -294,34 +358,39 @@ header.top h1 {
 }
 
 .tile {
+    position: relative;
     background: var(--surface-1);
-    border: 1px solid transparent;   /* hometile 호버가 테두리를 칠합니다 */
+    border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow-card);
     padding: 16px 18px;
 }
 
 .tile .label {
-    font-size: 13px;
+    font-size: 12px;
+    font-weight: 600;
     color: var(--text-secondary);
-    margin-bottom: 6px;
+    margin-bottom: 8px;
 }
 
 .tile .value {
-    font-size: 26px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
 }
 
 .tile.hero .value {
-    font-size: 48px;
-    line-height: 1.1;
+    font-size: 46px;
+    line-height: 1.05;
 }
 
 .tile .sub {
     font-size: 12px;
     color: var(--text-muted);
-    margin-top: 4px;
+    margin-top: 6px;
+    line-height: 1.45;
 }
 
 /* 홈 화면의 할 일 타일 — <div class="tile"> 와 같은 모양이지만
@@ -334,18 +403,198 @@ header.top h1 {
     font: inherit;
     color: inherit;
     cursor: pointer;
-    transition: border-color 160ms ease-out;
+    transition: border-color 160ms ease-out, box-shadow 160ms ease-out,
+                transform 160ms ease-out;
 }
 
-.tile.hometile:hover { border-color: var(--series-1); }
+.tile.hometile:hover {
+    border-color: var(--primary);
+    box-shadow: var(--shadow-raise);
+    transform: translateY(-2px);
+}
 
 .tile.hometile:focus-visible {
-    outline: 2px solid var(--series-1);
+    outline: 2px solid var(--primary);
     outline-offset: 2px;
 }
 
+/* 누르면 이동하는 타일임을 알리는 화살표. 호버에서 살짝 나아갑니다. */
+.tile.hometile::after {
+    content: "→";
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    color: var(--text-muted);
+    font-size: 15px;
+    transition: transform 160ms ease-out, color 160ms ease-out;
+}
+
+.tile.hometile:hover::after { color: var(--primary); transform: translateX(3px); }
+
+/* 상태 강조 — 좌측 색 바 + 숫자 색. 색만으로 뜻을 전하지 않도록 라벨 글자가
+   항상 함께 있습니다(미처리·부정 리뷰 등). 급함이 한눈에 읽힙니다. */
+.tile.t-urgent { border-left: 3px solid var(--critical); }
+.tile.t-urgent .value { color: var(--critical); }
+.tile.t-attn   { border-left: 3px solid var(--attn); }
+.tile.t-attn   .value { color: var(--attn); }
+.tile.t-good   { border-left: 3px solid var(--good); }
+
+/* 값이 0이면 강조를 죽입니다 — 처리할 게 없는데 빨갛게 두면 경보가 무뎌집니다.
+   JS 가 값을 넣을 때 data-count="0" 을 달면 중립으로 돌아갑니다. */
+.tile.hometile[data-count="0"] { border-left-color: var(--border); }
+.tile.hometile[data-count="0"] .value { color: var(--text-muted); }
+
 @media (prefers-reduced-motion: reduce) {
     .tile.hometile { transition: none; }
+    .tile.hometile:hover { transform: none; }
+    .tile.hometile::after { transition: none; }
+}
+
+/* ---- 홈 '바로 가기' -----------------------------------------------------
+   자주 여는 화면으로 한 번에 이동. 버튼은 .navitem 을 겸해 nav.js 가 클릭을
+   이미 잇습니다 — 여기서는 사이드 메뉴 행이 아니라 카드처럼 보이게 덮습니다. */
+
+.home-sub-h {
+    margin: 22px 0 10px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+/* ---- 홈 '이상 신호' -----------------------------------------------------
+   급감 매장·부정 리뷰를 두 칸으로 나란히. 각 행은 눌러서 해당 화면으로. */
+
+.home-anoms {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 14px;
+}
+
+.home-anom-col {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-1);
+    box-shadow: var(--shadow-card);
+    padding: 14px 16px;
+}
+
+.home-anom-h {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.home-anom-sub {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-left: 4px;
+}
+
+.home-anom-list { display: flex; flex-direction: column; }
+
+.home-anom-row {
+    appearance: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    color: var(--text-primary);
+    background: transparent;
+    border: none;
+    border-top: 1px solid var(--gridline);
+    padding: 9px 4px;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background 140ms ease-out;
+}
+
+.home-anom-list .home-anom-row:first-child { border-top: none; }
+.home-anom-row:hover { background: var(--primary-soft); }
+
+.home-anom-row:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+}
+
+.home-anom-row .ar-main {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.home-anom-row .ar-side {
+    flex: none;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.home-anom-row .ar-text {
+    color: var(--text-muted);
+    font-weight: 400;
+    max-width: 46%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.home-anom-row .ar-star { color: #f0a500; font-weight: 700; }
+
+.home-anom-empty {
+    margin: 6px 2px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .home-anom-row { transition: none; }
+}
+
+.quicklinks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+.quicklink.navitem {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 14px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+    transition: border-color 160ms ease-out, box-shadow 160ms ease-out,
+                transform 160ms ease-out;
+}
+
+.quicklink.navitem:hover {
+    background: var(--surface-1);
+    border-color: var(--primary);
+    box-shadow: var(--shadow-raise);
+    transform: translateY(-2px);
+    color: var(--text-primary);
+}
+
+.quicklink .ql-ico { font-size: 18px; line-height: 1; }
+
+/* 바로 가기는 사이드 메뉴가 아니므로 활성 강조 바를 쓰지 않습니다. */
+.quicklink.is-on::before { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+    .quicklink.navitem { transition: none; }
+    .quicklink.navitem:hover { transform: none; }
 }
 
 /* ---------------------------------------------------------------- 카드 */
@@ -376,8 +625,9 @@ header.top h1 {
 }
 
 .card h2 {
-    font-size: 15px;
-    font-weight: 600;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
     margin: 0;
 }
 
@@ -522,18 +772,53 @@ tbody tr:hover td { background: var(--page); }
     text-decoration: line-through;
 }
 
-#r-submit {
+/* 주요 버튼 — 한 화면에서 가장 중요한 한 동작(제출·승인·등록·저장).
+   .primary 는 지금까지 규칙이 없어 OS 기본 버튼으로 보였습니다. 아래에서
+   인디고 채움으로 묶어, 보조 버튼(.ghost)과 위계가 분명해집니다.
+   .iq-actions / .rvdraft-actions 안의 클래스 없는 버튼(승인 등)도 주요로 봅니다. */
+#r-submit,
+button.primary,
+#sdb-n-submit,
+.modal-foot button,
+.iq-actions button:not(.ghost):not(.linkish),
+.rvdraft-actions button:not(.ghost):not(.linkish) {
     font: inherit;
+    font-weight: 600;
     padding: 7px 18px;
-    border: none;
-    border-radius: 9px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
     background: var(--primary);
     color: #fff;
-    font-weight: 600;
     cursor: pointer;
+    transition: background 140ms ease-out, box-shadow 140ms ease-out;
 }
 
-#r-submit:disabled { opacity: 0.55; cursor: default; }
+#r-submit:hover,
+button.primary:hover,
+#sdb-n-submit:hover,
+.modal-foot button:hover,
+.iq-actions button:not(.ghost):not(.linkish):hover,
+.rvdraft-actions button:not(.ghost):not(.linkish):hover {
+    background: var(--primary-strong);
+    box-shadow: var(--shadow-card);
+}
+
+#r-submit:focus-visible,
+button.primary:focus-visible,
+#sdb-n-submit:focus-visible,
+.modal-foot button:focus-visible,
+.iq-actions button:not(.ghost):not(.linkish):focus-visible,
+.rvdraft-actions button:not(.ghost):not(.linkish):focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+#r-submit:disabled,
+button.primary:disabled { opacity: 0.55; cursor: default; }
+
+@media (prefers-reduced-motion: reduce) {
+    #r-submit, button.primary, #sdb-n-submit, .modal-foot button { transition: none; }
+}
 
 .runrow {
     display: flex;
@@ -583,17 +868,37 @@ tbody tr:hover td { background: var(--page); }
 .runner.off::before { background: var(--critical); }
 .runner.busy::before { background: var(--series-1); }
 
+/* 보조 버튼 — 표 안 행동(처리·이관·수정 저장·반려 등). 모듈 JS 가 이 클래스로
+   버튼을 만들므로 여기 한 곳을 고치면 전 영역 버튼이 같은 옷을 입습니다. */
 button.ghost {
     font: inherit;
-    padding: 6px 12px;
+    font-weight: 500;
+    padding: 6px 13px;
     color: var(--text-primary);
     background: var(--surface-1);
     border: 1px solid var(--baseline);
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
+    transition: background 140ms ease-out, border-color 140ms ease-out;
 }
 
-button.ghost:hover { border-color: var(--series-1); }
+button.ghost:hover {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+    color: var(--primary-strong);
+}
+
+button.ghost:active { transform: translateY(0.5px); }
+
+button.ghost:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    button.ghost { transition: none; }
+    button.ghost:active { transform: none; }
+}
 
 .reqhistory { margin-top: 12px; }
 
@@ -1198,6 +1503,7 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
 }
 
 .navitem {
+    position: relative;
     appearance: none;
     background: transparent;
     border: 1px solid transparent;
@@ -1211,6 +1517,19 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
 }
 
 .navitem:hover { background: var(--primary-soft); color: var(--text-primary); }
+
+/* 활성 항목의 인디고 강조 바 — 지금 어느 영역에 있는지 한눈에 잡힙니다. */
+.navitem.is-on::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 56%;
+    border-radius: 2px;
+    background: var(--primary);
+}
 
 .navitem:focus-visible {
     outline: 2px solid var(--primary);
