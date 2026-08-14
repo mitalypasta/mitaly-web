@@ -5,6 +5,10 @@
 //
 // 차트는 라이브러리 없이 SVG로 직접 그립니다. 막대 두께·모서리·간격 같은
 // 규격을 정확히 지키기 위해서입니다.
+//
+// 순수 헬퍼(표기·이스케이프 등)는 별도 모듈로 빠졌습니다 — docs/web-split-plan.md.
+import { won, wonFull, int, ymLabel, catLabel } from "./format.js";
+import { escape, clip, debounce, niceTicks } from "./util.js";
 
 // index.html?demo=1 로 열면 Supabase 없이 가짜 데이터로 화면만 봅니다.
 const DEMO = new URLSearchParams(location.search).get("demo") === "1";
@@ -61,20 +65,7 @@ const palette = () => ({
 const CHANNEL_COLORS = { "홀": "s1", "배달": "s2" };
 const WEEKDAY_ORDER = ["월", "화", "수", "목", "금", "토", "일"];
 
-// ---------------------------------------------------------------- 숫자 표기
-
-function won(value) {
-    const v = Number(value) || 0;
-    const sign = v < 0 ? "-" : "";
-    const n = Math.abs(v);
-    if (n >= 1e8) return `${sign}${(n / 1e8).toFixed(n >= 1e9 ? 0 : 1)}억`;
-    if (n >= 1e4) return `${sign}${Math.round(n / 1e4).toLocaleString("ko-KR")}만`;
-    return `${sign}${n.toLocaleString("ko-KR")}`;
-}
-
-const wonFull = (v) => `${(Number(v) || 0).toLocaleString("ko-KR")}원`;
-const int = (v) => (Number(v) || 0).toLocaleString("ko-KR");
-const ymLabel = (ym) => `${String(ym).slice(0, 4)}.${String(ym).slice(4, 6)}`;
+// (숫자 표기 함수 won·wonFull·int·ymLabel 은 format.js 로 이동 — 위 import)
 
 // ---------------------------------------------------------------- 로그인
 
@@ -2081,52 +2072,8 @@ function showTip(event, html) {
 
 function hideTip() { tooltip.hidden = true; }
 
-function niceTicks(max, count) {
-    const raw = max / count;
-    const mag = 10 ** Math.floor(Math.log10(raw || 1));
-    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || mag * 10;
-    const out = [];
-    for (let v = 0; v <= max + step * 0.001; v += step) out.push(v);
-    if (out[out.length - 1] < max) out.push(out[out.length - 1] + step);
-    return out;
-}
-
-const clip = (text, n) =>
-    String(text).length > n ? String(text).slice(0, n - 1) + "…" : String(text);
-
-// 분류 이름을 화면용으로 바꿉니다.
-//
-// DB 값은 매핑표(엑셀)에서 오므로 여기서 고칩니다 — DB 를 고쳐도 다음 업로드에
-// 덮어써집니다. 이름만 바꾸는 것이고 분류 자체는 그대로입니다.
-//
-// 왜: '제외' 는 실제로 빼는 게 아니라 그냥 분류인데 이름이 오해를 줍니다.
-// 그래서 화면마다 "빼는 기준이 아닙니다" 라는 변명을 달아야 했습니다.
-// 이름이 나쁘니까 설명이 필요했던 것이고, 이름을 고치면 설명이 필요 없습니다.
-// (품목을 실제로 분류해 넣는 일은 본사 원천 품목명 조정과 맞물려 진행합니다 — D5)
-const CATEGORY_LABELS = {
-    "⚠️미매핑": "신규 품목",
-    "미매핑": "신규 품목",
-    "제외": "음료·부가",
-    "비정규": "메뉴판 외",
-};
-
-function catLabel(value) {
-    if (!value) return "미분류";
-    return CATEGORY_LABELS[value] || value;
-}
-
-function escape(value) {
-    return String(value ?? "").replace(/[&<>"']/g,
-        (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
-}
-
-function debounce(fn, ms) {
-    let timer;
-    return (...args) => {
-        clearTimeout(timer);
-        timer = setTimeout(() => fn(...args), ms);
-    };
-}
+// (niceTicks·clip·catLabel·escape·debounce 는 각각 util.js / format.js 로 이동
+//  — 위 import. table·showTip·hideTip 은 tooltip 요소를 잡아 여기 남습니다.)
 
 // ================================================================ 엑셀 내보내기
 //
