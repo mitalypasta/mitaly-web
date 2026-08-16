@@ -63,7 +63,11 @@ async function refreshDeliveryMenu() {
     const view = $("t-delivmenu");
     const meta = $("dm-meta");
 
-    if (!dmData) {
+    // '진짜 반입분'(collected_at 이 있는 응답)만 캐시로 굳힙니다. 반입 전
+    // 빈 응답까지 캐시하면 그 세션 동안 새 반입이 와도 dmData 가 이미 truthy
+    // (빈 객체)라 다시 안 물어보고 영영 '반입 없음' 으로 남습니다. 반입 전에는
+    // 걸러 볼 항목도 없어 이 재조회가 낭비가 아닙니다.
+    if (!dmData || !dmData.collected_at) {
         const { data, error } = await db.rpc("api_delivery_menu_check");
         if (error) {
             // 57 이 아직 안 들어간 환경이면 함수 자체가 없습니다(PostgREST PGRST202).
@@ -209,6 +213,10 @@ function fillPosLargeSelect() {
         if (account && g.account !== account) continue;
         const opt = document.createElement("option");
         opt.value = g.code;
+        // 분류 코드는 계정을 넘나들며 겹칩니다(004 가 굿모닝은 '직영점',
+        // 착한통신은 '26년 메뉴' — 설계 판단 [3-2]). value 만으로는 어느 본부
+        // 것인지 구분이 안 되므로 계정을 옵션에 실어 조회 때 함께 보냅니다.
+        opt.dataset.account = g.account;
         opt.textContent = (account ? "" : `[${g.account}] `)
             + `${g.name || g.code} (${int(g.items)})`;
         select.append(opt);
@@ -258,6 +266,9 @@ export async function refreshPosMenuSummary() {
     const d = pmSummary;
     const has = Number(d.items) > 0;
     $("pm-kpis").hidden = !has;
+    // 4칸은 전체 요약(필터 무관)이라 아래 표와 기준이 다릅니다 — KPI 가 뜰 때만
+    // 그 안내도 같이 보입니다.
+    $("pm-kpi-note").hidden = !has;
     if (!has) {
         $("pm-meta").textContent = "아직 반입 전입니다";
         return;
@@ -294,7 +305,17 @@ export async function refreshPosMenu() {
     const args = { p_limit: 300 };
     if ($("pm-account").value) args.p_account = $("pm-account").value;
     if ($("pm-store").value) args.p_store = $("pm-store").value;
-    if ($("pm-large").value) args.p_large = $("pm-large").value;
+    const largeSelect = $("pm-large");
+    if (largeSelect.value) {
+        args.p_large = largeSelect.value;
+        // 계정을 안 좁혔을 때 분류만 보내면 코드가 같고 뜻이 다른 두 본부
+        // 상품이 한 표에 섞입니다(004). 고른 옵션이 실은 계정을 알고 있으니
+        // 같이 보냅니다 — value 가 같은 옵션이 둘이어도 selectedOptions 는
+        // 실제로 고른 옵션을 가리켜 계정이 정확합니다.
+        const largeAccount = largeSelect.selectedOptions[0]
+            && largeSelect.selectedOptions[0].dataset.account;
+        if (largeAccount && !args.p_account) args.p_account = largeAccount;
+    }
     if ($("pm-q").value.trim()) args.p_q = $("pm-q").value.trim();
     if ($("pm-only-unavailable").checked) args.p_only_unavailable = true;
 

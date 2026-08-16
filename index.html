@@ -1405,66 +1405,13 @@
         <div class="tableview" id="t-ourhome-stores"></div>
     </section>
 
-    <!-- 발주 상품 마스터 — 58_menu_recipes.sql 의 supply_products (209품목,
-         원가분석 '상품별공급단가' + 발주 체크리스트). 아워홈 코드가 발주량과
-         레시피를 잇는 유일한 다리입니다 (큐 #102 [A]). -->
-    <section data-area="ingredients" class="card full" id="supply-card">
-        <header>
-            <h2>발주 상품 마스터</h2>
-            <span class="meta" id="sp-meta"></span>
-        </header>
-        <p class="hint">
-            아워홈으로 발주하는 상품 목록입니다. 코드번호가 있는 상품만
-            발주량 자료와 이어집니다.
-        </p>
-        <div class="reqform">
-            <div class="field">
-                <label for="sp-q">검색</label>
-                <input id="sp-q" type="text" placeholder="상품명 · 코드">
-            </div>
-            <div class="field">
-                <label for="sp-cat">구분</label>
-                <select id="sp-cat"><option value="">전체</option></select>
-            </div>
-        </div>
-        <div class="tableview" id="t-supply-products"></div>
-    </section>
-
-    <!-- 조리 레시피 — 58_menu_recipes.sql 의 menu_recipes (98메뉴 · 617행,
-         이미지레시피 원본). 원가분석(32, 40메뉴)과 별개 표입니다 — 없는 것은
-         레시피가 아니라 원가분석이라는 가공물 (CLAUDE.md 10번 정정, 큐 #102 [A]). -->
-    <section data-area="ingredients" class="card full" id="menu-recipe-card">
-        <header>
-            <h2>조리 레시피</h2>
-            <span class="meta" id="mr-meta"></span>
-        </header>
-        <p class="hint">
-            이미지레시피 원본입니다. 소요량은 조리 단위(레들 번수 · 개수 · 컵)
-            그대로이고, g 열은 원본에 g·kg 이 명시된 행만 채워져 있습니다.
-            레들·계량컵 표기는 부피(oz·ml)로 환산해 보여줍니다.
-        </p>
-        <div class="reqform">
-            <div class="field">
-                <label for="mr-menu">메뉴</label>
-                <select id="mr-menu"><option value="">메뉴를 고르세요</option></select>
-            </div>
-            <div class="field">
-                <label for="mr-status">상태</label>
-                <select id="mr-status"><option value="">전체</option></select>
-            </div>
-        </div>
-        <p class="hint" id="mr-coverage"></p>
-        <div class="tableview" id="t-menu-recipes"></div>
-    </section>
-
     <section data-area="ingredients" class="card full" id="recipe-card">
         <header>
-            <h2>레시피 소요량 (원가분석 기준)</h2>
+            <h2>레시피 소요량</h2>
             <span class="meta" id="recipe-meta"></span>
         </header>
         <p class="hint">
-            원가분석 파일에서 반입한 1인분 기준 소요량입니다. g 수와 공급단가가
-            확정된 메뉴만 있어 조리 레시피보다 메뉴가 적습니다. 메뉴를 고르면
+            원가분석 파일에서 반입한 1인분 기준 소요량입니다. 메뉴를 고르면
             그 메뉴의 재료만 보여줍니다.
         </p>
         <div class="reqform">
@@ -1541,6 +1488,8 @@
                 <div class="value" id="pm-open">—</div>
             </div>
         </div>
+        <p class="meta" id="pm-kpi-note" hidden>위 4칸은 전체 기준입니다 — 아래
+            표만 계정·매장·분류로 좁혀집니다.</p>
         <div class="cardsearch">
             <select id="pm-account"><option value="">전체 계정</option></select>
             <select id="pm-store"><option value="">전체 매장</option></select>
