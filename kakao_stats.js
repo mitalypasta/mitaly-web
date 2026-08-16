@@ -44,13 +44,16 @@ function drawKakaoStats(stats) {
     const c = palette();
 
     // 일별 추이. 함수는 호출이 있는 날만 주므로 빈 날을 0 으로 채워 그립니다 —
-    // 빈 날이 접히면 추이가 실제보다 촘촘해 보입니다. 날짜 키는 서버가 주는
-    // UTC 기준 그대로 씁니다(toISOString 도 UTC — 어긋나지 않습니다).
+    // 빈 날이 접히면 추이가 실제보다 촘촘해 보입니다. 날짜 키는 **Asia/Seoul**
+    // 기준입니다 — 서버(82_stats_accuracy 의 at time zone 'Asia/Seoul')와
+    // 짝이라, 한쪽만 UTC 면 날짜 키가 어긋나 그날 데이터가 0 으로 빠집니다.
+    // 한국은 서머타임이 없어 +9 고정이 맞습니다.
+    const kstKey = (ms) => new Date(ms + 9 * 3600_000).toISOString().slice(0, 10);
     const byDate = new Map((stats.daily || []).map((d) => [String(d.date), d]));
     const days = Number(stats.days) || 30;
     const xLabels = [], dailyCalls = [], dailyTasks = [];
     for (let i = days - 1; i >= 0; i--) {
-        const key = new Date(Date.now() - i * 86400_000).toISOString().slice(0, 10);
+        const key = kstKey(Date.now() - i * 86400_000);
         const row = byDate.get(key);
         xLabels.push(key.slice(5).replace("-", "."));
         dailyCalls.push(row ? Number(row.calls) || 0 : 0);

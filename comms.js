@@ -78,28 +78,36 @@ async function submitAnnouncement() {
     const notice = $("an-notice");
     notice.textContent = "";
 
-    const { data, error } = await db.rpc("create_announcement", {
-        p_title: $("an-title").value,
-        p_body: $("an-body").value,
-        p_audience_kind: kind,
-        p_audience_value: kind === "region" || kind === "sv" ? $("an-value").value : null,
-        p_store_ids: kind === "stores" ? storeIds : null,
-    });
-    if (error) {
-        notice.textContent = "접수하지 못했습니다: " + error.message;
-        return;
+    // RPC 대기 중 버튼을 잠급니다 — 더블클릭이 같은 공지를 두 건 접수하고
+    // 승인 대기 업무까지 두 개 만듭니다(행 버튼들의 disabled 패턴과 동일).
+    const button = $("an-submit");
+    button.disabled = true;
+    try {
+        const { data, error } = await db.rpc("create_announcement", {
+            p_title: $("an-title").value,
+            p_body: $("an-body").value,
+            p_audience_kind: kind,
+            p_audience_value: kind === "region" || kind === "sv" ? $("an-value").value : null,
+            p_store_ids: kind === "stores" ? storeIds : null,
+        });
+        if (error) {
+            notice.textContent = "접수하지 못했습니다: " + error.message;
+            return;
+        }
+        if (!data?.ok) {
+            notice.textContent = data?.reason || "접수하지 못했습니다.";
+            return;
+        }
+        notice.textContent = `접수했습니다 — 대상 ${data.target_count}곳, `
+            + `승인 대기 업무 #${data.task_id} 가 만들어졌습니다.`;
+        $("an-title").value = "";
+        $("an-body").value = "";
+        await Promise.all([refreshAnnouncements(),
+                           typeof refreshTaskList === "function" ? refreshTaskList() : null,
+                           typeof refreshTasksSummary === "function" ? refreshTasksSummary() : null]);
+    } finally {
+        button.disabled = false;
     }
-    if (!data?.ok) {
-        notice.textContent = data?.reason || "접수하지 못했습니다.";
-        return;
-    }
-    notice.textContent = `접수했습니다 — 대상 ${data.target_count}곳, `
-        + `승인 대기 업무 #${data.task_id} 가 만들어졌습니다.`;
-    $("an-title").value = "";
-    $("an-body").value = "";
-    await Promise.all([refreshAnnouncements(),
-                       typeof refreshTaskList === "function" ? refreshTaskList() : null,
-                       typeof refreshTasksSummary === "function" ? refreshTasksSummary() : null]);
 }
 
 const AN_AUDIENCE_LABEL = { all: "전체", region: "지역", sv: "담당 SV", stores: "선택 매장" };

@@ -75,30 +75,38 @@ async function saveRecipient() {
     notice.textContent = "";
     const kinds = [...$("rc-kinds").querySelectorAll("input:checked")]
         .map((box) => box.value);
-    const { data, error } = await db.rpc("api_notify_recipient_save", {
-        p_recipient: $("rc-mail").value,
-        p_kinds: kinds,
-        p_display_name: $("rc-name").value,
-        p_sv_name: $("rc-sv").value,
-        p_note: $("rc-note").value,
-    });
-    if (error) {
-        notice.textContent = "저장하지 못했습니다: " + error.message;
-        return;
+    // RPC 대기 중 버튼을 잠급니다 — 이중 제출 방지(행 버튼들과 같은 패턴).
+    // 저장은 업서트라 중복 행은 안 생기지만, 연타가 같은 요청을 겹쳐 보냅니다.
+    const button = $("rc-save");
+    button.disabled = true;
+    try {
+        const { data, error } = await db.rpc("api_notify_recipient_save", {
+            p_recipient: $("rc-mail").value,
+            p_kinds: kinds,
+            p_display_name: $("rc-name").value,
+            p_sv_name: $("rc-sv").value,
+            p_note: $("rc-note").value,
+        });
+        if (error) {
+            notice.textContent = "저장하지 못했습니다: " + error.message;
+            return;
+        }
+        if (!data?.ok) {
+            notice.textContent = data?.reason || "저장하지 못했습니다.";
+            return;
+        }
+        notice.textContent = `저장했습니다 — ${data.recipient} · 받을 것 ${data.kinds_on}종`
+            + (data.kinds_off ? ` (끈 것 ${data.kinds_off}종)` : "");
+        $("rc-name").value = "";
+        $("rc-mail").value = "";
+        $("rc-sv").value = "";
+        $("rc-note").value = "";
+        for (const box of $("rc-kinds").querySelectorAll("input[type=checkbox]"))
+            box.checked = false;
+        await refreshRecipients();
+    } finally {
+        button.disabled = false;
     }
-    if (!data?.ok) {
-        notice.textContent = data?.reason || "저장하지 못했습니다.";
-        return;
-    }
-    notice.textContent = `저장했습니다 — ${data.recipient} · 받을 것 ${data.kinds_on}종`
-        + (data.kinds_off ? ` (끈 것 ${data.kinds_off}종)` : "");
-    $("rc-name").value = "";
-    $("rc-mail").value = "";
-    $("rc-sv").value = "";
-    $("rc-note").value = "";
-    for (const box of $("rc-kinds").querySelectorAll("input[type=checkbox]"))
-        box.checked = false;
-    await refreshRecipients();
 }
 
 export async function initRecipients() {

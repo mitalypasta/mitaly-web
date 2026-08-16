@@ -42,11 +42,24 @@ export function drawReport(d) {
     const qty = Number(s.qty) || 0;
     const avgTicket = qty ? Math.round((Number(s.amount) || 0) / qty) : 0;
 
-    // 판정이 붙은 채널만 싣습니다. 전부 실으면 SV 가 읽지 않습니다.
-    const alertRows = (d.alerts || []).flatMap((a) =>
+    // 급증·급감으로 판정된 채널만 싣습니다. 전부 실으면 SV 가 읽지 않습니다.
+    // (방향값에는 '정상' 도 채워져 오므로 truthy 검사로는 못 거릅니다 —
+    //  실제로 prod 규모에서 §2 가 180행을 넘겨 PDF 가 못 쓸 길이가 됐습니다.
+    //  _agent/SALES-DIAGNOSIS.md H1.)
+    // 변동폭(|전월%|·|전년%| 중 큰 쪽) 순으로 정렬해 상위 20건만 싣고,
+    // 넘치는 만큼은 표 아래 한 줄로 몇 건을 생략했는지 밝힙니다(#106 합의 규격).
+    const isAlert = (dir) => dir === "급증" || dir === "급감";
+    const mag = (c) => Math.max(
+        Math.abs(Number(c.mom_pct_change)) || 0,
+        Math.abs(Number(c.yoy_pct_change)) || 0);
+    const allAlertRows = (d.alerts || []).flatMap((a) =>
         (a.channels || [])
-            .filter((c) => c.mom_direction || c.yoy_direction)
-            .map((c) => ({ store: a.store, ...c })));
+            .filter((c) => isAlert(c.mom_direction) || isAlert(c.yoy_direction))
+            .map((c) => ({ store: a.store, ...c })))
+        .sort((a, b) => mag(b) - mag(a));
+    const REPORT_ALERT_MAX = 20;
+    const alertRows = allAlertRows.slice(0, REPORT_ALERT_MAX);
+    const alertOmitted = allAlertRows.length - alertRows.length;
 
     const top = (d.menus || []).slice(0, 10);
 
@@ -80,7 +93,9 @@ export function drawReport(d) {
                 <td>${wonFull(c.amount)}</td>
                 <td>${escape(c.mom_direction || "—")} ${pct(c.mom_pct_change)}</td>
                 <td>${escape(c.yoy_direction || "—")} ${pct(c.yoy_pct_change)}</td>
-              </tr>`).join("")}</tbody></table>`
+              </tr>`).join("")}</tbody></table>${alertOmitted
+            ? `<p class="report-note">변동폭이 큰 순으로 ${REPORT_ALERT_MAX}건만 실었습니다.
+               그 외 ${alertOmitted}건 생략.</p>` : ""}`
           : "<p>기준(±10%)을 넘은 매장이 없습니다.</p>"}
         <p class="report-note">
           기간의 마지막 달 실적을 전월·전년 동월과 비교합니다.

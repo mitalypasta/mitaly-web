@@ -199,9 +199,21 @@ async function initDashboard() {
     // 그리고 담당자가 화면을 여는 대부분의 이유는 '요즘 어떤가' 이지
     // '작년까지 통틀어 어떤가' 가 아닙니다. 길게 볼 때는 직접 늘리면 됩니다.
     //
-    // 데이터가 한 달치뿐이면 그 한 달만 잡습니다(months.length - 2 가 음수).
-    $("f-from").value = String(months[Math.max(0, months.length - 2)]);
-    $("f-to").value = String(info.ym_max);
+    // 데이터가 한 달치뿐이면 그 한 달만 잡습니다(toIdx - 1 이 음수).
+    //
+    // 종료월은 '마지막 완성 월' 입니다(H3, _agent/SALES-DIAGNOSIS.md).
+    // 오늘이 속한 달은 수집이 진행 중이라(예: 8월 중순에 2곳만 들어옴) 그 달을
+    // 기본 기준으로 잡으면 급증·급감·기간대비·보고서가 전 매장 급감으로
+    // 오탐합니다. 진행 중인 달이 올라와 있으면 기본을 전월로 물리고,
+    // 그 달을 보려면 종료월을 직접 올리면 됩니다(고르개에는 그대로 있음).
+    const t = new Date();
+    const nowYm = t.getFullYear() * 100 + (t.getMonth() + 1);
+    const toIdx = (info.ym_max >= nowYm && months.length >= 2)
+        ? months.length - 2 : months.length - 1;
+    const defTo = months[toIdx];
+    const defFrom = months[Math.max(0, toIdx - 1)];
+    $("f-from").value = String(defFrom);
+    $("f-to").value = String(defTo);
 
     initCredentials(info.stores);
     initContacts(info.stores);
@@ -220,8 +232,8 @@ async function initDashboard() {
     // 원천(api_filters)이고 기본값도 같은 규칙(최근 한 달)입니다.
     fillSelect($("dmap-from"), months, ymLabel);
     fillSelect($("dmap-to"), months, ymLabel);
-    $("dmap-from").value = String(months[Math.max(0, months.length - 2)]);
-    $("dmap-to").value = String(info.ym_max);
+    $("dmap-from").value = String(defFrom);
+    $("dmap-to").value = String(defTo);
     for (const name of info.stores || []) {
         const option = document.createElement("option");
         option.value = name;
@@ -271,6 +283,21 @@ async function initDashboard() {
         const width = Math.round(entries[0].contentRect.width);
         if (width && width !== lastWidth) { lastWidth = width; redraw(); }
     }).observe(document.querySelector(".grid"));
+
+    // 영역·서브탭 전환은 숨김 해제뿐이라(nav.js) 위 ResizeObserver 에 안
+    // 걸립니다. 숨긴 채 그려진 SVG 는 clientWidth=0 → fallback 폭(480·720)으로
+    // 굳어, 첫 진입 화면에서 차트가 카드 절반만 채웁니다(H2, SALES-DIAGNOSIS).
+    // 보이게 된 순간 폭이 어긋난 차트가 하나라도 있으면 한 번 다시 그립니다 —
+    // 맞으면 아무것도 안 하므로 평상시 전환 비용은 없습니다.
+    document.addEventListener("mitaly:area-shown", () => {
+        if (!S.lastData) return;
+        const stale = [...document.querySelectorAll("svg.plot")].some((svg) => {
+            const vb = svg.viewBox.baseVal.width;
+            return svg.clientWidth > 0 && vb > 0
+                && Math.abs(svg.clientWidth - vb) > 2;
+        });
+        if (stale) draw(S.lastData);
+    });
 
     // 홈 타일 배선과 지도 nav 배선은 조회가 없어(클릭 리스너뿐) 먼저 겁니다.
     initHomeTiles();
@@ -335,6 +362,21 @@ const STATUS_LABEL = {
 };
 
 let requestTimer = null;
+let runnerTimer = null;
+
+// 수집 화면의 두 폴링(러너 상태 30초·요청 내역 5/60초)은 화면을 떠나도 영원히
+// 돌았습니다 (큐 #107 F6). 다른 영역을 보는 동안은 서버 조회를 쉬고 타이머만
+// 이어 갑니다 — 수집 영역으로 돌아오면 nav 의 mitaly:area 이벤트가 바로 한 번
+// 돌려 최신으로 맞춥니다. S.area 가 아직 없으면(부팅 순서) 종전대로 돕니다.
+function inCollectArea() {
+    return !S.area || S.area === "collect";
+}
+window.addEventListener("mitaly:area", (e) => {
+    if (e.detail === "collect") {
+        refreshRequests();
+        refreshRunner();
+    }
+});
 let targets = [];              // 수집 대상 매장 카탈로그 (러너가 올려줌)
 let chosenStores = new Set();  // 수집 요청용. 비어 있으면 '전체'
 let xStores = new Set();       // 엑셀 내보내기용. 비어 있으면 '전체'
@@ -488,6 +530,9 @@ async function loadTargets() {
     }
     targets = data || [];
     refreshStoreButton();
+    // 내보내기 '대상 매장' 버튼도 같은 목록을 셉니다 — 여기서 같이 갱신해야
+    // 처음부터 "전체 매장 (N개)" 로 요청 버튼과 표기가 맞습니다 (큐 #107 F5).
+    refreshExportStoreButton();
 }
 
 // 고른 채널에 실제로 붙어 있는 매장만 보여줍니다.
@@ -495,6 +540,14 @@ function visibleTargets() {
     const plugins = selectedPlugins();
     if (!plugins.length) return targets;
     return targets.filter((t) => (t.plugins || []).some((p) => plugins.includes(p)));
+}
+
+// 매장 선택창이 보여줄 목록 (큐 #107 F1). 채널 필터는 '수집 요청' 폼의
+// 체크박스라 요청 모드에만 뜻이 있습니다. 내보내기는 전 채널 대상이므로
+// 여기서 걸러 버리면 홀 전용 매장 등이 내보내기에서 조용히 빠집니다 —
+// 버튼(refreshExportStoreButton)도 targets 전체를 세므로 이걸로 둘이 일치합니다.
+function pickerTargets() {
+    return pickerCtx === "export" ? targets : visibleTargets();
 }
 
 function refreshStoreButton() {
@@ -509,6 +562,9 @@ function refreshStoreButton() {
 function initStorePicker() {
     const modal = $("store-modal");
     const open = (ctx) => {
+        // 요청↔내보내기 사이를 오갈 때 옛 검색어가 남아 있으면 다른 기능의
+        // 필터가 그대로 적용됩니다 (큐 #107 F7). 같은 쪽을 다시 열 때는 둡니다.
+        if (pickerCtx !== ctx) $("store-search").value = "";
         pickerCtx = ctx;
         modal.hidden = false;
         renderStoreList();
@@ -530,7 +586,7 @@ function initStorePicker() {
     $("store-search").addEventListener("input", renderStoreList);
 
     $("store-all").addEventListener("click", () => {
-        visibleTargets().forEach((t) => curStoreSet().add(t.name));
+        pickerTargets().forEach((t) => curStoreSet().add(t.name));
         renderStoreList();
     });
     $("store-none").addEventListener("click", () => {
@@ -545,7 +601,7 @@ function initStorePicker() {
 
 function filteredTargets() {
     const query = ($("store-search").value || "").trim();
-    const list = visibleTargets();
+    const list = pickerTargets();
     return query ? list.filter((t) => t.name.includes(query)) : list;
 }
 
@@ -557,7 +613,7 @@ const PLUGIN_SHORT = {
 function renderStoreList() {
     const set = curStoreSet();
     const list = filteredTargets();
-    const total = visibleTargets().length;
+    const total = pickerTargets().length;
     const tail = pickerCtx === "export" ? "전체 내보내기" : "전체 수집";
 
     $("store-count").textContent =
@@ -597,6 +653,12 @@ function refreshExportStoreButton() {
 // ---- 러너 상태 --------------------------------------------------------
 
 async function refreshRunner() {
+    // 직접 호출(영역 진입)과 타이머 호출이 겹쳐도 폴링 루프가 늘지 않게 합니다.
+    clearTimeout(runnerTimer);
+    if (!inCollectArea()) {
+        runnerTimer = setTimeout(refreshRunner, 30000);
+        return;
+    }
     const el = $("runner-state");
     const { data, error } = await db
         .from("runner_status").select("last_seen_at,hostname,busy,current_note").limit(1);
@@ -618,7 +680,7 @@ async function refreshRunner() {
             el.textContent = `수집 PC 연결됨${row.hostname ? ` (${row.hostname})` : ""}`;
         }
     }
-    setTimeout(refreshRunner, 30000);
+    runnerTimer = setTimeout(refreshRunner, 30000);
 }
 
 function timeAgo(seconds) {
@@ -755,6 +817,12 @@ async function submitRequest() {
 }
 
 async function refreshRequests() {
+    clearTimeout(requestTimer);
+    if (!inCollectArea()) {
+        // 진행 중 여부를 모르는 동안은 느린 쪽 주기로만 이어 갑니다.
+        requestTimer = setTimeout(refreshRequests, 60000);
+        return;
+    }
     const { data, error } = await db
         .from("collect_requests")
         .select("id,kind,requested_at,plugins,date_from,date_to,stores,profiles," +
@@ -784,6 +852,7 @@ async function refreshRequests() {
             <span class="grow">${escape(
                 r.progress || (waiting ? "수집 PC를 기다리는 중" : STATUS_LABEL[r.status] || r.status)
             )}</span>
+            <button class="linkish" data-cancel="${r.id}">취소</button>
         </div>`;
     }).join("") + (stale ? `
         <p class="notice">
@@ -816,6 +885,31 @@ async function refreshRequests() {
         ${reviewHint ? `<p class="hint">${escape(reviewHint)}</p>` : ""}
         <pre class="logbox" id="log-${r.id}" hidden>${escape(r.log_tail || "")}</pre>`;
     }).join("") || '<p class="hint">아직 요청이 없습니다.</p>';
+
+    // 대기/실행 중 요청 취소 (큐 #107 F4). 러너가 죽어 running 으로 굳은 좀비
+    // 요청은 지금까지 담당자 터미널(enqueue_backfill 고아 정리)로만 풀 수
+    // 있었습니다. RLS 가 update 를 막으므로 definer 함수(81_cancel_request.sql)
+    // 를 부릅니다 — 함수 쪽에서 pending/running 만 취소되게 다시 확인합니다.
+    // 실행 중인 살아 있는 러너를 멈추는 것은 아닙니다(러너가 끝내면 그 결과로
+    // 덮일 수 있음) — 안내문이 그 차이를 알립니다.
+    $("r-active").querySelectorAll("[data-cancel]").forEach((button) => {
+        button.addEventListener("click", async () => {
+            const id = Number(button.dataset.cancel);
+            if (!window.confirm(
+                `요청 #${id} 을 취소할까요?\n` +
+                "수집 PC가 이미 실행 중이면 돌던 작업까지 멈추지는 않습니다.")) return;
+            button.disabled = true;
+            const { error } = await db.rpc("api_cancel_request", { p_id: id });
+            if (error) {
+                const notice = $("r-notice");
+                notice.className = "notice error";
+                notice.textContent = "취소하지 못했습니다: " + error.message;
+                button.disabled = false;
+                return;
+            }
+            refreshRequests();
+        });
+    });
 
     $("r-history").querySelectorAll("[data-log]").forEach((button) => {
         button.addEventListener("click", () => {
@@ -917,6 +1011,24 @@ async function load(onFirstPaint) {
         // 회사 전체·채널별 합계는 함수 안에서 항상 전 매장 기준입니다.
         () => db.rpc("api_sales_alerts", { p_ym: args.p_ym_to, p_store: args.p_store }),
         () => db.rpc("api_sales_compare", { p_ym: args.p_ym_to, p_store: args.p_store }),
+        // 홈 '이상 신호' 전용 부정 리뷰(별점 ≤3). 위 17번(api_reviews)은 리뷰
+        // 화면의 rv-* 필터가 걸린 배열이라 홈이 같이 쓰면 그 필터가 홈 목록에
+        // 샙니다('5점만'으로 두고 홈에 오면 "부정 리뷰가 없습니다"). 홈은 매출
+        // 필터(기간·매장)만 따르는 자기 몫을 따로 받습니다. 서버가 ≤3 만 골라
+        // 주므로 limit 이 부정 리뷰 자체에 걸립니다 — '최근 200건 표본에서 ≤3
+        // 추출'이라 리뷰 많은 기간에 최신 부정을 놓치던 한계도 같이 풀립니다.
+        () => db.rpc("api_reviews", {
+            p_ym_from: args.p_ym_from, p_ym_to: args.p_ym_to, p_store: args.p_store,
+            p_platform: null, p_unanswered_only: false,
+            p_min_rating: null, p_max_rating: 3, p_limit: 200,
+        }),
+        // 홈 '부정 리뷰' 타일 전용 요약. 16번(api_review_summary)은 리뷰 화면의
+        // 플랫폼 필터(rv-platform)가 걸려 있어 타일 수에 샙니다. by_rating 이
+        // 전수 집계라 위 목록 limit 과 무관하게 타일 수가 정확합니다.
+        () => db.rpc("api_review_summary", {
+            p_ym_from: args.p_ym_from, p_ym_to: args.p_ym_to, p_store: args.p_store,
+            p_platform: null,
+        }),
     ];
 
     // 초안 요약은 있으면 좋고 없어도 그만입니다. 위 묶음에 넣으면
@@ -1005,6 +1117,12 @@ function pack(results, args, pending) {
         reviews: ((d(17))[0] || {}).items || [],
         alerts: ((d(18))[0] || {}).alerts || [],
         compare: ((d(19))[0] || {}).compare || {},
+        homeNegReviews: ((d(20))[0] || {}).items || [],
+        homeReviewSummary: ((d(21))[0] || {}).summary || {},
+        // 홈 이상신호의 원천(알림·부정 리뷰)이 아직 안 온 상태인가 —
+        // 1차 그리기(FIRST 4개 직후)가 여기 해당합니다. drawHome 이 이 값으로
+        // '없음' 대신 로딩 표시를 그립니다(빈 데이터 = 이상 무로 보이는 문제).
+        homeLoading: !(results[18] && results[20] && results[21]),
         draftSummary: pending.draftSummary,
         reviewSync: pending.reviewSync,
     };
@@ -1110,8 +1228,10 @@ function draw(d) {
 
 // ---- 홈(할 일 타일) ----------------------------------------------------
 //
-// 이미 위에서 받아 온 draftSummary·reviewSummary·alerts 를 다시 세기만
-// 합니다 — 홈 화면 때문에 새 조회를 추가하지 않습니다.
+// 알림(alerts)·초안(draftSummary)은 위에서 받아 온 것을 다시 세고, 부정
+// 리뷰만 홈 전용 호출(homeNegReviews·homeReviewSummary — calls 20·21번)을
+// 씁니다. 리뷰 화면의 rv-* 필터가 걸린 reviews·reviewSummary 를 같이 쓰면
+// 그 필터가 홈 숫자·목록에 새기 때문입니다.
 // 답글 초안(draftSummary)만 전체 기간 기준이고, 부정 리뷰·급감 매장은
 // 위 매출 필터(기간·매장)를 따릅니다 — 아래 sub 문구로 그 차이를 알립니다.
 
@@ -1123,47 +1243,75 @@ function drawHome(d) {
     const draft = Number((d.draftSummary || {}).draft) || 0;
     $("home-drafts").textContent = int(draft);
 
-    const byRating = (d.reviewSummary || {}).by_rating || [];
+    // 이상 신호의 원천(알림·부정 리뷰)은 2차 배치라 1차 그리기 때는 아직
+    // 없습니다. 빈 데이터로 그리면 홈 착지·필터 변경마다 잠깐 "없습니다"
+    // (= 이상 무)로 보였다 실값으로 바뀝니다 — 이상 감시 화면에서 가장 나쁜
+    // 거짓말이라, 다 오기 전에는 값 대신 로딩 표시를 둡니다.
+    if (d.homeLoading) {
+        $("home-negative").textContent = "—";
+        $("home-declining").textContent = "—";
+        const loading = '<p class="home-anom-empty">불러오는 중…</p>';
+        $("home-anom-declining").innerHTML = loading;
+        $("home-anom-reviews").innerHTML = loading;
+        return;
+    }
+
+    // 부정 리뷰 = 별점 3점 이하(앱 공통 정의 — 리뷰 화면 '3점 이하만' 필터와
+    // 같은 기준). 리뷰 화면의 플랫폼 필터가 새지 않게 홈 전용 요약에서 셉니다.
+    const byRating = (d.homeReviewSummary || {}).by_rating || [];
     const negative = byRating
         .filter((r) => Number(r.rating) <= 3)
         .reduce((sum, r) => sum + (Number(r.count) || 0), 0);
     $("home-negative").textContent = int(negative);
 
+    // 급감은 매장 단위로 묶습니다 — 한 매장이 홀·배달 둘 다 급감이어도
+    // 타일 "1"에 목록도 1행이 되게(타일 수 = 목록 행 수 기준 일치).
     const alerts = d.alerts || [];
-    const declining = new Set(
-        alerts
-            .filter((s) => (s.channels || []).some((c) =>
-                c.mom_direction === "급감" || c.yoy_direction === "급감"))
-            .map((s) => s.store),
-    ).size;
-    $("home-declining").textContent = int(declining);
+    const declByStore = new Map();
+    for (const s of alerts) {
+        for (const ch of (s.channels || [])) {
+            let hit = null;
+            if (ch.mom_direction === "급감") hit = { channel: ch.channel, pct: ch.mom_pct_change, base: "전월" };
+            else if (ch.yoy_direction === "급감") hit = { channel: ch.channel, pct: ch.yoy_pct_change, base: "전년" };
+            if (!hit) continue;
+            if (!declByStore.has(s.store)) declByStore.set(s.store, []);
+            declByStore.get(s.store).push(hit);
+        }
+    }
+    const declRows = [...declByStore.entries()].map(([store, hits]) => ({
+        store,
+        channels: hits.map((h) => h.channel).join("·"),
+        // 채널이 여럿이면 가장 크게 빠진 쪽을 대표로 보입니다.
+        worst: hits.reduce((a, b) => (Number(b.pct) < Number(a.pct) ? b : a)),
+    }));
+    $("home-declining").textContent = int(declRows.length);
 
     // ---- 이상 신호 목록 (급감 매장 · 부정 리뷰) ----
     // 타일은 '몇 건'만 알려주고, 여기서 실제 무엇인지 바로 훑고 눌러 들어갑니다.
-    // 이미 받아 둔 alerts·reviews 를 다시 쓰므로 새 조회가 없습니다. 행 클릭은
-    // nav.js(initHomeTiles)가 위임으로 이어 해당 화면 필터까지 맞춰 줍니다.
-    const declRows = [];
-    for (const s of alerts) {
-        for (const ch of (s.channels || [])) {
-            if (ch.mom_direction === "급감") declRows.push({ store: s.store, channel: ch.channel, pct: ch.mom_pct_change, base: "전월" });
-            else if (ch.yoy_direction === "급감") declRows.push({ store: s.store, channel: ch.channel, pct: ch.yoy_pct_change, base: "전년" });
-        }
-    }
+    // 행 클릭은 nav.js(initHomeTiles)가 위임으로 이어 해당 화면 필터까지 맞춰
+    // 줍니다 — data-store 가 있으면 그 매장으로 좁혀서.
+    // 6행 넘으면 '외 N건 더 보기'로 잘렸음을 알립니다(조용한 잘림 방지).
+    const moreRow = (n, go, kind, card) => (n > 0
+        ? `<button type="button" class="home-anom-row home-anom-more" data-go="${go}" data-kind="${kind}" data-card="${card}">외 ${int(n)}건 더 보기</button>`
+        : "");
+
     $("home-anom-declining").innerHTML = declRows.length
         ? declRows.slice(0, 6).map((r) =>
-            `<button type="button" class="home-anom-row" data-go="sales" data-kind="alert" data-card="alerts-card">
-               <span class="ar-main">${escape(r.store)} · ${escape(r.channel)}</span>
-               <span class="ar-side pct-down">${escape(r.base)} ${pctText(r.pct)}</span>
-             </button>`).join("")
+            `<button type="button" class="home-anom-row" data-go="sales" data-kind="alert" data-card="alerts-card" data-store="${escape(r.store)}">
+               <span class="ar-main">${escape(r.store)} · ${escape(r.channels)}</span>
+               <span class="ar-side pct-down">${escape(r.worst.base)} ${pctText(r.worst.pct)}</span>
+             </button>`).join("") + moreRow(declRows.length - 6, "sales", "alert", "alerts-card")
         : '<p class="home-anom-empty">급감으로 판정된 매장이 없습니다.</p>';
 
-    const negRows = (d.reviews || []).filter((r) => Number(r.rating) <= 3);
+    const negRows = (d.homeNegReviews || []).filter((r) => Number(r.rating) <= 3);
     $("home-anom-reviews").innerHTML = negRows.length
         ? negRows.slice(0, 6).map((r) =>
-            `<button type="button" class="home-anom-row" data-go="reviews" data-kind="review" data-card="review-card">
+            `<button type="button" class="home-anom-row" data-go="reviews" data-kind="review" data-card="review-card" data-store="${escape(r.store || "")}">
                <span class="ar-main"><span class="ar-star">★${r.rating ?? "—"}</span> ${escape(r.store || "")}</span>
                <span class="ar-side ar-text">${escape(clip(r.contents || "내용 없음", 34))}</span>
              </button>`).join("")
+          // '외 N건'은 목록 길이(limit 걸림)가 아니라 요약의 전수(negative)로 셉니다.
+          + moreRow(negative - Math.min(6, negRows.length), "reviews", "review", "review-card")
         : '<p class="home-anom-empty">부정 리뷰가 없습니다.</p>';
 }
 
@@ -1188,7 +1336,10 @@ function reviewArgs() {
         p_platform: $("rv-platform").value || null,
         p_unanswered_only: $("rv-unanswered").checked,
         p_min_rating: rating === "high" ? 5 : null,
-        p_max_rating: rating === "low" ? 4 : null,
+        // 저별점 = 3점 이하. 홈 '부정 리뷰' 타일·이상신호 목록과 같은 기준
+        // 이어야 타일 숫자와 눌러서 도착한 목록이 맞습니다(옛 값 4는 4점
+        // 리뷰가 섞여 헤드라인과 목록이 어긋났습니다).
+        p_max_rating: rating === "low" ? 3 : null,
     };
 }
 
@@ -1866,6 +2017,8 @@ function initExport() {
     }
 
     submit.addEventListener("click", () => runExport());
+    // 매장 목록(loadTargets)이 먼저 와 있었으면 여기서 개수를 채웁니다 (F5).
+    refreshExportStoreButton();
 }
 
 async function runExport() {
@@ -1990,6 +2143,12 @@ async function waitForRequest(reqId, progress) {
             if (log) log.textContent += `\n\n실패: ${data.error || ""}`;
             return false;
         }
+        // 수집 화면에서 취소한 요청(F4) 뒤에 줄 서 있었으면 같이 끝냅니다 —
+        // 아니면 2시간 대기(deadline)까지 헛돕니다.
+        if (data.status === "canceled") {
+            if (log) log.textContent += "\n\n요청이 취소되었습니다.";
+            return false;
+        }
     }
     if (log) log.textContent += "\n\n시간이 너무 오래 걸립니다. 나중에 다시 시도하세요.";
     return false;
@@ -2053,22 +2212,27 @@ async function buildAndDownloadWorkbook(ymFrom, ymTo, storeArg, storeNames) {
     const args = { p_ym_from: ymFrom, p_ym_to: ymTo, p_stores: storeArg };
     // 대시보드 시트(16_export_dashboard.sql)는 jsonb 한 줄로 옵니다 — 품목이
     // 2,600종을 넘어 행으로 받으면 PostgREST 1,000행에서 조용히 잘립니다(D10).
+    //
+    // 11개를 한꺼번에 던지지 않고 load() 와 같은 이유로 3개씩만 돌립니다
+    // (큐 #107 F2). authenticated 는 쿼리당 8초 제한이라, 전 매장·넓은 기간에서
+    // 동시에 던지면 서로 밀려 통째로 실패합니다(2026-07-29 실측: 11개 동시 →
+    // 10개가 제한 초과 — runLimited 머리주석).
     const [summary, monthly, menu, coverage,
            mArea, mWeek, mDay, byHour, nonstd, detail, unmapped] =
-        await Promise.all([
-            db.rpc("api_export_store_summary", args),
-            db.rpc("api_export_monthly", args),
-            db.rpc("api_export_menu", args),
-            db.rpc("api_export_coverage", args),
-            db.rpc("api_export_menu_matrix", { p_field: "trade_area", ...args }),
-            db.rpc("api_export_menu_matrix", { p_field: "weekday", ...args }),
-            db.rpc("api_export_menu_matrix", { p_field: "daypart", ...args }),
-            db.rpc("api_export_by_hour", args),
-            db.rpc("api_export_nonstandard", args),
-            db.rpc("api_export_store_detail", args),
-            db.rpc("api_export_unmapped",
+        await runLimited([
+            () => db.rpc("api_export_store_summary", args),
+            () => db.rpc("api_export_monthly", args),
+            () => db.rpc("api_export_menu", args),
+            () => db.rpc("api_export_coverage", args),
+            () => db.rpc("api_export_menu_matrix", { p_field: "trade_area", ...args }),
+            () => db.rpc("api_export_menu_matrix", { p_field: "weekday", ...args }),
+            () => db.rpc("api_export_menu_matrix", { p_field: "daypart", ...args }),
+            () => db.rpc("api_export_by_hour", args),
+            () => db.rpc("api_export_nonstandard", args),
+            () => db.rpc("api_export_store_detail", args),
+            () => db.rpc("api_export_unmapped",
                    { p_ym_from: ymFrom, p_ym_to: ymTo }),
-        ]);
+        ], 3);
     for (const r of [summary, monthly, menu, coverage, mArea, mWeek, mDay,
                      byHour, nonstd, detail, unmapped]) {
         if (r.error) throw new Error("집계 조회 실패: " + r.error.message);
@@ -2204,7 +2368,13 @@ async function loadSheetJS() {
 let visitAllStores = [];              // 전 매장 [{id, name}] — SV 로 거를 때 원본
 let visitSvByStore = new Map();       // 매장 이름 → SV 이름
 let visitStoresBySv = new Map();      // SV 이름 → 매장 이름 Set
-let visitRowsCache = new Map();       // visit_id → 행 원본 — '보고 복사' 재료
+let visitRowsCache = new Map();       // visit_id → 행 원본 — '보고 복사'·수정 재료
+let visitMyUid = null;                // 로그인 사용자 id — 내 기록에만 수정·삭제(79)
+let visitEditId = null;               // 수정 중인 visit_id (null 이면 새 기록 모드)
+
+// 격월 1회 권장 주기(폼 힌트·hq-standards 9번과 같은 기준) — '방문 대상 매장'
+// 표의 기한 초과 판정에 씁니다.
+const VISIT_CYCLE_DAYS = 60;
 
 async function initVisits() {
     const storeSelect = $("vs-store");
@@ -2213,7 +2383,7 @@ async function initVisits() {
     if (!storeErr) visitAllStores = stores || [];
     rebuildVisitStoreOptions();
 
-    // SV 배정 (없으면 필터 자체를 안 보여줍니다 — 빈 select 는 소음입니다)
+    // SV 배정 — 자료가 없으면 빈 select 대신 짧은 안내를 보여줍니다(진단 [B]).
     const { data: profiles, error: profErr } = await db.rpc("api_store_profiles");
     if (!profErr && Array.isArray(profiles)) {
         for (const p of profiles) {
@@ -2236,29 +2406,60 @@ async function initVisits() {
             rebuildVisitStoreOptions();
             await refreshVisits();
             await refreshVisitStoreMetrics();
+            await refreshVisitDue();
         });
+    } else {
+        $("vs-sv-empty").hidden = false;
     }
 
     $("vs-visited-on").value = new Date().toISOString().slice(0, 10);
 
+    // 방문자 기본값 = 로그인 사용자(진단 [D]). created_by 는 항상 auth.uid()
+    // 로 따로 남으므로 이 칸은 보고서에 찍히는 표시 이름입니다 — 다른 이름으로
+    // 고쳐 쓸 수 있게 input 그대로 둡니다.
+    const { data: { session } } = await db.auth.getSession();
+    visitMyUid = session?.user?.id || null;
+    const myName = session?.user?.user_metadata?.name
+        || (session?.user?.email || "").split("@")[0];
+    if (myName && !$("vs-visited-by").value) $("vs-visited-by").value = myName;
+
     storeSelect.addEventListener("change", refreshVisits);
     storeSelect.addEventListener("change", refreshVisitStoreMetrics);
     $("vs-submit").addEventListener("click", submitVisit);
+    $("vs-cancel-edit").addEventListener("click", cancelVisitEdit);
+    $("vd-all").addEventListener("change", refreshVisitDue);
 
-    // '보고 복사' — 기록을 실물 양식 텍스트로 만들어 클립보드에 담습니다.
-    // 버튼 글씨로 결과를 알립니다(복사됨 ✓ / 복사 실패) — 별도 알림창 없음.
+    // '방문 대상 매장' 표의 '기록' 버튼 — 그 매장을 폼에 골라 주고 위로 올립니다.
+    $("t-visit-due").addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-act='visit-pick']");
+        if (!button) return;
+        storeSelect.value = button.dataset.storeId;
+        await refreshVisits();
+        await refreshVisitStoreMetrics();
+        $("visit-form-card").scrollIntoView({ behavior: "smooth" });
+    });
+
+    // 이력 표의 동작 버튼들 — '보고 복사'(클립보드) + 내 기록이면 '수정'·'삭제'.
+    // 복사 결과는 버튼 글씨로 알립니다(복사됨 ✓ / 복사 실패) — 별도 알림창 없음.
     $("t-visits").addEventListener("click", async (event) => {
-        const button = event.target.closest("button[data-act='visit-report']");
+        const button = event.target.closest("button[data-act]");
         if (!button) return;
         const row = visitRowsCache.get(button.dataset.visitId);
         if (!row) return;
-        const ok = await copyTextToClipboard(buildVisitReport(row));
-        button.textContent = ok ? "복사됨 ✓" : "복사 실패";
-        setTimeout(() => { button.textContent = "보고 복사"; }, 1500);
+        if (button.dataset.act === "visit-report") {
+            const ok = await copyTextToClipboard(buildVisitReport(row));
+            button.textContent = ok ? "복사됨 ✓" : "복사 실패";
+            setTimeout(() => { button.textContent = "보고 복사"; }, 1500);
+        } else if (button.dataset.act === "visit-edit") {
+            startVisitEdit(row);
+        } else if (button.dataset.act === "visit-del") {
+            await deleteVisit(row, button);
+        }
     });
 
     await refreshVisits();
     await refreshVisitStoreMetrics();
+    await refreshVisitDue();
 }
 
 // 매장 select 를 SV 선택에 맞춰 다시 채웁니다. 고른 매장이 그 SV 담당이면
@@ -2296,8 +2497,7 @@ async function submitVisit() {
     notice.className = "notice";
     notice.textContent = "저장하는 중…";
 
-    const { data: { session } } = await db.auth.getSession();
-    const { error } = await db.from("store_visits").insert({
+    const fields = {
         store_id: Number(storeId),
         visited_on: visitedOn,
         visited_by: $("vs-visited-by").value.trim() || null,
@@ -2306,8 +2506,19 @@ async function submitVisit() {
         cooking_note: $("vs-cooking").value.trim() || null,
         owner_meeting_note: $("vs-owner-meeting").value.trim() || null,
         special_note: $("vs-special").value.trim() || null,
-        created_by: session?.user?.id,
-    });
+    };
+
+    // 수정 모드면 update, 아니면 insert. created_by 는 만들 때만 남깁니다
+    // (수정해도 기록 주인은 그대로 — 79 의 update 정책 축).
+    let error;
+    if (visitEditId !== null) {
+        ({ error } = await db.from("store_visits").update(fields)
+            .eq("id", Number(visitEditId)));
+    } else {
+        const { data: { session } } = await db.auth.getSession();
+        ({ error } = await db.from("store_visits")
+            .insert({ ...fields, created_by: session?.user?.id }));
+    }
 
     button.disabled = false;
     if (error) {
@@ -2317,12 +2528,163 @@ async function submitVisit() {
     }
 
     notice.className = "notice";
-    notice.textContent = "저장했습니다.";
-    for (const id of ["vs-visited-by", "vs-hygiene", "vs-self-purchase",
+    notice.textContent = visitEditId !== null ? "수정했습니다." : "저장했습니다.";
+    // 방문자 칸은 비우지 않습니다 — 같은 SV 가 여러 매장을 연달아 입력할 때
+    // 매번 이름을 다시 치지 않게(진단 [D]).
+    for (const id of ["vs-hygiene", "vs-self-purchase",
                        "vs-cooking", "vs-owner-meeting", "vs-special"]) {
         $(id).value = "";
     }
+    exitVisitEditMode();
     await refreshVisits();
+    await refreshVisitDue();
+}
+
+// '수정' 버튼 — 그 기록을 폼에 되불러 옵니다. 저장 버튼이 '수정 저장' 으로
+// 바뀌고, '수정 취소' 가 새 기록 모드로 되돌립니다(진단 [F]).
+function startVisitEdit(row) {
+    visitEditId = String(row.visit_id);
+
+    // SV 필터가 그 매장을 가리고 있으면 필터를 풀어 option 을 되살립니다.
+    const storeSelect = $("vs-store");
+    if (![...storeSelect.options].some((o) => o.textContent === row.store_name)) {
+        if ($("vs-sv")) $("vs-sv").value = "";
+        rebuildVisitStoreOptions();
+    }
+    const opt = [...storeSelect.options].find((o) => o.textContent === row.store_name);
+    storeSelect.value = opt ? opt.value : "";
+
+    $("vs-visited-on").value = row.visited_on;
+    $("vs-visited-by").value = row.visited_by || "";
+    $("vs-hygiene").value = row.hygiene_note || "";
+    $("vs-self-purchase").value = row.self_purchase_note || "";
+    $("vs-cooking").value = row.cooking_note || "";
+    $("vs-owner-meeting").value = row.owner_meeting_note || "";
+    $("vs-special").value = row.special_note || "";
+
+    $("vs-submit").textContent = "수정 저장";
+    $("vs-cancel-field").hidden = false;
+    const notice = $("vs-notice");
+    notice.className = "notice";
+    notice.textContent = `${row.store_name} · ${row.visited_on} 기록을 수정하는 중입니다.`;
+    $("visit-form-card").scrollIntoView({ behavior: "smooth" });
+}
+
+function cancelVisitEdit() {
+    exitVisitEditMode();
+    for (const id of ["vs-hygiene", "vs-self-purchase",
+                       "vs-cooking", "vs-owner-meeting", "vs-special"]) {
+        $(id).value = "";
+    }
+    const notice = $("vs-notice");
+    notice.className = "notice";
+    notice.textContent = "수정을 취소했습니다.";
+}
+
+function exitVisitEditMode() {
+    visitEditId = null;
+    $("vs-submit").textContent = "방문 기록 추가";
+    $("vs-cancel-field").hidden = true;
+}
+
+async function deleteVisit(row, button) {
+    if (!confirm(`${row.store_name} · ${row.visited_on} 방문 기록을 삭제할까요?`)) return;
+    button.disabled = true;
+    const { error } = await db.from("store_visits").delete()
+        .eq("id", Number(row.visit_id));
+    button.disabled = false;
+
+    const notice = $("vs-notice");
+    if (error) {
+        notice.className = "notice error";
+        notice.textContent = "삭제하지 못했습니다: " + error.message;
+        return;
+    }
+    notice.className = "notice";
+    notice.textContent = "삭제했습니다.";
+    if (visitEditId === String(row.visit_id)) exitVisitEditMode();
+    await refreshVisits();
+    await refreshVisitDue();
+}
+
+// '방문 대상 매장' — 진단 #101 [A]. api_store_visits 전 매장분에서 매장별
+// 마지막 방문일을 세어, 미방문·기한 초과(격월 권장 60일)를 오래된 순으로
+// 보여줍니다. 새 SQL 없이 화면 계산입니다 — 방문이 격월 1회라 전체 이력도
+// 몇 천 건 규모를 넘지 않습니다(p_limit 로 최근 1만 건까지).
+async function refreshVisitDue() {
+    const container = $("t-visit-due");
+    const { data, error } = await db.rpc("api_store_visits",
+        { p_store: null, p_limit: 10000 });
+    if (error) {
+        container.innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
+        return;
+    }
+
+    // 매장별 마지막 방문일 — 목록이 최신순이라 처음 만난 것이 마지막 방문입니다.
+    const lastByStore = new Map();
+    for (const v of (Array.isArray(data) ? data : [])) {
+        if (!lastByStore.has(v.store_name)) lastByStore.set(v.store_name, v.visited_on);
+    }
+
+    const sv = $("vs-sv") ? $("vs-sv").value : "";
+    const mine = sv ? (visitStoresBySv.get(sv) || new Set()) : null;
+    const today = new Date(new Date().toISOString().slice(0, 10));
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    const rows = visitAllStores
+        .filter((s) => !mine || mine.has(s.name))
+        .map((s) => {
+            const last = lastByStore.get(s.name) || null;
+            const days = last ? Math.floor((today - new Date(last)) / dayMs) : null;
+            return { store: s, last, days };
+        });
+
+    const never = rows.filter((r) => r.last === null).length;
+    const overdue = rows.filter((r) => r.days !== null && r.days > VISIT_CYCLE_DAYS).length;
+    $("visit-due-summary").textContent =
+        `${sv ? sv + " 담당 " : ""}${int(rows.length)}곳 중 미방문 ${int(never)} · `
+        + `기한 초과 ${int(overdue)}`;
+
+    const showAll = $("vd-all").checked;
+    const shown = rows
+        .filter((r) => showAll || r.last === null || r.days > VISIT_CYCLE_DAYS)
+        .sort((a, b) => {
+            // 미방문 맨 위, 그다음 오래된 순
+            if ((a.last === null) !== (b.last === null)) return a.last === null ? -1 : 1;
+            if (a.last === null) return a.store.name.localeCompare(b.store.name, "ko");
+            return (b.days - a.days) || a.store.name.localeCompare(b.store.name, "ko");
+        });
+
+    if (!shown.length) {
+        container.innerHTML =
+            '<p class="hint">미방문·기한 초과 매장이 없습니다. 전체 주기는 위 체크박스로 봅니다.</p>';
+        return;
+    }
+
+    const status = (r) => {
+        if (r.last === null) return '<span class="tag warn">미방문</span>';
+        if (r.days > VISIT_CYCLE_DAYS) return '<span class="tag h-warn">기한 초과</span>';
+        return "정상";
+    };
+    const headers = visitStoresBySv.size
+        ? ["매장", "담당 SV", "마지막 방문일", "경과", "상태", ""]
+        : ["매장", "마지막 방문일", "경과", "상태", ""];
+    table(container, headers,
+        shown.map((r) => {
+            const cells = [
+                escape(r.store.name),
+                r.last ? escape(r.last) : "—",
+                r.days === null ? "—" : `${int(r.days)}일`,
+                status(r),
+                `<button type="button" class="ghost" data-act="visit-pick" data-store-id="${r.store.id}">기록</button>`,
+            ];
+            if (visitStoresBySv.size) {
+                cells.splice(1, 0, escape(visitSvByStore.get(r.store.name) || "—"));
+            }
+            return cells;
+        }),
+        { html: true });
 }
 
 // vs-store 를 고르면 그 매장만, 비워 두면 전 매장 최근 방문을 보여줍니다
@@ -2350,10 +2712,12 @@ async function refreshVisits() {
         list = list.filter((v) => mine.has(v.store_name));
     }
 
+    // SV 필터 요약에 '담당 매장 기준' 을 명시합니다 — 이 필터는 방문자
+    // (visited_by)가 아니라 배정 매장으로 거르기 때문입니다(진단 [C]).
     $("visit-summary").textContent = storeName
         ? `${escape(storeName)} · ${int(list.length)}건`
         : (sv
-            ? `${escape(sv)} 담당 ${int((visitStoresBySv.get(sv) || new Set()).size)}곳 · 방문 ${int(list.length)}건`
+            ? `${escape(sv)} 담당 매장 ${int((visitStoresBySv.get(sv) || new Set()).size)}곳 기준 · 방문 ${int(list.length)}건`
             : `전 매장 최근 ${int(list.length)}건`);
 
     if (!list.length) {
@@ -2367,8 +2731,19 @@ async function refreshVisits() {
 
     // 절 안의 항목("- …" / "ㄴ …")이 여러 줄이라 줄바꿈을 살려 그립니다.
     const multiline = (t) => (t ? escape(t).replaceAll("\n", "<br>") : "—");
+    // 수정·삭제는 내 기록에만 보입니다(79 의 RLS 가 최종 게이트 — 여기 표시는
+    // 눌러도 안 되는 버튼을 안 보여주기 위한 것). created_by 가 안 내려오는
+    // 환경(79 적용 전)에서는 보고 복사만 나옵니다.
+    const actions = (v) => {
+        let html = `<button type="button" class="ghost" data-act="visit-report" data-visit-id="${v.visit_id}">보고 복사</button>`;
+        if (visitMyUid && v.created_by === visitMyUid) {
+            html += ` <button type="button" class="ghost" data-act="visit-edit" data-visit-id="${v.visit_id}">수정</button>`
+                + ` <button type="button" class="ghost" data-act="visit-del" data-visit-id="${v.visit_id}">삭제</button>`;
+        }
+        return html;
+    };
     table($("t-visits"),
-        ["매장", "방문일", "방문자", "위생점검", "자점매입", "조리점검", "점주미팅", "특이사항", "공유"],
+        ["매장", "방문일", "방문자", "위생점검", "자점매입", "조리점검", "점주미팅", "특이사항", "동작"],
         list.map((v) => [
             escape(v.store_name),
             escape(v.visited_on),
@@ -2378,7 +2753,7 @@ async function refreshVisits() {
             multiline(v.cooking_note),
             multiline(v.owner_meeting_note),
             multiline(v.special_note),
-            `<button type="button" class="ghost" data-act="visit-report" data-visit-id="${v.visit_id}">보고 복사</button>`,
+            actions(v),
         ]),
         { html: true });
 }

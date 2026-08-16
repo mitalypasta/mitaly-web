@@ -348,6 +348,23 @@ header.top h1::before {
     outline-offset: 1px;
 }
 
+/* 식자재·발주(10번) — 발주 상품 검색 입력. .field select 와 같은 옷.
+   카드 한정으로 입혀 다른 영역의 텍스트 입력 모양은 그대로 둡니다. */
+#supply-card .field input[type="text"] {
+    font: inherit;
+    padding: 6px 10px;
+    min-width: 140px;
+    color: var(--text-primary);
+    background: var(--surface-1);
+    border: 1px solid var(--baseline);
+    border-radius: 6px;
+}
+
+#supply-card .field input[type="text"]:focus-visible {
+    outline: 2px solid var(--series-1);
+    outline-offset: 1px;
+}
+
 /* ---------------------------------------------------------------- KPI */
 
 .kpis {
@@ -546,6 +563,15 @@ header.top h1::before {
 
 .home-anom-row .ar-star { color: #f0a500; font-weight: 700; }
 
+/* '외 N건 더 보기' — 목록이 6행에서 잘렸음을 알리는 꼬리 행. 행과 같은
+   클릭 규칙(nav.js 위임)을 타되 개별 항목이 아니라 안내라 톤을 낮춥니다. */
+.home-anom-more {
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
 .home-anom-empty {
     margin: 6px 2px;
     font-size: 13px;
@@ -712,6 +738,13 @@ th, td {
 }
 
 th:first-child, td:first-child {
+    text-align: left;
+    font-variant-numeric: normal;
+}
+
+/* 텍스트 열 — table()(dom.js)이 열 값을 보고 숫자 열이 아니면 답니다.
+   숫자 열만 우측 정렬로 남습니다(큐 #106 [F]). */
+th.tl, td.tl {
     text-align: left;
     font-variant-numeric: normal;
 }
@@ -1034,8 +1067,11 @@ button.ghost:focus-visible {
 .heat table {
     border-collapse: separate;
     border-spacing: 2px;   /* 칸 사이는 선이 아니라 여백으로 나눕니다 */
-    width: auto;
-    min-width: 100%;
+    /* 내용 크기 그대로, 왼쪽 정렬. min-width:100% 를 걸었을 때는 열이 적은
+       히트맵(메뉴×시간대 등)이 full 카드 폭까지 억지로 늘어나며 남는 폭이
+       라벨 열·칸 간격으로 흩어져 셀이 오른쪽에 몰렸습니다(SALES-DIAGNOSIS M6).
+       넓은 히트맵은 바깥 .heat 가 가로 스크롤을 받으므로 그대로 동작합니다. */
+    width: max-content;
 }
 
 .heat th, .heat td {
@@ -1083,6 +1119,19 @@ button.ghost:focus-visible {
     box-shadow: inset 0 0 0 1px var(--gridline);
     color: var(--text-muted);
 }
+
+/* 점주 연락처 표 — 11열이라 좁은 화면에서 가로 스크롤이 잦습니다(큐 #104
+   진단 [L]). 어느 매장 행인지 놓치지 않게 매장 열을 왼쪽에 고정합니다. */
+#ct-table th:first-child,
+#ct-table td:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--surface-1);
+    z-index: 1;
+}
+
+/* 머리글 첫 칸은 위(thead sticky)와 왼쪽 둘 다 고정이라 한 겹 위에 둡니다. */
+#ct-table thead th:first-child { z-index: 2; }
 
 /* 정렬 가능한 표 */
 .tableview.tall { max-height: 520px; }
@@ -1296,6 +1345,12 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
 .tag.h-ok   { color: #fff; background: var(--good); border-color: var(--good); }
 .tag.h-warn { color: #fff; background: #b45309; border-color: #b45309; }
 .tag.h-fail { color: #fff; background: var(--critical); border-color: var(--critical); }
+
+/* 정산 상태(41_settlement) — '부분 입금'은 돈이 들어오는 중(인디고 채움),
+   '기한 전'은 아직 정상(옅은 인디고)이라 미수의 빨강·완납의 초록과 갈립니다. */
+.tag.st-partial { color: #fff; background: var(--primary); border-color: var(--primary); }
+.tag.st-early   { color: var(--primary-strong); background: var(--primary-soft);
+                  border-color: transparent; }
 
 /* 증감률 숫자. 색 하나만으로 뜻을 전달하지 않도록 항상 +/- 부호와 같이 씁니다. */
 .pct-up   { color: var(--good); }

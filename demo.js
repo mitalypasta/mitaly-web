@@ -82,7 +82,53 @@ const DEMO_RECIPES = [
     { category: "파스타", menu: "토마토 파스타", ingredient: "토마토 소스", grams: 190, unit_price: 4.0, supply_won: 760 },
     { category: "피자", menu: "마르게리따 피자", ingredient: "도우", grams: 1, unit_price: 1200, supply_won: 1200 },
     { category: "피자", menu: "마르게리따 피자", ingredient: "모짜렐라", grams: 110, unit_price: 9.5, supply_won: 1045 },
-    { category: "피자", menu: "마르게리따 피자", ingredient: "토마토 소스", grams: 90, unit_price: 4.0, supply_won: 360 },
+    // 원천에 단가가 빈 재료(실제 3행) — '단가 미상' 표시를 데모로도 봅니다.
+    { category: "피자", menu: "마르게리따 피자", ingredient: "토마토 소스", grams: 90, unit_price: null, supply_won: null },
+];
+
+// 조리 레시피 데모(58_menu_recipes.sql + 74 부피 환산) — 실제 반입분과 같은
+// 필드 이름을 씁니다. 원가분석(DEMO_RECIPES)에 없는 메뉴를 섞어 둡니다 —
+// "원가분석 없는 메뉴" 표의 '조리 레시피 있음' 표시가 이걸 씁니다.
+const DEMO_MENU_RECIPES = [
+    { sheet: "4. 오일소스", status: "운영", deco: false, code: "4-1", menu: "알리오 올리오",
+      ingredient: "스파게티면", qty_text: "160g", unit_hint: null, grams: 160, volume_value: null, volume_unit: null },
+    { sheet: "4. 오일소스", status: "운영", deco: false, code: "4-1", menu: "알리오 올리오",
+      ingredient: "오일소스 (1oz)", qty_text: "2번", unit_hint: "1oz", grams: null, volume_value: 2, volume_unit: "oz" },
+    { sheet: "4. 오일소스", status: "운영", deco: false, code: "4-1", menu: "알리오 올리오",
+      ingredient: "건고추", qty_text: "8개", unit_hint: null, grams: null, volume_value: null, volume_unit: null },
+    { sheet: "4. 오일소스", status: "운영", deco: false, code: "4-2", menu: "감바스 파스타",
+      ingredient: "새우", qty_text: "6개", unit_hint: null, grams: null, volume_value: null, volume_unit: null },
+    { sheet: "4. 오일소스", status: "운영", deco: false, code: "4-2", menu: "감바스 파스타",
+      ingredient: "오일소스 (1oz)", qty_text: "3번", unit_hint: "1oz", grams: null, volume_value: 3, volume_unit: "oz" },
+    { sheet: "2. 토마토소스", status: "운영", deco: false, code: "2-1", menu: "토마토 파스타",
+      ingredient: "토마토소스 (계량컵)", qty_text: "1컵", unit_hint: "200ml", grams: null, volume_value: 200, volume_unit: "ml" },
+    { sheet: "2. 토마토소스", status: "운영", deco: false, code: "2-1", menu: "토마토 파스타",
+      ingredient: "스파게티면", qty_text: "160g", unit_hint: null, grams: 160, volume_value: null, volume_unit: null },
+    { sheet: "7. 피자", status: "운영", deco: false, code: "7-2", menu: "고르곤졸라 피자",
+      ingredient: "모짜렐라", qty_text: "1.2컵", unit_hint: null, grams: null, volume_value: null, volume_unit: null },
+    { sheet: "7. 피자", status: "운영", deco: false, code: "7-2", menu: "고르곤졸라 피자",
+      ingredient: "도우", qty_text: "1개(240g)", unit_hint: null, grams: 240, volume_value: null, volume_unit: null },
+    { sheet: "판매중(예전)", status: "판매중(예전)", deco: false, code: null, menu: "오븐 스파게티",
+      ingredient: "크림 소스", qty_text: "170g", unit_hint: null, grams: 170, volume_value: null, volume_unit: null },
+    { sheet: "전처리", status: "전처리", deco: false, code: null, menu: "새우 (전처리)",
+      ingredient: "새우", qty_text: "해동 후 슬라이스", unit_hint: null, grams: null, volume_value: null, volume_unit: null },
+    { sheet: "미운영 메뉴", status: "미운영", deco: false, code: null, menu: "크림 뇨끼",
+      ingredient: "뇨끼", qty_text: "180g", unit_hint: null, grams: 180, volume_value: null, volume_unit: null },
+    // 선릉데코 판 — 기본 조회(p_include_deco=false)에서 빠지는 것을 데모로도 확인.
+    { sheet: "선릉데코", status: "운영", deco: true, code: "4-1", menu: "알리오 올리오",
+      ingredient: "파슬리", qty_text: "약간", unit_hint: null, grams: null, volume_value: null, volume_unit: null },
+];
+
+// 발주 상품 마스터 데모(58 supply_products) — 코드 없는 품목(범용품)을 섞어
+// '아워홈 코드 N' 메타와 '—' 표시를 확인합니다.
+const DEMO_SUPPLY_PRODUCTS = [
+    { category: "소스", exclusive: "전용", code: "1000001", product: "O [미태리]토마토소스", spec: "PK.(2kg)", ship_unit: "pk", spec_grams: 2000 },
+    { category: "소스", exclusive: "전용", code: "1000002", product: "O [미태리]로제소스", spec: "PK.(2kg)", ship_unit: "pk", spec_grams: 2000 },
+    { category: "유제품", exclusive: "전용", code: "1000003", product: "O [미태리]클래식 모짜렐라치즈", spec: "PK.(2.5kg)", ship_unit: "pk", spec_grams: 2500 },
+    { category: "냉동", exclusive: "비전용", code: "1000004", product: "냉동 칵테일새우 26-30", spec: "BOX.(1kg×10)", ship_unit: "box", spec_grams: 10000 },
+    { category: "면", exclusive: "비전용", code: "1000005", product: "스파게티면 5kg", spec: "BOX.(5kg×4)", ship_unit: "box", spec_grams: 20000 },
+    { category: "기타", exclusive: "비전용", code: null, product: "대두유 18L", spec: "CAN.(18L)", ship_unit: "ea", spec_grams: null },
+    { category: "기타", exclusive: "비전용", code: null, product: "케찹 3.3kg", spec: "PK.(3.3kg)", ship_unit: "pk", spec_grams: 3300 },
 ];
 
 // 광고 데모(48_ad_spend.sql) — 실서버는 자료 반입 전이라 빈 표가 정상이고,
@@ -732,10 +778,13 @@ function computeBoardNotice(pArticleNo) {
 // 같은 매장에 방문이 2건 이상 있는 픽스처를 하나 넣어 둡니다 — 매장을
 // 고르면 "이전 이력 자동 조회"가 실제로 여러 건을 보여주는지 확인할 수
 // 있게. 새로고침하면 폼에서 추가한 것도 사라집니다(violationEvents와 동일).
+// created_by: 데모 로그인 사용자는 "demo-user"(박SV)입니다 — 김SV 기록(1번)은
+// 남의 것이라 수정·삭제 버튼이 안 붙는 것까지 데모에서 확인할 수 있게 갈라 둡니다.
 let storeVisits = [
     { id: 1, store: "샘플01점", visited_on: dateOffset(-70), visited_by: "김SV",
       hygiene_note: "냉장고 온도 정상", self_purchase_note: "자점매입 이상 없음",
-      cooking_note: "조리 동선 양호", owner_meeting_note: "점주 특이요청 없음", special_note: null },
+      cooking_note: "조리 동선 양호", owner_meeting_note: "점주 특이요청 없음", special_note: null,
+      created_by: "other-user" },
     // 실물 양식 스타일 픽스처(QUEUE #63) — 항목 "- ", 후속 조치 "ㄴ ",
     // 여러 줄. '보고 복사' 버튼이 만드는 텍스트가 실물 예시와 같은 모양인지
     // 데모에서 바로 확인하는 용도입니다.
@@ -744,12 +793,20 @@ let storeVisits = [
       self_purchase_note: "- 특이사항 없음",
       cooking_note: "- 감바스 파스타 : 특이사항 없음\n- 페퍼로니 피자 : 도우 색 고르게 나오도록 체크, 토핑 넓게 교육",
       owner_meeting_note: "- 네이버 플레이스 광고 재진행\nㄴ 유입 감소로 재진행, 한 달 추이 확인 후 유지/변경 결정",
-      special_note: "- 냉장고 소음 발생 — 확인 필요, 점주와 지속 소통 예정" },
+      special_note: "- 냉장고 소음 발생 — 확인 필요, 점주와 지속 소통 예정",
+      created_by: "demo-user" },
     { id: 3, store: "샘플11점", visited_on: dateOffset(-20), visited_by: "박SV",
       hygiene_note: "위생 양호", self_purchase_note: "이상 없음",
-      cooking_note: "조리 정상", owner_meeting_note: null, special_note: null },
+      cooking_note: "조리 정상", owner_meeting_note: null, special_note: null,
+      created_by: "demo-user" },
+    // 마지막 방문이 격월 권장(60일)을 넘긴 픽스처 — '방문 대상 매장' 표의
+    // '기한 초과' 상태가 데모에서 보이게(진단 #101 [A]).
+    { id: 4, store: "샘플05점", visited_on: dateOffset(-75), visited_by: "김SV",
+      hygiene_note: "위생 양호", self_purchase_note: "이상 없음",
+      cooking_note: "조리 정상", owner_meeting_note: null, special_note: null,
+      created_by: "other-user" },
 ];
-let nextVisitId = 4;
+let nextVisitId = 5;
 
 function computeStoreVisits(pStore, pLimit) {
     const list = storeVisits
@@ -761,7 +818,7 @@ function computeStoreVisits(pStore, pLimit) {
             visited_on: v.visited_on, visited_by: v.visited_by,
             hygiene_note: v.hygiene_note, self_purchase_note: v.self_purchase_note,
             cooking_note: v.cooking_note, owner_meeting_note: v.owner_meeting_note,
-            special_note: v.special_note,
+            special_note: v.special_note, created_by: v.created_by || null,
         }));
     return list;
 }
@@ -967,20 +1024,22 @@ function demoAssignKakaoStore({ p_task_id, p_store_id }) {
              store_name: store.name, mapping, retro_updated: retro };
 }
 
-// 카카오 챗봇 통계 (62 api_kakao_skill_stats). 일별을 먼저 만들고 블록·분류를
-// 그 합계에서 나눠, KPI·표·차트의 숫자가 서로 맞아떨어지게 합니다.
+// 카카오 챗봇 통계 (62 api_kakao_skill_stats — 재정의 79). 일별을 먼저 만들고
+// 블록·분류를 그 합계에서 나눠, KPI·표·차트의 숫자가 서로 맞아떨어지게 합니다.
+// 날짜 키는 서버(79)처럼 Asia/Seoul — kakao_stats.js 의 빈 날 채움과 짝입니다.
 function computeKakaoStats({ p_days }) {
     const days = Math.max(1, Number(p_days) || 30);
     const rand = seeded(20260811 * 7 + days);
+    const kstKey = (ms) => new Date(ms + 9 * 3600_000).toISOString().slice(0, 10);
     const daily = [];
     let calls = 0, tasksTotal = 0;
     for (let i = days - 1; i >= 0; i--) {
-        const date = new Date(Date.now() - i * 86400_000);
-        const weekend = [0, 6].includes(date.getUTCDay());
+        const kst = new Date(Date.now() - i * 86400_000 + 9 * 3600_000);
+        const weekend = [0, 6].includes(kst.getUTCDay());
         const c = Math.round((weekend ? 2 : 5) + rand() * (weekend ? 3 : 8));
         if (!c) continue;
         const t = Math.min(c, Math.round(c * (0.15 + rand() * 0.2)));
-        daily.push({ date: date.toISOString().slice(0, 10), calls: c, tasks: t });
+        daily.push({ date: kstKey(Date.now() - i * 86400_000), calls: c, tasks: t });
         calls += c;
         tasksTotal += t;
     }
@@ -1010,7 +1069,14 @@ function computeKakaoStats({ p_days }) {
         const n = Math.round(tasksTotal * ratio);
         if (n > 0) { byCategory.push({ category, tasks: n }); used += n; }
     }
-    if (tasksTotal - used > 0) byCategory.push({ category: "기타", tasks: tasksTotal - used });
+    // 남는 몫은 '기타'(진짜 기타 분류)와 '(미분류)'(분류 실패 — 79 가 null 을
+    // 따로 세우는 것의 미러)로 가릅니다.
+    const leftover = tasksTotal - used;
+    if (leftover > 0) {
+        const misc = Math.floor(leftover / 2);
+        if (misc > 0) byCategory.push({ category: "기타", tasks: misc });
+        byCategory.push({ category: "(미분류)", tasks: leftover - misc });
+    }
     byCategory.sort((a, b) => b.tasks - a.tasks);
 
     return { days, calls, tasks_created: tasksTotal,
@@ -1077,6 +1143,44 @@ let demoAnnouncements = [{
     sent: 0, dry_run: 0, failed: 0, reads: 0,
 }];
 let nextAnnouncementId = 2;
+
+// 수신처(43+65+72) — 본사 명단을 반입하면 이 모양이 됩니다
+// (import_recipients.py 가 한 사람을 '받을 것마다 한 줄' 로 폅니다).
+// 꺼진 행도 하나 섞어 '사용/꺼짐' 이 화면에서 갈리는지 봅니다.
+// 쓰기 핸들러(save/toggle)가 이 배열을 고칩니다 — 저장 흐름을 데모로 검증
+// 할 수 있게(큐 #106 [E]).
+let demoRecipients = [
+    { id: 1, kind: "report", channel: "mail", recipient: "sv1@demo.example",
+      display_name: "샘플 SV1", sv_name: "샘플 SV1", enabled: true,
+      note: "슈퍼바이저", updated_at: tsOffset(-1) },
+    { id: 2, kind: "review_alert", channel: "mail", recipient: "ops@demo.example",
+      display_name: "샘플 팀장", sv_name: null, enabled: true,
+      note: "운영지원팀 팀장", updated_at: tsOffset(-1) },
+    { id: 3, kind: "notice", channel: "mail", recipient: "ops@demo.example",
+      display_name: "샘플 팀장", sv_name: null, enabled: true,
+      note: "운영지원팀 팀장", updated_at: tsOffset(-1) },
+    { id: 4, kind: "store_close", channel: "mail", recipient: "sv2@demo.example",
+      display_name: "샘플 SV2", sv_name: "샘플 SV2", enabled: false,
+      note: "휴직 중", updated_at: tsOffset(-3) },
+];
+let nextRecipientId = 5;
+
+// 답글 대행 동의(42 + 65 source) — 반입분·웹 기록·철회 이력이 화면에서 갈려
+// 보이는 그림. 쓰기 핸들러(record/withdraw)가 이 배열을 고칩니다(큐 #106 [E]).
+let demoConsents = [
+    { consent_id: 1, store_id: 1, store: "샘플01점", signed_at: "2026-08-01",
+      signer_name: "샘플대표1", note: "원본: 운영지원팀 캐비닛",
+      source: "import", withdrawn_at: null, withdraw_note: null,
+      created_at: tsOffset(-6) },
+    { consent_id: 2, store_id: 2, store: "샘플02점", signed_at: "2026-08-03",
+      signer_name: null, note: null, source: "web",
+      withdrawn_at: null, withdraw_note: null, created_at: tsOffset(-4) },
+    { consent_id: 3, store_id: 3, store: "샘플03점", signed_at: "2026-06-10",
+      signer_name: "샘플대표3", note: null, source: "web",
+      withdrawn_at: tsOffset(-2), withdraw_note: "점주 요청",
+      created_at: tsOffset(-40) },
+];
+let nextConsentId = 4;
 
 let demoPreauths = [
     { id: 1, kind: "compensation", scope: "배달 지연 보상 3만원 이하",
@@ -1242,11 +1346,16 @@ function demoInquiryRows({ p_status, p_routing, p_limit }) {
 // ---- 정산 · 로열티 데모 (41_settlement.sql) -------------------------------
 //
 // 픽스처는 화면에서 확인해야 하는 상태가 한 번에 다 보이게 골랐습니다.
-//   · 최신 달(202607)은 미청구 — '청구 생성·갱신' 버튼의 동작 확인용.
+//   · 최신 달(202607)은 computed 미청구 — '청구 생성·갱신' 버튼의 동작 확인용.
 //     생성하면 납기(2026-08-01)가 이미 지나 전 매장이 미수로 잡힙니다 —
 //     실제로도 청구를 늦게 만들면 그렇게 됩니다(버그 아님).
-//   · 202606: 샘플05점 전액 미납 · 샘플11점 절반 입금(둘 다 미수), 나머지 완납
+//     단 hq 청구 2건은 202607 에 미리 둡니다(아래) — 생성·갱신이 hq 를
+//     안 덮는 것(hq_kept)도 이 달에서 같이 보입니다.
+//   · 202606: 샘플05점 전액 미납 · 샘플11점 절반 입금(둘 다 미수), 나머지 완납.
+//     샘플05점 청구는 스냅샷을 일부러 낡게 둬 '갱신 필요' 배지 확인용.
 //   · 202605: 샘플07점 전액 미납(두 달 연체) — 미수 정렬·지연이자 확인
+//   · 202607 hq 2건(샘플02점·샘플04점): 납기가 앞이라 '기한 전'·'부분 입금'
+//     상태와 '본사 확정' 표기(요율 라벨 없음) 확인용.
 // 계산·거절 규칙은 41_settlement.sql 함수를 그대로 옮깁니다.
 
 const DEMO_SETTLEMENT = { rate_pct: 3.3, due_day: 1, late_pct: 20 };  // settlement_settings 미러
@@ -1306,6 +1415,41 @@ for (let fixtureYm = 202601; fixtureYm <= 202606; fixtureYm++) {
             amount: half ? Math.round(invoice.amount / 2) : invoice.amount,
             note: half ? "CMS 부분 이체" : null, source: "hq",
             canceled_at: null, canceled_note: null,
+        });
+    }
+}
+
+// D1 시연 — 청구 뒤 매출이 소급 수집돼 스냅샷이 어긋난 매장. 샘플05점 202606
+// (미납) 청구를 '옛 매출' 값으로 되돌려 두면 화면에 '갱신 필요' 배지가 뜨고,
+// '청구 생성·갱신'을 누르면 지금 매출로 재계산돼 사라집니다.
+{
+    const stale = demoInvoices.find((i) => i.ym === 202606 && i.store === "샘플05점");
+    if (stale) {
+        stale.sales = Math.round(stale.sales * 0.93);
+        stale.amount = Math.round(stale.sales * DEMO_SETTLEMENT.rate_pct / 100);
+    }
+}
+
+// D3·D6 시연 — 본사(hq) 청구 2건을 202607 에 둡니다. 납기가 아직 앞이라
+//   · 샘플02점(입금 없음) → '기한 전'
+//   · 샘플04점(절반 입금) → '부분 입금'
+// hq 금액은 일부러 매출×요율과 딱 안 맞게 둡니다 — 본사 확정 금액에 요율
+// 라벨을 붙이면 안 되는 이유(계산이 안 맞음)가 화면에서 그대로 보입니다.
+for (const [hqName, hqHalf] of [["샘플02점", false], ["샘플04점", true]]) {
+    const hqStore = STORES.find((s) => s.name === hqName);
+    const hqSales = demoStoreSales(202607, hqStore);
+    if (!hqSales) continue;
+    const hqInvoice = {
+        id: nextInvoiceId++, ym: 202607, store: hqName, sales: hqSales,
+        amount: Math.round(hqSales * DEMO_SETTLEMENT.rate_pct / 100) + 137,
+        due_date: dateOffset(14), source: "hq",
+    };
+    demoInvoices.push(hqInvoice);
+    if (hqHalf) {
+        demoPayments.push({
+            id: nextPaymentId++, invoice_id: hqInvoice.id, paid_on: dateOffset(-2),
+            amount: Math.round(hqInvoice.amount / 2), note: "CMS 1차",
+            source: "hq", canceled_at: null, canceled_note: null,
         });
     }
 }
@@ -2236,6 +2380,14 @@ const HANDLERS = {
             business_start_date: args.p_business_start_date || null,
             imported_at: null, updated_at: new Date().toISOString(),
         });
+        // 실제 함수(79)처럼 영업시작일이 있으면 오픈 이벤트도 같이 남깁니다
+        // — 큐 #104 진단 [A]. event_date 는 등록일이 아니라 영업시작일.
+        if (args.p_business_start_date) {
+            storeLifecycleEvents.push({
+                id: nextLifecycleId++, store: name, event_type: "open",
+                event_date: args.p_business_start_date, note: "신규 매장 등록(웹)",
+            });
+        }
         return { ok: true, store_id: id, store_name: name };
     },
 
@@ -2325,14 +2477,18 @@ const HANDLERS = {
         for (const a of demoInquiryAnswers) {
             byStatus[a.status] = (byStatus[a.status] || 0) + 1;
         }
-        const answered = demoInquiryAnswers.filter((a) => a.routing === "answer").length;
+        // 자동 응대율은 행이 아니라 **문의(task_id) 단위** — 반려 이력이 분자·
+        // 분모를 같이 불리지 않게 (79_stats_accuracy 미러).
+        const allTasks = new Set(demoInquiryAnswers.map((a) => a.task_id));
+        const answeredTasks = new Set(demoInquiryAnswers
+            .filter((a) => a.routing === "answer").map((a) => a.task_id));
         return {
             by_status: byStatus,
             pending: demoInquiryAnswers.filter(
                 (a) => a.status === "draft" && a.routing === "answer").length,
             escalated: demoInquiryAnswers.filter((a) => a.routing === "escalate").length,
-            answer_rate: demoInquiryAnswers.length
-                ? Math.round(1000 * answered / demoInquiryAnswers.length) / 10 : null,
+            answer_rate: allTasks.size
+                ? Math.round(1000 * answeredTasks.size / allTasks.size) / 10 : null,
         };
     },
     // 38_inquiry_answers.sql 의 거절 조건을 그대로 옮긴 것입니다.
@@ -2534,49 +2690,113 @@ const HANDLERS = {
           error: "알림톡 제공자 미구성", task_id: null },
     ].slice(0, Number(p_limit) || 200),
 
-    // 65_hq_imports.sql — 수신처 목록. 본사 명단을 반입하면 이 모양이 됩니다
-    // (import_recipients.py 가 한 사람을 '받을 것마다 한 줄' 로 폅니다).
-    // 꺼진 행도 하나 섞어 '사용/꺼짐' 이 화면에서 갈리는지 봅니다.
+    // 65_hq_imports.sql — 수신처 목록. 상태는 위 demoRecipients 입니다.
     api_notify_recipients: () => ({
-        items: [
-            { id: 1, kind: "report", channel: "mail", recipient: "sv1@demo.example",
-              display_name: "샘플 SV1", sv_name: "샘플 SV1", enabled: true,
-              note: "슈퍼바이저", updated_at: tsOffset(-1) },
-            { id: 2, kind: "review_alert", channel: "mail", recipient: "ops@demo.example",
-              display_name: "샘플 팀장", sv_name: null, enabled: true,
-              note: "운영지원팀 팀장", updated_at: tsOffset(-1) },
-            { id: 3, kind: "notice", channel: "mail", recipient: "ops@demo.example",
-              display_name: "샘플 팀장", sv_name: null, enabled: true,
-              note: "운영지원팀 팀장", updated_at: tsOffset(-1) },
-            { id: 4, kind: "store_close", channel: "mail", recipient: "sv2@demo.example",
-              display_name: "샘플 SV2", sv_name: "샘플 SV2", enabled: false,
-              note: "휴직 중", updated_at: tsOffset(-3) },
-        ],
-        enabled: 3,
-        total: 4,
+        items: demoRecipients.map((r) => ({ ...r })),
+        enabled: demoRecipients.filter((r) => r.enabled).length,
+        total: demoRecipients.length,
     }),
 
-    // 42_consents.sql + 65(source). 본사 명단 반입분과 웹 기록, 철회 이력이
-    // 화면에서 갈려 보이는지 확인하는 그림입니다.
-    api_review_reply_consents: ({ p_include_withdrawn }) => {
-        const items = [
-            { consent_id: 1, store_id: 1, store: "샘플01점", signed_at: "2026-08-01",
-              signer_name: "샘플대표1", note: "원본: 운영지원팀 캐비닛",
-              source: "import", withdrawn_at: null, withdraw_note: null,
-              created_at: tsOffset(-6) },
-            { consent_id: 2, store_id: 2, store: "샘플02점", signed_at: "2026-08-03",
-              signer_name: null, note: null, source: "web",
-              withdrawn_at: null, withdraw_note: null, created_at: tsOffset(-4) },
-            { consent_id: 3, store_id: 3, store: "샘플03점", signed_at: "2026-06-10",
-              signer_name: "샘플대표3", note: null, source: "web",
-              withdrawn_at: tsOffset(-2), withdraw_note: "점주 요청",
-              created_at: tsOffset(-40) },
-        ];
-        return {
-            items: p_include_withdrawn ? items : items.filter((c) => !c.withdrawn_at),
-            live: 2,
-            withdrawn: 1,
+    // 72_recipients_web.sql — 사람 단위 저장. 체크한 종류는 켜고(없던 행은
+    // 만들고), 같은 메일의 나머지 종류 행은 끕니다. 검증 규칙 그대로입니다.
+    api_notify_recipient_save: (args) => {
+        const mail = (args.p_recipient || "").trim().toLowerCase();
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) {
+            return { ok: false,
+                     reason: `메일 주소로 보이지 않습니다: ${args.p_recipient || "(빈 값)"}` };
+        }
+        const KINDS = ["review_alert", "notice", "store_close", "announcement", "report"];
+        const kinds = [...new Set(args.p_kinds || [])];
+        const bad = kinds.filter((k) => !KINDS.includes(k));
+        if (bad.length) return { ok: false, reason: "모르는 종류입니다: " + bad.join(", ") };
+        if (!kinds.length) return { ok: false, reason: "받을 것을 하나 이상 골라 주세요." };
+        const values = {
+            display_name: (args.p_display_name || "").trim() || null,
+            sv_name: (args.p_sv_name || "").trim() || null,
+            note: (args.p_note || "").trim() || null,
         };
+        let on = 0;
+        for (const k of kinds) {
+            let row = demoRecipients.find(
+                (r) => r.channel === "mail" && r.recipient === mail && r.kind === k);
+            if (!row) {
+                row = { id: nextRecipientId++, kind: k, channel: "mail", recipient: mail };
+                demoRecipients.push(row);
+            }
+            Object.assign(row, values,
+                          { enabled: true, updated_at: new Date().toISOString() });
+            on += 1;
+        }
+        let off = 0;
+        for (const r of demoRecipients) {
+            if (r.channel === "mail" && r.recipient === mail
+                && r.enabled && !kinds.includes(r.kind)) {
+                r.enabled = false;
+                r.updated_at = new Date().toISOString();
+                off += 1;
+            }
+        }
+        return { ok: true, recipient: mail, kinds_on: on, kinds_off: off };
+    },
+
+    // 72_recipients_web.sql — 켜기/끄기(행 단위).
+    api_notify_recipient_toggle: ({ p_id, p_enabled }) => {
+        const row = demoRecipients.find((r) => r.id === Number(p_id));
+        if (!row) return { ok: false, reason: "그런 수신처가 없습니다" };
+        row.enabled = !!p_enabled;
+        row.updated_at = new Date().toISOString();
+        return { ok: true, id: row.id, kind: row.kind,
+                 recipient: row.recipient, enabled: row.enabled };
+    },
+
+    // 42_consents.sql + 65(source). 상태는 위 demoConsents 입니다.
+    // 정렬은 실제 함수와 같습니다 — 살아 있는 것 먼저, 매장 이름순, 새 것 먼저.
+    api_review_reply_consents: ({ p_include_withdrawn }) => {
+        const items = demoConsents
+            .filter((c) => p_include_withdrawn || !c.withdrawn_at)
+            .map((c) => ({ ...c }))
+            .sort((a, b) => (a.withdrawn_at ? 1 : 0) - (b.withdrawn_at ? 1 : 0)
+                || a.store.localeCompare(b.store)
+                || b.consent_id - a.consent_id);
+        return {
+            items,
+            live: demoConsents.filter((c) => !c.withdrawn_at).length,
+            withdrawn: demoConsents.filter((c) => c.withdrawn_at).length,
+        };
+    },
+
+    // 42_consents.sql — 동의 기록. 살아 있는 동의는 매장당 하나(재동의는
+    // 철회 뒤에만) 규칙 그대로입니다.
+    record_review_reply_consent: (args) => {
+        const name = (args.p_store || "").trim();
+        const store = STORES.find((s) => s.name === name);
+        if (!store) {
+            return { ok: false, reason: `매장을 찾지 못했습니다: ${name || "(빈 값)"}` };
+        }
+        if (demoConsents.some((c) => c.store_id === store.id && !c.withdrawn_at)) {
+            return { ok: false,
+                     reason: "이미 살아 있는 동의가 있습니다 — 재동의는 철회 뒤에만 됩니다" };
+        }
+        const id = nextConsentId++;
+        demoConsents.push({
+            consent_id: id, store_id: store.id, store: store.name,
+            signed_at: args.p_signed_at || new Date().toISOString().slice(0, 10),
+            signer_name: (args.p_signer || "").trim() || null,
+            note: (args.p_note || "").trim() || null,
+            source: "web", withdrawn_at: null, withdraw_note: null,
+            created_at: new Date().toISOString(),
+        });
+        return { ok: true, consent_id: id };
+    },
+
+    // 42_consents.sql — 철회. 지우지 않고 withdrawn_at 을 찍습니다.
+    withdraw_review_reply_consent: ({ p_consent_id, p_note }) => {
+        const row = demoConsents.find((c) => c.consent_id === Number(p_consent_id));
+        if (!row) return { ok: false, reason: "동의를 찾지 못했습니다" };
+        if (row.withdrawn_at) return { ok: false, reason: "이미 철회된 동의입니다" };
+        row.withdrawn_at = new Date().toISOString();
+        row.withdraw_note = (p_note || "").trim() || null;
+        return { ok: true };
     },
 
     // 48_ad_spend.sql — jsonb 스칼라(객체) 그대로.
@@ -2643,6 +2863,40 @@ const HANDLERS = {
 
     // 32_recipes.sql — returns table(items jsonb) 이라 [{items: [...]}] 모양.
     api_recipes: () => [{ items: DEMO_RECIPES.map((r) => ({ ...r })) }],
+
+    // 58_menu_recipes.sql (+79 부피 노출) — jsonb 배열 한 줄.
+    api_menu_recipes: ({ p_menu, p_include_deco } = {}) =>
+        DEMO_MENU_RECIPES
+            .filter((r) => (!p_menu || r.menu === p_menu) && (p_include_deco || !r.deco))
+            .map((r) => ({ ...r })),
+
+    api_supply_products: () => DEMO_SUPPLY_PRODUCTS.map((r) => ({ ...r })),
+
+    // 실제 함수와 같은 규칙(데코 제외)으로 데모 행에서 그대로 계산합니다.
+    api_menu_recipe_status: () => {
+        const live = DEMO_MENU_RECIPES.filter((r) => !r.deco);
+        const byStatus = {};
+        for (const menu of new Set(live.map((r) => r.menu))) {
+            const status = live.find((r) => r.menu === menu).status;
+            byStatus[status] = (byStatus[status] || 0) + 1;
+        }
+        const pending = new Map();
+        for (const r of live.filter((r) => r.grams == null)) {
+            const key = r.unit_hint || "(없음)";
+            pending.set(key, (pending.get(key) || 0) + 1);
+        }
+        return {
+            menus: new Set(live.map((r) => r.menu)).size,
+            lines: live.length,
+            grams_known: live.filter((r) => r.grams != null).length,
+            by_status: byStatus,
+            pending_units: [...pending.entries()]
+                .map(([unit_hint, lines]) => ({ unit_hint, lines }))
+                .sort((a, b) => b.lines - a.lines),
+            supply_products: DEMO_SUPPLY_PRODUCTS.length,
+            supply_with_code: DEMO_SUPPLY_PRODUCTS.filter((p) => p.code != null).length,
+        };
+    },
 
     // 56_oilday_check.sql — 오일데이 원복 점검(QUEUE #62). 행사 다음 날
     // 스냅샷에서 반값 이벤트 상품이 켜진 채 남은 매장 2곳이 보이는 그림
@@ -2980,7 +3234,13 @@ const HANDLERS = {
 };
 
 export function demoClient() {
-    const session = { user: { email: "데모 모드 (가짜 데이터)" } };
+    // id·이름은 방문·점검 화면이 씁니다 — 방문자 기본값(user_metadata.name)과
+    // 내 기록 판별(id, 수정·삭제 버튼). 위 storeVisits 픽스처의 "demo-user" 짝.
+    const session = { user: {
+        id: "demo-user",
+        email: "데모 모드 (가짜 데이터)",
+        user_metadata: { name: "박SV" },
+    } };
 
     // 데모용 수집 요청 목록. 새로고침하면 사라집니다.
     let nextId = 41;
@@ -3000,6 +3260,18 @@ export function demoClient() {
         // 리뷰 요청이 실패했을 때 화면에 다음 행동 안내가 붙는지 보는 픽스처(큐 #8).
         // 에러 문구는 agent/mitaly_cloud_agent.py handle_review_request() 의
         // "수집한 채널이 없습니다. 실패: ..." (전 채널 실패 → status=failed) 그대로.
+        // 좀비 running 픽스처(큐 #107 F4) — 러너가 죽어 '실행 중' 으로 굳은
+        // 요청. 취소 버튼이 보이고, 누르면 '취소됨' 으로 바뀌는지 확인합니다.
+        {
+            id: 38,
+            requested_at: new Date(Date.now() - 4 * 3600_000).toISOString(),
+            plugins: ["baemin", "coupangeats"],
+            date_from: "2026-07-01", date_to: "2026-07-31",
+            stores: [], profiles: [],
+            status: "running", progress: "배민 수집 중 (3/93)", error: null,
+            finished_at: null,
+            log_tail: "[1/2] baemin 수집 중\n  매장 3/93 진행\n(이후 기록 없음)",
+        },
         {
             id: 39,
             kind: "reviews",
@@ -3075,6 +3347,7 @@ export function demoClient() {
                         cooking_note: row.cooking_note || null,
                         owner_meeting_note: row.owner_meeting_note || null,
                         special_note: row.special_note || null,
+                        created_by: row.created_by || null,
                     });
                     return { data: null, error: null };
                 }
@@ -3130,6 +3403,34 @@ export function demoClient() {
                 });
                 return { data: null, error: null };
             },
+            // 방문 기록 수정·삭제(진단 #101 [F])가 쓰는 최소한의 체인 —
+            // .update({...}).eq("id", n) / .delete().eq("id", n) 만 받습니다.
+            update: (row) => ({
+                eq: async (_col, val) => {
+                    if (table !== "store_visits") return { data: null, error: null };
+                    const v = storeVisits.find((x) => x.id === Number(val));
+                    if (v) {
+                        const store = STORES.find((s) => s.id === Number(row.store_id));
+                        if (store) v.store = store.name;
+                        v.visited_on = row.visited_on;
+                        v.visited_by = row.visited_by || null;
+                        v.hygiene_note = row.hygiene_note || null;
+                        v.self_purchase_note = row.self_purchase_note || null;
+                        v.cooking_note = row.cooking_note || null;
+                        v.owner_meeting_note = row.owner_meeting_note || null;
+                        v.special_note = row.special_note || null;
+                    }
+                    return { data: null, error: null };
+                },
+            }),
+            delete: () => ({
+                eq: async (_col, val) => {
+                    if (table === "store_visits") {
+                        storeVisits = storeVisits.filter((x) => x.id !== Number(val));
+                    }
+                    return { data: null, error: null };
+                },
+            }),
         };
         // .limit() 없이 바로 await 하는 경우도 대비합니다.
         chain.then = (resolve, reject) => chain.limit().then(resolve, reject);
@@ -3146,6 +3447,23 @@ export function demoClient() {
         },
         from: builder,
         rpc: async (name, args = {}) => {
+            // 수집 요청 취소(79_cancel_request.sql 의 api_cancel_request).
+            // 데모 요청 목록(requests)이 이 클로저 안에 있어 HANDLERS 로 못
+            // 뺍니다 — 실제 함수처럼 pending/running 만 취소합니다.
+            if (name === "api_cancel_request") {
+                await new Promise((r) => setTimeout(r, 60));
+                const row = requests.find((q) => q.id === Number(args.p_id));
+                if (!row || !["pending", "running"].includes(row.status)) {
+                    return { data: { ok: false,
+                        message: "대기 중이거나 실행 중인 요청만 취소할 수 있습니다" },
+                        error: null };
+                }
+                row.status = "canceled";
+                row.finished_at = new Date().toISOString();
+                row.error = (row.error ? row.error + " · " : "")
+                    + "웹에서 취소함 (데모 모드)";
+                return { data: { ok: true, id: row.id }, error: null };
+            }
             const handler = HANDLERS[name];
             if (!handler) return { data: null, error: { message: `알 수 없는 함수: ${name}` } };
             // 실제 네트워크처럼 약간 지연시켜 로딩 처리도 확인합니다.

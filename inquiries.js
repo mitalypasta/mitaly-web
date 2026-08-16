@@ -22,19 +22,24 @@ import { TASK_SOURCE_LABEL } from "./tasks.js";
 //   생성기가 발췌(excerpt)를 같이 남깁니다.
 
 let inquiryRows = [];
+let inquirySummary = null;   // api_inquiry_answer_summary 마지막 응답 — 총건수 계산에 씁니다
 
 export async function initInquiries() {
     $("iq-filter").addEventListener("change", refreshInquiries);
-    $("iq-hide-escalated").addEventListener("change", drawInquiries);
+    // 이관 숨김은 서버 필터(p_routing)라 다시 그리는 것이 아니라 다시 받아야 합니다.
+    $("iq-hide-escalated").addEventListener("change", refreshInquiries);
     initInquiryActions();
     await refreshInquiries();
 }
 
-async function refreshInquiries() {
+export async function refreshInquiries() {
     const status = $("iq-filter").value;
+    // 이관 숨김이 켜지면 p_routing='answer' 로 서버에서 거릅니다. 화면에서만
+    // 거르면 100건 상한을 이관 초안이 차지해, 정작 사람이 답해야 할 answer
+    // 초안이 fetch 에서 통째로 밀려납니다 (p_routing 은 38 이 원래 지원).
     const { data, error } = await db.rpc("api_inquiry_answers", {
         p_status: status || null,
-        p_routing: null,
+        p_routing: $("iq-hide-escalated").checked ? "answer" : null,
         p_limit: 100,
     });
     if (error) {
@@ -44,13 +49,15 @@ async function refreshInquiries() {
         return;
     }
     inquiryRows = Array.isArray(data) ? data : [];
+    // 요약을 먼저 받아야 drawInquiries 가 총건수(잘림 표시)를 압니다.
+    await refreshInquirySummary();
     drawInquiries();
-    refreshInquirySummary();
 }
 
 async function refreshInquirySummary() {
     const { data, error } = await db.rpc("api_inquiry_answer_summary");
     if (error) return;
+    inquirySummary = data;
     const rate = data.answer_rate;
     $("inquiry-summary").textContent =
         `검토 대기 ${int(data.pending)}건 · 이관 ${int(data.escalated)}건`
@@ -62,13 +69,31 @@ async function refreshInquirySummary() {
     if (homeInquiry) homeInquiry.textContent = int(data.pending);
 }
 
-function drawInquiries() {
-    const hideEscalated = $("iq-hide-escalated").checked;
-    const rows = inquiryRows.filter((r) => !hideEscalated || r.routing !== "escalate");
+// 현재 필터 조합의 서버 총건수 — 목록이 p_limit(100)에서 잘렸는지 보이게
+// 합니다(프로젝트가 반복해 데인 '조용한 잘림'). 요약(by_status·pending·
+// escalated)에서 유도하므로 새 SQL 이 필요 없습니다.
+// 이관 건은 화면에 승인·반려 버튼이 없어 전부 draft 로 남습니다 — 그래서
+// draft 는 pending(= draft ∧ answer)으로, 나머지 상태는 by_status 그대로가
+// '이관 제외' 총계와 같습니다.
+function inquiryTotalCount(status, hideEscalated) {
+    const s = inquirySummary;
+    if (!s || !s.by_status) return null;
+    const num = (v) => Number(v) || 0;
+    const total = Object.values(s.by_status).reduce((a, b) => a + num(b), 0);
+    if (!hideEscalated) return status ? num(s.by_status[status]) : total;
+    if (!status) return total - num(s.escalated);
+    return status === "draft" ? num(s.pending) : num(s.by_status[status]);
+}
 
-    $("iq-shown").textContent = rows.length === inquiryRows.length
-        ? `${int(rows.length)}건`
-        : `전체 ${int(inquiryRows.length)}건 중 ${int(rows.length)}건`;
+function drawInquiries() {
+    const rows = inquiryRows;   // 이관 숨김은 서버 필터(p_routing)로 이미 걸렀습니다
+    const total = inquiryTotalCount($("iq-filter").value, $("iq-hide-escalated").checked);
+
+    $("iq-shown").textContent = total != null && total > rows.length
+        ? `전체 ${int(total)}건 중 최근 ${int(rows.length)}건`
+        : (total == null && rows.length >= 100
+            ? `최근 ${int(rows.length)}건 — 더 있을 수 있습니다`
+            : `${int(rows.length)}건`);
 
     if (!rows.length) {
         $("iq-list").innerHTML =

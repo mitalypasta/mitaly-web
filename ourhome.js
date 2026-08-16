@@ -13,6 +13,13 @@ import { table, $ } from "./dom.js";
 let ohRangeReady = false;
 let ohStoresReady = false;
 
+// 이론 사용량 카드의 기본창(최근 3개월, 49 설계 [3])과 같은 계산입니다.
+// 두 카드는 원래 대조용이라 기본창이 어긋나면 숫자가 안 맞아 보입니다 (큐 #102 [F]).
+const shiftYm = (ym, months) => {
+    const total = Math.floor(ym / 100) * 12 + (ym % 100 - 1) + months;
+    return Math.floor(total / 12) * 100 + (total % 12) + 1;
+};
+
 export async function initOurhome() {
     for (const id of ["oh-from", "oh-to", "oh-store"]) {
         $(id).addEventListener("change", refreshOurhome);
@@ -63,6 +70,17 @@ async function refreshOurhome() {
         }
         $("oh-from").value = String(d.from_ym);
         $("oh-to").value = String(d.to_ym);
+
+        // 서버 기본은 최근 1개월(59 머리말 — 18개월 기본이 무거워서)입니다.
+        // 이론 사용량 기본창(최근 3개월)과 맞추되, 넓히는 쪽은 화면에서 합니다
+        // ([F] — 서버 기본을 넓히면 prod 함수를 손대야 해서). 자료가 3개월이
+        // 안 되면 있는 만큼만.
+        const wantFrom = Math.max(shiftYm(d.to_ym, -2), d.ym_min);
+        if (wantFrom < d.from_ym) {
+            $("oh-from").value = String(wantFrom);
+            await refreshOurhome();
+            return;
+        }
     }
 
     const stores = Array.isArray(d.stores) ? d.stores : [];

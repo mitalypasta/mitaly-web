@@ -55,25 +55,36 @@ async function loadConsents() {
 async function saveConsent() {
     const notice = $("cs-notice");
     notice.textContent = "";
-    const { data, error } = await db.rpc("record_review_reply_consent", {
-        p_store: $("cs-store").value,
-        p_signed_at: $("cs-date").value || null,
-        p_signer: $("cs-signer").value,
-        p_note: $("cs-note").value,
-    });
-    if (error) {
-        notice.textContent = "기록하지 못했습니다: " + error.message;
-        return;
+    // RPC 대기 중 버튼을 잠급니다 — 더블클릭이 겹치면 중복 동의 시도가
+    // 서버 거절('이미 살아 있는 동의')로 튀어 나옵니다(행 버튼들과 같은 패턴).
+    const button = $("cs-save");
+    button.disabled = true;
+    try {
+        const { data, error } = await db.rpc("record_review_reply_consent", {
+            p_store: $("cs-store").value,
+            p_signed_at: $("cs-date").value || null,
+            p_signer: $("cs-signer").value,
+            p_note: $("cs-note").value,
+        });
+        if (error) {
+            notice.textContent = "기록하지 못했습니다: " + error.message;
+            return;
+        }
+        if (!data?.ok) {
+            notice.textContent = data?.reason || "기록하지 못했습니다.";
+            return;
+        }
+        notice.textContent = `동의를 기록했습니다 — ${$("cs-store").value.trim()}`;
+        $("cs-store").value = "";
+        $("cs-signer").value = "";
+        $("cs-note").value = "";
+        // 동의일도 비웁니다 — 남겨 두면 다음 매장 기록에 앞 매장의 동의일이
+        // 잘못 붙습니다('다시 동의' 흐름이 날짜를 비우는 것과 같은 이유).
+        $("cs-date").value = "";
+        await loadConsents();
+    } finally {
+        button.disabled = false;
     }
-    if (!data?.ok) {
-        notice.textContent = data?.reason || "기록하지 못했습니다.";
-        return;
-    }
-    notice.textContent = `동의를 기록했습니다 — ${$("cs-store").value.trim()}`;
-    $("cs-store").value = "";
-    $("cs-signer").value = "";
-    $("cs-note").value = "";
-    await loadConsents();
 }
 
 export async function initConsents() {

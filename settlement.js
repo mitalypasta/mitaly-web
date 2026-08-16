@@ -1,7 +1,7 @@
 // 정산 · 로열티 (3번 영역, 41_settlement.sql) — app.js 에서 뽑아낸
 // shell 분리 조각 (docs/web-split-plan.md). 기간 범위는 S.filterRange 를 읽습니다.
 
-import { won, wonFull, int, ymLabel } from "./format.js";
+import { wonFull, int, ymLabel } from "./format.js";
 import { escape, monthsBetween } from "./util.js";
 import { $, table } from "./dom.js";
 import { db } from "./client.js";
@@ -44,11 +44,23 @@ export function initSettlement() {
 
 function settleYm() { return Number($("st-ym").value) || null; }
 
+// "YYYY-MM-DD" + n일. new Date("YYYY-MM-DD") 는 UTC 자정으로 읽히므로 UTC
+// 게터로만 다뤄야 KST 에서 하루 밀리지 않습니다.
+function dateAddDays(iso, days) {
+    const d = new Date(iso);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+}
+
 function settleStatusTag(status) {
     const label = escape(status);
     if (status === "미수") return `<span class="tag warn">${label}</span>`;
     if (status === "완납") return `<span class="tag up">${label}</span>`;
     if (status === "미청구") return `<span class="tag h-warn">${label}</span>`;
+    // 서버가 내는 나머지 두 상태도 전용 색을 받습니다 — 회색 기본 태그로
+    // 뭉개지면 '부분 입금'(돈이 들어오는 중)이 눈에 안 띕니다.
+    if (status === "부분 입금") return `<span class="tag st-partial">${label}</span>`;
+    if (status === "기한 전") return `<span class="tag st-early">${label}</span>`;
     return `<span class="tag">${label}</span>`;
 }
 
@@ -60,6 +72,8 @@ async function refreshSettlementMonth() {
     const { data, error } = await db.rpc("api_royalty_month", { p_ym: ym });
     if (error) {
         stRows = [];
+        $("st-drift").hidden = true;
+        $("st-unbilled-warn").hidden = true;
         $("t-settlement").innerHTML =
             '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + "</p>";
         return;
@@ -70,12 +84,42 @@ async function refreshSettlementMonth() {
 
     $("st-month-meta").textContent =
         `요율 ${d.rate_pct}% · 납기 ${d.due_date || "—"} — 본사가 정합니다`;
-    $("st-outstanding").textContent = won(t.outstanding) + "원";
+    // 정산은 대사(맞춰보기) 화면이라 금액 타일도 표 셀처럼 원 단위 정확 표기
+    // 입니다 — 만/억 반올림(won)은 다른 화면의 매출 헤드라인에만 씁니다.
+    $("st-outstanding").textContent = wonFull(t.outstanding);
     $("st-outstanding-sub").textContent = `미수 매장 ${int(t.overdue_stores)}곳`;
-    $("st-billed").textContent = won(t.billed) + "원";
+    $("st-billed").textContent = wonFull(t.billed);
     $("st-billed-sub").textContent = `청구 ${int(t.billed_stores)}곳`;
-    $("st-paid").textContent = won(t.paid) + "원";
+    $("st-paid").textContent = wonFull(t.paid);
     $("st-unbilled").textContent = int(t.unbilled_stores);
+
+    // 스냅샷 어긋남 — 청구는 생성 시점 매출 스냅샷(billed_sales)이고 '매출액'
+    // 열은 live 라, 청구 뒤 매출이 소급 수집되면 한 행 안에서 계산이 안 맞게
+    // 됩니다. 신호가 없으면 언제 '청구 생성·갱신'을 눌러야 하는지 알 수 없어
+    // 행 배지 + 상단 안내로 알립니다(hq 청구는 본사 확정값이라 비교 대상 아님).
+    const driftIds = new Set(stRows
+        .filter((s) => s.invoice_id != null && s.source === "computed"
+            && s.billed_sales != null && s.sales_amount != null
+            && Number(s.billed_sales) !== Number(s.sales_amount))
+        .map((s) => s.invoice_id));
+    const drift = $("st-drift");
+    drift.hidden = driftIds.size === 0;
+    if (driftIds.size) {
+        drift.textContent = `청구가 현재 매출과 다른 매장 ${int(driftIds.size)}곳 — `
+            + "청구 뒤에 매출이 소급 수집됐습니다. '청구 생성·갱신'을 누르면 "
+            + "지금 매출로 다시 계산됩니다.";
+    }
+
+    // 청구가 안 만들어진 매장은 미납이어도 미수 목록에 영영 안 잡힙니다.
+    // 자동 생성 배치가 없는 동안은 이 안내가 유일한 신호입니다.
+    const unbilledWarn = $("st-unbilled-warn");
+    unbilledWarn.hidden = !(t.unbilled_stores > 0);
+    if (t.unbilled_stores > 0) {
+        unbilledWarn.textContent = (t.billed_stores > 0
+                ? `이 달 매출 매장 ${int(t.stores)}곳 중 ${int(t.unbilled_stores)}곳은 청구가 없습니다`
+                : "이 달은 청구가 아직 생성되지 않았습니다")
+            + " — 미납이어도 미수 목록에 잡히지 않습니다. '청구 생성·갱신'을 누르세요.";
+    }
 
     // 입금 폼의 매장 목록 = 이 달 청구가 있는 매장. 선택은 유지합니다.
     const paySelect = $("pay-invoice");
@@ -106,7 +150,15 @@ async function refreshSettlementMonth() {
             s.sales_amount != null ? wonFull(s.sales_amount) : "—",
             s.invoice_id != null
                 ? wonFull(s.billed_amount)
-                    + `<div class="meta">요율 ${escape(String(s.rate_pct))}%</div>`
+                    // hq 금액은 매출×요율 계산이 아닐 수 있어 요율 라벨을 붙이면
+                    // "이 요율로 계산됐다"는 오해가 됩니다 — '본사 확정'으로 갈랐습니다.
+                    + (s.source === "hq"
+                        ? '<div class="meta">본사 확정</div>'
+                        : `<div class="meta">요율 ${escape(String(s.rate_pct))}%</div>`)
+                    + (driftIds.has(s.invoice_id)
+                        ? '<div><span class="tag h-warn">갱신 필요</span>'
+                            + `<div class="meta">청구 당시 매출 ${wonFull(s.billed_sales)}</div></div>`
+                        : "")
                 // 생성 전 미리보기 — 서버와 같은 규칙(round(매출×요율/100))입니다.
                 : `<span class="meta">예상 ${wonFull(Math.round((s.sales_amount || 0) * (d.rate_pct || 0) / 100))}</span>`,
             s.source ? escape(SETTLE_SOURCE_LABEL[s.source] || s.source) : "—",
@@ -172,6 +224,24 @@ async function submitPayment() {
         return;
     }
 
+    // 입금일이 청구 연월과 동떨어지면 확인을 받습니다 — 막지는 않습니다
+    // (실제로 소급 기록·오래된 미수의 뒤늦은 입금이 있습니다). 서버
+    // (record_royalty_payment)는 날짜 존재만 보므로 여기서 잡아야 합니다.
+    const paidOn = $("pay-date").value;
+    const row = stRows.find((s) => s.invoice_id === invoiceId);
+    const ym = settleYm();
+    if (row && ym) {
+        const ymStart = `${String(ym).slice(0, 4)}-${String(ym).slice(4, 6)}-01`;
+        const warn = paidOn < ymStart
+            ? `입금일(${paidOn})이 청구 연월(${ymLabel(ym)})보다 앞입니다.`
+            : row.due_date && paidOn > dateAddDays(row.due_date, 365)
+                ? `입금일(${paidOn})이 납기(${row.due_date})보다 1년 넘게 뒤입니다.`
+                : null;
+        if (warn && !window.confirm(warn + " 날짜가 맞는지 확인하세요. 그대로 기록할까요?")) {
+            return;
+        }
+    }
+
     button.disabled = true;
     notice.className = "notice";
     notice.textContent = "기록하는 중…";
@@ -199,6 +269,30 @@ async function submitPayment() {
     $("pay-amount").value = "";
     $("pay-note").value = "";
     await Promise.all([refreshSettlementMonth(), refreshReceivables()]);
+}
+
+// 미수 목록 → 그 달 월뷰로 전환하고 입금 폼에 청구를 채웁니다. 그 달이 월
+// 선택(filterRange) 밖이면 항목을 만들어 끼웁니다 — 청구는 남아 있는데 매출
+// 조회 범위가 좁혀진 옛 달도 입금을 넣을 수 있어야 합니다.
+async function jumpToPayment(ym, invoiceId) {
+    if (!ym || !invoiceId) return;
+    const sel = $("st-ym");
+    if (![...sel.options].some((o) => o.value === String(ym))) {
+        const option = document.createElement("option");
+        option.value = String(ym);
+        option.textContent = ymLabel(ym);
+        // 목록은 최신 달부터(내림차순)라 첫 번째 더 작은 달 앞에 끼웁니다.
+        const before = [...sel.options].find((o) => Number(o.value) < ym);
+        sel.insertBefore(option, before || null);
+    }
+    sel.value = String(ym);
+    await refreshSettlementMonth();
+    const paySelect = $("pay-invoice");
+    if ([...paySelect.options].some((o) => o.value === String(invoiceId))) {
+        paySelect.value = String(invoiceId);
+    }
+    $("pay-amount").focus();
+    $("settlement-payment-card").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function showSettlementPayments(invoiceId) {
@@ -265,6 +359,12 @@ function initSettlementActions() {
     });
 
     $("t-receivables").addEventListener("click", async (event) => {
+        const payButton = event.target.closest("button[data-act='recv-pay']");
+        if (payButton) {
+            await jumpToPayment(Number(payButton.dataset.ym),
+                                Number(payButton.dataset.invoiceId));
+            return;
+        }
         const button = event.target.closest("button[data-act='request-notice']");
         if (!button) return;
         const ok = window.confirm(
@@ -311,7 +411,7 @@ async function refreshReceivables() {
     }
 
     table($("t-receivables"),
-        ["매장", "연월", "청구액", "입금", "미수", "납기", "연체", "지연이자(참고)", "발송 승인"],
+        ["매장", "연월", "청구액", "입금", "미수", "납기", "연체", "지연이자(참고)", "처리"],
         items.map((r) => [
             escape(r.store),
             ymLabel(r.ym),
@@ -323,12 +423,16 @@ async function refreshReceivables() {
             r.late_interest_est == null ? "—"
                 : wonFull(r.late_interest_est)
                     + `<div class="meta">연 ${escape(String(d.late_interest_pct_year))}%</div>`,
-            r.notice_task_id
-                ? taskStatusTag(r.notice_task_status)
-                    + `<div class="meta">업무 #${int(r.notice_task_id)}</div>`
-                : `<button class="ghost" data-act="request-notice"`
-                    + ` data-invoice-id="${r.invoice_id}" data-store="${escape(r.store)}"`
-                    + ` data-ym="${r.ym}" data-outstanding="${r.outstanding}">발송 승인 요청</button>`,
+            // '입금' 은 그 달 월뷰로 전환해 입금 폼을 채웁니다 — 연체 매장
+            // 입금을 넣으려고 월 선택을 손으로 되짚는 왕복을 없앱니다.
+            `<button class="ghost" data-act="recv-pay"`
+                + ` data-invoice-id="${r.invoice_id}" data-ym="${r.ym}">입금</button> `
+                + (r.notice_task_id
+                    ? taskStatusTag(r.notice_task_status)
+                        + `<div class="meta">업무 #${int(r.notice_task_id)}</div>`
+                    : `<button class="ghost" data-act="request-notice"`
+                        + ` data-invoice-id="${r.invoice_id}" data-store="${escape(r.store)}"`
+                        + ` data-ym="${r.ym}" data-outstanding="${r.outstanding}">발송 승인 요청</button>`),
         ]),
         { html: true });
 }

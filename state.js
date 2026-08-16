@@ -12,4 +12,8 @@ export const S = {
     credPass: null,
     // 점주 연락처 2차 암호. 위와 같은 규칙 (contacts.js).
     ctPass: null,
+    // 지금 보이는 업무 영역("home"·"collect"…). showArea(nav.js)가 쓰고,
+    // 수집 화면의 무한 폴링(app.js refreshRunner/refreshRequests)이 읽어
+    // 영역을 벗어나 있는 동안은 서버 조회를 쉽니다 (큐 #107 F6).
+    area: null,
 };

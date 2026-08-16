@@ -30,6 +30,12 @@ export function showSalesSub(sub) {
         b.classList.toggle("is-on", b.dataset.subGo === sub);
         b.setAttribute("aria-current", b.dataset.subGo === sub ? "true" : "false");
     }
+    // 숨김 해제는 재렌더가 아니라서, 숨긴 채(clientWidth=0) fallback 폭으로
+    // 그려진 SVG 차트가 그대로 굳습니다. 방금 보이게 된 것을 알리기만 하고,
+    // 다시 그릴지는 데이터를 가진 쪽(app.js entry)이 판단합니다 — nav 는
+    // entry 를 import 할 수 없습니다(맨 위 주석). _agent/SALES-DIAGNOSIS.md H2.
+    document.dispatchEvent(new CustomEvent("mitaly:area-shown",
+        { detail: { area: "sales", sub } }));
     window.scrollTo({ top: 0, behavior: "instant" });
 }
 
@@ -37,6 +43,12 @@ export function showArea(area) {
     // 매장 정보에서 나가면 암호를 버립니다(위 credLock 주석 참조).
     if (area !== "stores" && typeof S.credPass !== "undefined" && S.credPass) credLock();
     if (area !== "stores" && typeof S.ctPass !== "undefined" && S.ctPass) ctLock();
+
+    // 수집 화면 폴링(app.js)이 '지금 어느 영역인가' 를 읽습니다 (큐 #107 F6).
+    // entry(app.js)는 여기서 import 할 수 없으므로 상태 + 이벤트로 알립니다 —
+    // 수집 영역에 들어오는 순간 쉬고 있던 폴링이 바로 한 번 돕니다.
+    S.area = area;
+    window.dispatchEvent(new CustomEvent("mitaly:area", { detail: area }));
 
     for (const el of document.querySelectorAll("[data-area]")) {
         el.hidden = el.dataset.area !== area;
@@ -46,6 +58,8 @@ export function showArea(area) {
         b.setAttribute("aria-current", b.dataset.go === area ? "page" : "false");
     }
     if (area === "sales") showSalesSub(salesSub);
+    else document.dispatchEvent(new CustomEvent("mitaly:area-shown",
+        { detail: { area } }));
 
     const salesOnly = area === "sales";
     // 홈 화면의 타일도 위 필터(기간·매장)를 따르므로 필터 줄은 같이 보여줍니다.
@@ -132,7 +146,10 @@ export function initHomeTiles() {
     }
 
     // 이상 신호 목록(급감 매장·부정 리뷰) 행 클릭 — 행이 다시 그려지므로
-    // 컨테이너 한 곳에 위임합니다. 타일과 같은 규칙으로 화면 필터까지 맞춥니다.
+    // 컨테이너 한 곳에 위임합니다. 타일과 같은 규칙으로 화면 필터를 맞추고,
+    // 행에 data-store 가 있으면 전역 매장 필터까지 그 매장으로 좁힙니다 —
+    // "샘플07점 급감"을 눌렀는데 전체 급감 목록에 떨어져 그 매장을 다시
+    // 찾게 하지 않기 위해서입니다('외 N건' 행은 data-store 가 없어 전체로).
     const anoms = document.getElementById("home-card");
     if (anoms) {
         anoms.addEventListener("click", (e) => {
@@ -140,12 +157,24 @@ export function initHomeTiles() {
             if (!row) return;
             showArea(row.dataset.go);
             if (row.dataset.kind === "review") {
+                // 값만 바꿔 둡니다 — 아래 매장 필터 change 가 조회를 다시 부르면
+                // 그 조회가 이 값을 읽습니다(두 번 조회하지 않으려고).
                 $("rv-rating").value = "low";
-                $("rv-rating").dispatchEvent(new Event("change"));
             }
             if (row.dataset.kind === "alert") {
                 $("alerts-only").checked = true;
                 $("alerts-only").dispatchEvent(new Event("change"));
+            }
+            const store = row.dataset.store || "";
+            const storeSelect = $("f-store");
+            const known = store &&
+                [...storeSelect.options].some((o) => o.value === store);
+            if (known) {
+                storeSelect.value = store;
+                storeSelect.dispatchEvent(new Event("change"));
+            } else if (row.dataset.kind === "review") {
+                // 매장을 못 좁히면 별점 필터 변경만 서버에 알립니다(종전 동작).
+                $("rv-rating").dispatchEvent(new Event("change"));
             }
             const card = row.dataset.card;
             requestAnimationFrame(() => {

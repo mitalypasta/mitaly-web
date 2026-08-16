@@ -9,6 +9,7 @@ import { db } from "./client.js";
 import { refreshViolations } from "./notices.js";
 import { refreshAnnouncements } from "./comms.js";
 import { refreshPosMenu, refreshPosMenuSummary, refreshPosMenuRequests } from "./pos.js";
+import { refreshInquiries } from "./inquiries.js";
 
 // ================================================================ 업무 (11번 영역)
 //
@@ -436,15 +437,15 @@ async function saveTaskStore() {
         return;
     }
 
+    // 성공하면 패널을 닫고 입력을 비웁니다 — 열린 채 두면 다음 건을 지정할 때
+    // 앞 매장명이 남아 헷갈립니다. 결과는 갱신된 목록의 매장 칸으로 보입니다.
+    panel.hidden = true;
+    $("task-store-input").value = "";
     notice.className = "notice";
-    notice.textContent = `${data.store_name}으로 지정했습니다.`
-        + (data.retro_updated
-            ? ` 같은 사용자의 과거 접수 ${int(data.retro_updated)}건도 함께 갱신했습니다.`
-            : "")
-        + (data.mapping === "none"
-            ? " (봇 사용자 키가 없는 건이라 이 건에만 적용됩니다)"
-            : "");
-    await refreshTaskList();
+    notice.textContent = "";
+    // 문의 카드(AI 1차 응대)도 같은 접수 건의 store_name 을 실어 보여주므로
+    // 같이 갱신합니다 — 안 부르면 그쪽만 '매장 무관' 으로 남습니다(38 api).
+    await Promise.all([refreshTaskList(), refreshInquiries()]);
 }
 
 async function submitTask() {

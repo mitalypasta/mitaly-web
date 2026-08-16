@@ -160,8 +160,11 @@
             <div class="kpis" id="compare-kpis"></div>
 
             <div class="cardsearch">
+                <!-- 기본 ON: 해제하면 전 매장×채널(정상 포함) 표가 되는데,
+                     prod 규모(94매장)면 180행이 넘어 요약 화면이 통째로
+                     밀립니다(SALES-DIAGNOSIS M4). 판정만 먼저 보여줍니다. -->
                 <label class="recheck">
-                    <input type="checkbox" id="alerts-only">
+                    <input type="checkbox" id="alerts-only" checked>
                     <span>급증·급감 매장만</span>
                 </label>
                 <span class="meta" id="alerts-shown"></span>
@@ -170,7 +173,9 @@
             <div class="tableview tall" id="t-alerts"></div>
         </section>
 
-        <section data-area="sales" data-sub="요약" class="card">
+        <!-- 요약 서브탭에서 반쪽(half) 카드는 이것 하나라 짝이 없어 오른쪽
+             열이 통째로 비었습니다(SALES-DIAGNOSIS M5) — full 로 올립니다. -->
+        <section data-area="sales" data-sub="요약" class="card full">
             <header>
                 <h2>매장별 매출 상위 15곳</h2>
                 <button class="linkish" data-toggle="t-store">표로 보기</button>
@@ -180,7 +185,9 @@
             <div class="tableview" id="t-store" hidden></div>
         </section>
 
-        <section data-area="sales" data-sub="품목" class="card">
+        <!-- 품목 서브탭도 half 가 이것 하나뿐 — 위 '상위 15곳'과 같은 이유로
+             full(M5). -->
+        <section data-area="sales" data-sub="품목" class="card full">
             <header>
                 <h2>메뉴별 매출 상위 15개</h2>
                 <button class="linkish" data-toggle="t-menu">표로 보기</button>
@@ -353,9 +360,12 @@
                 <select id="rv-platform">
                     <option value="">모든 플랫폼</option>
                 </select>
+                <!-- '3점 이하'는 앱 공통의 부정 리뷰 정의입니다(홈 타일·이상신호와
+                     같은 기준). 여기만 4점 이하면 홈에서 눌러 온 사람이 다른
+                     목록을 만납니다 — 바꿀 때는 app.js reviewArgs 와 같이. -->
                 <select id="rv-rating">
                     <option value="">모든 별점</option>
-                    <option value="low">4점 이하만</option>
+                    <option value="low">3점 이하만</option>
                     <option value="high">5점만</option>
                 </select>
                 <span class="meta" id="rv-shown"></span>
@@ -437,8 +447,9 @@
             <span class="meta" id="home-range"></span>
         </header>
         <p class="hint">
-            위쪽 매출 필터(기간·매장)를 기준으로 계산합니다. 숫자·목록을 누르면
-            해당 화면으로 이동합니다.
+            부정 리뷰·급감 매장은 위쪽 매출 필터(기간·매장)를 따르고,
+            '(전체 기간)'이 붙은 타일은 필터와 무관하게 전체 기준입니다.
+            숫자·목록을 누르면 해당 화면으로 이동합니다.
         </p>
 
         <h3 class="home-sub-h">지금 처리할 일</h3>
@@ -451,7 +462,7 @@
             <button type="button" class="tile hometile t-attn" id="home-tile-inquiry" data-go-target="tasks">
                 <div class="label">검토 대기 답변</div>
                 <div class="value" id="home-inquiry">—</div>
-                <div class="sub">AI가 만든 문의 1차 응대 중 아직 승인하지 않은 건</div>
+                <div class="sub">AI가 만든 문의 1차 응대 중 아직 승인하지 않은 건 (전체 기간)</div>
             </button>
             <button type="button" class="tile hometile t-attn" id="home-tile-drafts" data-go-target="reviews">
                 <div class="label">승인대기 답글</div>
@@ -518,6 +529,14 @@
                 <label for="sdb-region">지역</label>
                 <select id="sdb-region"><option value="">전체</option></select>
             </div>
+            <div class="field">
+                <label for="sdb-status">상태</label>
+                <select id="sdb-status">
+                    <option value="">전체</option>
+                    <option value="operating">운영</option>
+                    <option value="closed">폐점</option>
+                </select>
+            </div>
             <div class="field grow">
                 <label for="sdb-search">매장 찾기</label>
                 <input type="text" id="sdb-search" autocomplete="off" placeholder="이름 일부">
@@ -526,11 +545,21 @@
         <div class="tableview" id="sdb-table"></div>
         <p class="notice" id="sdb-notice" hidden></p>
 
+        <!-- 분류·SV·지역·주문방식·포스 입력 후보 — 표에 실제 들어 있는 값의
+             distinct 로 store_db.js 가 채웁니다(datalist 라 새 값 직접 입력도
+             됩니다). 값 목록을 여기 하드코딩하면 DB 실값과 갈라집니다. -->
+        <datalist id="sdb-dl-category"></datalist>
+        <datalist id="sdb-dl-sv_name"></datalist>
+        <datalist id="sdb-dl-region"></datalist>
+        <datalist id="sdb-dl-order_method"></datalist>
+        <datalist id="sdb-dl-pos"></datalist>
+
         <h3>신규 매장 등록</h3>
         <p class="hint">
             아직 매출이 없는 매장을 미리 만듭니다. 매출이 올라오기 시작하면 같은
             이름으로 자동으로 이어집니다 — 이름은 계정표의 표준 매장명과 똑같이
             적으세요(다르면 한 매장이 두 줄로 갈라집니다).
+            영업시작일을 넣으면 오픈·폐점 화면의 오픈 이력에도 같이 기록됩니다.
         </p>
         <div class="reqform">
             <div class="field grow">
@@ -539,25 +568,26 @@
             </div>
             <div class="field">
                 <label for="sdb-n-category">분류</label>
-                <input type="text" id="sdb-n-category" autocomplete="off" placeholder="예: 일반">
+                <input type="text" id="sdb-n-category" autocomplete="off"
+                       list="sdb-dl-category" placeholder="예: 일반">
             </div>
             <div class="field">
                 <label for="sdb-n-sv">담당 SV</label>
-                <input type="text" id="sdb-n-sv" autocomplete="off">
+                <input type="text" id="sdb-n-sv" autocomplete="off" list="sdb-dl-sv_name">
             </div>
             <div class="field">
                 <label for="sdb-n-region">지역</label>
-                <input type="text" id="sdb-n-region" autocomplete="off">
+                <input type="text" id="sdb-n-region" autocomplete="off" list="sdb-dl-region">
             </div>
         </div>
         <div class="reqform">
             <div class="field">
                 <label for="sdb-n-order">주문방식</label>
-                <input type="text" id="sdb-n-order" autocomplete="off">
+                <input type="text" id="sdb-n-order" autocomplete="off" list="sdb-dl-order_method">
             </div>
             <div class="field">
                 <label for="sdb-n-pos">포스</label>
-                <input type="text" id="sdb-n-pos" autocomplete="off">
+                <input type="text" id="sdb-n-pos" autocomplete="off" list="sdb-dl-pos">
             </div>
             <div class="field">
                 <label for="sdb-n-start">영업시작일</label>
@@ -998,16 +1028,25 @@
         <p class="hint">
             항목 구성은 <code>docs/hq-standards.md</code> 9번 실제 방문보고서 예시를
             그대로 따릅니다(위생점검·자점매입·조리점검·점주미팅·특이사항). 특이사항이
-            없으면 격월 1회 방문이 권장 주기입니다 — 이 화면은 기록만 남기고 주기
-            알림은 만들지 않았습니다.
+            없으면 격월 1회 방문이 권장 주기입니다 — 오래 안 간 매장은 아래
+            '방문 대상 매장' 표가 보여줍니다.
         </p>
 
         <div class="reqform">
             <!-- SV 배정은 가맹점DB 반입분(store_profiles.sv_name)에서 옵니다.
-                 배정 자료가 없는 환경(dev 초기)에서는 이 칸이 통째로 숨습니다. -->
+                 배정 자료가 없는 환경에서는 select 대신 짧은 안내가 나옵니다
+                 (vs-sv-empty) — 조용히 숨으면 "필터가 왜 없지" 를 알 길이
+                 없어서입니다(진단 #101 [B]).
+                 이 필터는 '그 SV 가 한 방문' 이 아니라 '그 SV 담당 매장' 의
+                 방문을 거릅니다(방문자와 무관) — 아래 힌트가 그 뜻입니다(같은 [C]). -->
             <div class="field" id="vs-sv-field" hidden>
                 <label for="vs-sv">담당 SV</label>
                 <select id="vs-sv"><option value="">전체 SV</option></select>
+                <small class="hint">담당 매장 기준 필터입니다 — 방문자와는 무관합니다</small>
+            </div>
+            <div class="field" id="vs-sv-empty" hidden>
+                <label>담당 SV</label>
+                <small class="hint">SV 배정 자료가 아직 없습니다 — 가맹점 DB 반입 뒤 필터가 생깁니다</small>
             </div>
             <div class="field">
                 <label for="vs-store">매장</label>
@@ -1077,8 +1116,32 @@
                 <label>&nbsp;</label>
                 <button type="button" id="vs-submit">방문 기록 추가</button>
             </div>
+            <div class="field" id="vs-cancel-field" hidden>
+                <label>&nbsp;</label>
+                <button type="button" class="ghost" id="vs-cancel-edit">수정 취소</button>
+            </div>
         </div>
         <p class="notice" id="vs-notice"></p>
+    </section>
+
+    <!-- 방문 대상 매장 — 진단 #101 [A]. "격월 1회 권장"(위 힌트) 기준으로
+         마지막 방문이 오래된 매장부터 정렬해, 어느 매장을 다음에 가야 하는지
+         이 표 하나로 보이게 합니다. 새 SQL 없이 api_store_visits 전 매장분과
+         stores 로 화면에서 계산합니다(진단 판정 그대로). -->
+    <section data-area="visits" class="card full" id="visit-due-card">
+        <header>
+            <h2>방문 대상 매장</h2>
+            <span class="meta" id="visit-due-summary"></span>
+        </header>
+        <p class="hint">
+            격월 1회 권장 기준(60일)으로 마지막 방문이 오래된 매장부터 보여줍니다.
+            위에서 담당 SV 를 고르면 그 담당 매장만 셉니다.
+        </p>
+        <label class="recheck">
+            <input type="checkbox" id="vd-all">
+            <span>정상 주기 매장까지 전체 보기</span>
+        </label>
+        <div class="tableview" id="t-visit-due"></div>
     </section>
 
     <section data-area="visits" class="card full" id="visit-list-card">
@@ -1106,6 +1169,12 @@
             연 오픈·폐점 참고치는 <code>docs/hq-standards.md</code> 8번 영역(연 평균
             각 10건)입니다 — 넘으면 안 되는 상한이 아니라 비교용 참고치입니다.
         </p>
+        <div class="filters">
+            <div class="field">
+                <label for="ls-year">연도</label>
+                <select id="ls-year"></select>
+            </div>
+        </div>
         <div class="kpis">
             <div class="tile">
                 <div class="label">올해 오픈</div>
@@ -1178,8 +1247,11 @@
         </header>
         <p class="hint">
             위 폼에서 매장을 고르면 그 매장의 이력만 보여줍니다. 매장을 고르지
-            않으면 전 매장 최근 기록을 보여줍니다.
+            않으면 전 매장 최근 기록을 보여줍니다. 가맹점 DB 의 영업시작일이
+            바뀌어도 여기 오픈 이력의 일자는 처음 기록한 날짜로 남습니다 —
+            어긋난 매장은 아래에 따로 표시됩니다.
         </p>
+        <p class="notice" id="lifecycle-mismatch" hidden></p>
         <div class="tableview" id="t-lifecycle"></div>
     </section>
 
@@ -1405,13 +1477,66 @@
         <div class="tableview" id="t-ourhome-stores"></div>
     </section>
 
+    <!-- 발주 상품 마스터 — 58_menu_recipes.sql 의 supply_products (209품목,
+         원가분석 '상품별공급단가' + 발주 체크리스트). 아워홈 코드가 발주량과
+         레시피를 잇는 유일한 다리입니다 (큐 #102 [A]). -->
+    <section data-area="ingredients" class="card full" id="supply-card">
+        <header>
+            <h2>발주 상품 마스터</h2>
+            <span class="meta" id="sp-meta"></span>
+        </header>
+        <p class="hint">
+            아워홈으로 발주하는 상품 목록입니다. 코드번호가 있는 상품만
+            발주량 자료와 이어집니다.
+        </p>
+        <div class="reqform">
+            <div class="field">
+                <label for="sp-q">검색</label>
+                <input id="sp-q" type="text" placeholder="상품명 · 코드">
+            </div>
+            <div class="field">
+                <label for="sp-cat">구분</label>
+                <select id="sp-cat"><option value="">전체</option></select>
+            </div>
+        </div>
+        <div class="tableview" id="t-supply-products"></div>
+    </section>
+
+    <!-- 조리 레시피 — 58_menu_recipes.sql 의 menu_recipes (98메뉴 · 617행,
+         이미지레시피 원본). 원가분석(32, 40메뉴)과 별개 표입니다 — 없는 것은
+         레시피가 아니라 원가분석이라는 가공물 (CLAUDE.md 10번 정정, 큐 #102 [A]). -->
+    <section data-area="ingredients" class="card full" id="menu-recipe-card">
+        <header>
+            <h2>조리 레시피</h2>
+            <span class="meta" id="mr-meta"></span>
+        </header>
+        <p class="hint">
+            이미지레시피 원본입니다. 소요량은 조리 단위(레들 번수 · 개수 · 컵)
+            그대로이고, g 열은 원본에 g·kg 이 명시된 행만 채워져 있습니다.
+            레들·계량컵 표기는 부피(oz·ml)로 환산해 보여줍니다.
+        </p>
+        <div class="reqform">
+            <div class="field">
+                <label for="mr-menu">메뉴</label>
+                <select id="mr-menu"><option value="">메뉴를 고르세요</option></select>
+            </div>
+            <div class="field">
+                <label for="mr-status">상태</label>
+                <select id="mr-status"><option value="">전체</option></select>
+            </div>
+        </div>
+        <p class="hint" id="mr-coverage"></p>
+        <div class="tableview" id="t-menu-recipes"></div>
+    </section>
+
     <section data-area="ingredients" class="card full" id="recipe-card">
         <header>
-            <h2>레시피 소요량</h2>
+            <h2>레시피 소요량 (원가분석 기준)</h2>
             <span class="meta" id="recipe-meta"></span>
         </header>
         <p class="hint">
-            원가분석 파일에서 반입한 1인분 기준 소요량입니다. 메뉴를 고르면
+            원가분석 파일에서 반입한 1인분 기준 소요량입니다. g 수와 공급단가가
+            확정된 메뉴만 있어 조리 레시피보다 메뉴가 적습니다. 메뉴를 고르면
             그 메뉴의 재료만 보여줍니다.
         </p>
         <div class="reqform">
@@ -1838,14 +1963,14 @@
         </header>
         <p class="hint">
             메일·알림톡으로 나간 발송의 기록입니다. dry-run 은 보내지 않고
-            기록만 남긴 시험입니다. 수신처는 notify_recipients,
-            부정 리뷰 기준은 review_alert_rules 표에서 바꿉니다.
+            기록만 남긴 시험입니다. 수신처는 아래 '수신처' 카드에서 관리합니다.
         </p>
         <div class="cardsearch">
             <select id="nf-filter-kind">
                 <option value="">전체</option>
                 <option value="review_alert">부정 리뷰</option>
                 <option value="notice">공문</option>
+                <option value="announcement">공지</option>
                 <option value="store_close">폐점 계정</option>
                 <option value="report">보고서</option>
                 <option value="test">시험</option>
@@ -1926,6 +2051,12 @@
             <button type="button" id="st-generate">청구 생성·갱신</button>
             <span class="meta" id="st-generate-msg"></span>
         </div>
+        <!-- 갱신 신호 — 청구(생성 시점 스냅샷)와 live 매출이 어긋난 매장 안내.
+             매출 소급 수집이 있는 프로젝트라 이 어긋남은 일상입니다. -->
+        <p class="hint warn" id="st-drift" hidden></p>
+        <!-- 청구 미생성 안내 — 청구가 없는 달은 미수 목록에 안 잡힙니다(자동
+             생성 배치가 없는 동안의 유일한 신호). -->
+        <p class="hint warn" id="st-unbilled-warn" hidden></p>
         <div class="kpis">
             <div class="tile hero">
                 <div class="label">미수 합계</div>
@@ -1994,10 +2125,13 @@
             <span class="meta" id="st-recv-meta"></span>
         </header>
         <p class="hint">
-            납기가 지나도록 입금이 모자란 청구가 전 기간에서 모입니다. '발송 승인
-            요청'을 누르면 업무 영역의 승인 대기로 넘어가고(승인자: 운영지원팀
-            팀장), 실제 발송은 승인 뒤에 이뤄집니다. 지연이자는 참고 계산입니다 —
-            실제 부과는 본사가 정합니다.
+            납기가 지나도록 입금이 모자란 청구가 전 기간에서 모입니다. 청구가
+            생성되지 않은 달의 미납은 여기 잡히지 않습니다 — 위 월별 카드의
+            안내에서 확인하고 '청구 생성·갱신'으로 만드세요. '입금'을 누르면
+            그 달 입금 폼이 채워지고, '발송 승인 요청'을 누르면 업무 영역의
+            승인 대기로 넘어갑니다(승인자: 운영지원팀 팀장). 실제 발송은 승인
+            뒤에 이뤄집니다. 지연이자는 참고 계산입니다 — 실제 부과는 본사가
+            정합니다.
         </p>
         <div class="tableview" id="t-receivables"></div>
     </section>
