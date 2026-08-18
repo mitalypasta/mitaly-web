@@ -31,7 +31,7 @@ function drawKakaoStats(stats) {
 
     if (!calls) {
         $("ks-shown").textContent =
-            "아직 호출이 없습니다 — 봇테스트나 운영채널 연결 뒤에 채워집니다.";
+            "아직 챗봇이 응답한 대화가 없습니다 — 카카오 채널이 연결되면 채워집니다.";
         $("legend-kakao-daily").innerHTML = "";
         $("c-kakao-daily").innerHTML = "";
         $("c-kakao-daily").removeAttribute("height");
@@ -59,8 +59,10 @@ function drawKakaoStats(stats) {
         dailyCalls.push(row ? Number(row.calls) || 0 : 0);
         dailyTasks.push(row ? Number(row.tasks) || 0 : 0);
     }
+    // '호출'(스킬 호출)은 오픈빌더 용어라 일상어 '응답' 으로 보여줍니다
+    // (3라운드 2차 — index.html 의 KPI 문구와 같은 말).
     const series = [
-        { name: "호출", color: c.s1, values: dailyCalls },
+        { name: "응답", color: c.s1, values: dailyCalls },
         { name: "접수", color: c.s2, values: dailyTasks },
     ];
     const legend = $("legend-kakao-daily");
@@ -75,9 +77,10 @@ function drawKakaoStats(stats) {
         fmt: int, fmtFull: (v) => `${int(v)}건`,
     });
 
-    // 블록별 — 호출만 있고 접수가 없는 갈래가 어디서 끊기는지 보는 표입니다.
+    // 대화 단계(블록)별 — 응답만 있고 접수가 없는 갈래가 어디서 끊기는지
+    // 보는 표입니다. '블록' 은 오픈빌더 용어라 화면에는 '대화 단계' 로.
     table($("t-kakao-blocks"),
-        ["블록", "호출", "접수"],
+        ["대화 단계", "응답", "접수"],
         (stats.by_block || []).map((b) => [b.block, int(b.calls), int(b.tasks)]));
 
     // 분류별 접수 (본사 7종)

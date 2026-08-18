@@ -8,7 +8,7 @@
 import { db } from "./client.js";
 import { int, ymLabel, wonFull } from "./format.js";
 import { escape } from "./util.js";
-import { table, $ } from "./dom.js";
+import { table, $, monthPicker } from "./dom.js";
 
 let ohRangeReady = false;
 let ohStoresReady = false;
@@ -21,6 +21,9 @@ const shiftYm = (ym, months) => {
 };
 
 export async function initOurhome() {
+    // 시작·종료월은 브라우저 달력(0-1). 값 규칙(YYYYMM)은 monthPicker 가 맞춥니다.
+    monthPicker("oh-from");
+    monthPicker("oh-to");
     for (const id of ["oh-from", "oh-to", "oh-store"]) {
         $(id).addEventListener("change", refreshOurhome);
     }
@@ -50,24 +53,11 @@ async function refreshOurhome() {
         return;
     }
 
-    // 기간 고르개는 첫 응답의 ym_min~ym_max 로 한 번만 채웁니다(이론 사용량과 같음).
+    // 달력 범위는 첫 응답의 ym_min~ym_max 로 한 번만 잡습니다(이론 사용량과 같음).
     if (!ohRangeReady) {
         ohRangeReady = true;
-        const options = [];
-        let ym = d.ym_min;
-        while (ym <= d.ym_max) {
-            options.push(ym);
-            ym = ym % 100 === 12 ? ym + 89 : ym + 1;   // 12월 → 다음 해 1월
-        }
-        for (const id of ["oh-from", "oh-to"]) {
-            const sel = $(id);
-            for (const value of options) {
-                const opt = document.createElement("option");
-                opt.value = String(value);
-                opt.textContent = ymLabel(value);
-                sel.append(opt);
-            }
-        }
+        monthPicker("oh-from", { min: d.ym_min, max: d.ym_max });
+        monthPicker("oh-to", { min: d.ym_min, max: d.ym_max });
         $("oh-from").value = String(d.from_ym);
         $("oh-to").value = String(d.to_ym);
 

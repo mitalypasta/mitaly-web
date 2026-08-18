@@ -10,10 +10,10 @@
 // 이론 사용량은 원가분석만 씁니다(49). "원가분석 없는 메뉴" 가 조리 레시피까지
 // 없다는 뜻이 아니라서, 그 표에 조리 레시피 유무를 같이 표시합니다.
 
-import { db } from "./client.js";
+import { db, fetchStores } from "./client.js";
 import { int, ymLabel, wonFull } from "./format.js";
 import { escape } from "./util.js";
-import { table, $ } from "./dom.js";
+import { table, $, monthPicker } from "./dom.js";
 
 let recipeRows = [];       // api_recipes 전체(278행 수준) — select 와 표가 같이 씀
 let menuRecipeRows = [];   // api_menu_recipes 전체(617행 수준, 데코 제외)
@@ -53,13 +53,16 @@ export async function initIngredients() {
 
     // 이론 사용량 — 매장 목록은 방문·점검과 같은 원천(stores 표)입니다.
     const storeSelect = $("iu-store");
-    const { data: stores } = await db.from("stores").select("id,name").order("name");
+    const { data: stores } = await fetchStores();
     for (const s of stores || []) {
         const opt = document.createElement("option");
         opt.value = s.name;            // api_ingredient_usage 는 이름으로 거릅니다
         opt.textContent = s.name;
         storeSelect.append(opt);
     }
+    // 시작·종료월은 브라우저 달력(0-1). 값 규칙(YYYYMM)은 monthPicker 가 맞춥니다.
+    monthPicker("iu-from");
+    monthPicker("iu-to");
     for (const id of ["iu-from", "iu-to", "iu-store"]) {
         $(id).addEventListener("change", refreshIngredientUsage);
     }
@@ -225,21 +228,8 @@ async function refreshIngredientUsage() {
 
     if (!iuRangeReady && d.ym_min) {
         iuRangeReady = true;
-        const options = [];
-        let ym = d.ym_min;
-        while (ym <= d.ym_max) {
-            options.push(ym);
-            ym = ym % 100 === 12 ? ym + 89 : ym + 1;   // 12월 → 다음 해 1월
-        }
-        for (const id of ["iu-from", "iu-to"]) {
-            const sel = $(id);
-            for (const value of options) {
-                const opt = document.createElement("option");
-                opt.value = String(value);
-                opt.textContent = ymLabel(value);
-                sel.append(opt);
-            }
-        }
+        monthPicker("iu-from", { min: d.ym_min, max: d.ym_max });
+        monthPicker("iu-to", { min: d.ym_min, max: d.ym_max });
         $("iu-from").value = String(d.from_ym);
         $("iu-to").value = String(d.to_ym);
     }

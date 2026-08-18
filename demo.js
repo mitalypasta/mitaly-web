@@ -943,6 +943,9 @@ const DEMO_TASK_KINDS = [
     { kind: "pos_soldout", name: "POS 품절 처리·해제", needs_approval: true, enabled: true },
     { kind: "pos_menu_change", name: "POS 메뉴·가격 변경", needs_approval: true, enabled: true },
     { kind: "announcement_send", name: "공지 발송", needs_approval: true, enabled: true },
+    // 85_tasks_web_round3.sql 의 '기타 (직접 입력)' — 웹이 입력한 이름을
+    // 제목 앞 「…」 로 붙이는 흐름을 데모에서도 확인합니다.
+    { kind: "other", name: "기타", needs_approval: false, enabled: true },
 ];
 
 const DEMO_OVERDUE_DAYS = 7;   // task_settings 의 데모용 미러(실제 값은 표에 있음)
@@ -1165,6 +1168,23 @@ let demoRecipients = [
 ];
 let nextRecipientId = 5;
 
+// 발송 이력(31) — 세 상태(dry_run/sent/failed)가 화면에서 어떻게 보이는지 다
+// 섞어 뒀습니다. 행 삭제(3라운드 2차 + 85 delete 정책)가 이 배열을 고칩니다.
+let demoNotifications = [
+    { id: 3, created_at: new Date(Date.now() - 1800_000).toISOString(),
+      kind: "review_alert", channel: "mail", recipient: "ops@demo.example",
+      subject: "부정 리뷰 2건 — 샘플01점 외", status: "dry_run",
+      error: null, task_id: null },
+    { id: 2, created_at: new Date(Date.now() - 7200_000).toISOString(),
+      kind: "notice", channel: "mail", recipient: "ops@demo.example",
+      subject: "내용증명 발송 — 샘플02점 2단계", status: "sent",
+      error: null, task_id: 1 },
+    { id: 1, created_at: new Date(Date.now() - 86400_000).toISOString(),
+      kind: "store_close", channel: "alimtalk", recipient: "운영지원팀",
+      subject: "폐점 매장 계정 정리 — 샘플03점", status: "failed",
+      error: "알림톡 제공자 미구성", task_id: null },
+];
+
 // 답글 대행 동의(42 + 65 source) — 반입분·웹 기록·철회 이력이 화면에서 갈려
 // 보이는 그림. 쓰기 핸들러(record/withdraw)가 이 배열을 고칩니다(큐 #106 [E]).
 let demoConsents = [
@@ -1360,7 +1380,17 @@ function demoInquiryRows({ p_status, p_routing, p_limit }) {
 
 const DEMO_SETTLEMENT = { rate_pct: 3.3, due_day: 1, late_pct: 20 };  // settlement_settings 미러
 
-let demoInvoices = [];          // {id, ym, store(이름), sales, amount, due_date, source}
+// 매장별 요율 예외(84_royalty_store_rates 미러) — store_id → {rate_pct, note,
+// updated_at}. 샘플03점을 개별 요율로 미리 넣어 '개별' 표기·다른 요율의 청구
+// 계산이 화면에서 바로 보이게 합니다.
+const demoRoyaltyRates = new Map();
+
+function demoRateFor(store) {
+    const override = demoRoyaltyRates.get(store.id);
+    return override ? override.rate_pct : DEMO_SETTLEMENT.rate_pct;
+}
+
+let demoInvoices = [];          // {id, ym, store(이름), sales, rate, amount, due_date, source}
 let demoPayments = [];          // {id, invoice_id, paid_on, amount, note, source, canceled_at, canceled_note}
 let demoSettleNoticeTasks = []; // {task_id, invoice_id, created_at}
 let nextInvoiceId = 1;
@@ -1392,14 +1422,19 @@ function demoPaidTotal(invoiceId) {
 function demoMakeInvoice(ym, store) {
     const sales = demoStoreSales(ym, store);
     if (!sales) return null;
+    const rate = demoRateFor(store);
     const invoice = {
-        id: nextInvoiceId++, ym, store: store.name, sales,
-        amount: Math.round(sales * DEMO_SETTLEMENT.rate_pct / 100),
+        id: nextInvoiceId++, ym, store: store.name, sales, rate,
+        amount: Math.round(sales * rate / 100),
         due_date: demoDueDate(ym), source: "computed",
     };
     demoInvoices.push(invoice);
     return invoice;
 }
+
+// 개별 요율 픽스처 — 아래 청구 픽스처보다 먼저 넣어야 청구 스냅샷에 반영됩니다.
+demoRoyaltyRates.set(3, { rate_pct: 2.5, note: "재계약 인하(데모)",
+                          updated_at: new Date(Date.now() - 5 * 86400_000).toISOString() });
 
 // 202601~202606 청구 + 입금 픽스처 (202607 은 일부러 미청구로 비워 둡니다).
 for (let fixtureYm = 202601; fixtureYm <= 202606; fixtureYm++) {
@@ -1426,7 +1461,7 @@ for (let fixtureYm = 202601; fixtureYm <= 202606; fixtureYm++) {
     const stale = demoInvoices.find((i) => i.ym === 202606 && i.store === "샘플05점");
     if (stale) {
         stale.sales = Math.round(stale.sales * 0.93);
-        stale.amount = Math.round(stale.sales * DEMO_SETTLEMENT.rate_pct / 100);
+        stale.amount = Math.round(stale.sales * stale.rate / 100);
     }
 }
 
@@ -1441,6 +1476,7 @@ for (const [hqName, hqHalf] of [["샘플02점", false], ["샘플04점", true]]) 
     if (!hqSales) continue;
     const hqInvoice = {
         id: nextInvoiceId++, ym: 202607, store: hqName, sales: hqSales,
+        rate: DEMO_SETTLEMENT.rate_pct,   // hq 는 요율 계산이 아니라 화면에 안 씀
         amount: Math.round(hqSales * DEMO_SETTLEMENT.rate_pct / 100) + 137,
         due_date: dateOffset(14), source: "hq",
     };
@@ -1475,7 +1511,9 @@ function computeRoyaltyMonth(p_ym) {
             source: invoice ? invoice.source : null,
             billed_sales: invoice ? invoice.sales : null,
             billed_amount: invoice ? invoice.amount : null,
-            rate_pct: invoice ? DEMO_SETTLEMENT.rate_pct : null,
+            rate_pct: invoice ? invoice.rate : null,
+            // 그 매장의 '지금' 유효 요율 — 미청구 미리보기용 (84 미러).
+            apply_rate_pct: demoRateFor(store),
             due_date: invoice ? invoice.due_date : null,
             paid_amount: paid,
             outstanding,
@@ -1511,6 +1549,7 @@ function computeRoyaltyMonth(p_ym) {
             billed_stores: billed.length,
             unbilled_stores: rows.length - billed.length,
             overdue_stores: rows.filter((r) => r.status === "미수").length,
+            paid_stores: rows.filter((r) => r.status === "완납").length,
         },
     };
 }
@@ -2543,6 +2582,43 @@ const HANDLERS = {
     api_royalty_month: ({ p_ym }) => computeRoyaltyMonth(Number(p_ym)),
     api_royalty_receivables: () => computeReceivables(),
 
+    // ---- 매장별 요율 (84_royalty_store_rate.sql) ----
+    api_royalty_store_rates: () => ({
+        default_rate_pct: DEMO_SETTLEMENT.rate_pct,
+        stores: STORES
+            .map((s) => {
+                const override = demoRoyaltyRates.get(s.id);
+                return {
+                    store_id: s.id, store: s.name,
+                    rate_pct: override ? override.rate_pct : null,
+                    note: override ? override.note : null,
+                    updated_at: override ? override.updated_at : null,
+                };
+            })
+            // 서버와 같은 차례 — 개별 요율 매장이 먼저, 나머지는 이름순.
+            .sort((a, b) => (Number(a.rate_pct == null) - Number(b.rate_pct == null))
+                || a.store.localeCompare(b.store)),
+    }),
+
+    set_royalty_store_rate: ({ p_store_id, p_rate_pct, p_note }) => {
+        const store = STORES.find((s) => s.id === Number(p_store_id));
+        if (!store) return { ok: false, reason: "매장을 찾지 못했습니다" };
+        if (p_rate_pct == null) {
+            demoRoyaltyRates.delete(store.id);
+            return { ok: true, store_id: store.id, store: store.name, rate_pct: null };
+        }
+        const rate = Number(p_rate_pct);
+        if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+            return { ok: false,
+                     reason: `요율(%)은 0 이상 100 이하여야 합니다: ${p_rate_pct}` };
+        }
+        demoRoyaltyRates.set(store.id, {
+            rate_pct: rate, note: (p_note || "").trim() || null,
+            updated_at: new Date().toISOString(),
+        });
+        return { ok: true, store_id: store.id, store: store.name, rate_pct: rate };
+    },
+
     generate_royalty_invoices: ({ p_ym }) => {
         const ym = Number(p_ym);
         if (!ym || ym < 200001 || ym > 209912 || ym % 100 < 1 || ym % 100 > 12) {
@@ -2559,7 +2635,8 @@ const HANDLERS = {
                     written += 1;
                 } else if (invoice.source === "computed") {
                     invoice.sales = sales;
-                    invoice.amount = Math.round(sales * DEMO_SETTLEMENT.rate_pct / 100);
+                    invoice.rate = demoRateFor(store);   // 매장별 요율 (84 미러)
+                    invoice.amount = Math.round(sales * invoice.rate / 100);
                     invoice.due_date = demoDueDate(ym);
                     written += 1;
                 }
@@ -2673,22 +2750,10 @@ const HANDLERS = {
         return { ok: true, store: args.p_store };
     },
 
-    // 31_notifications.sql — 발송 이력. 세 상태(dry_run/sent/failed)가 화면에서
-    // 어떻게 보이는지 다 섞어 뒀습니다(2026-08-06 리뷰: 핸들러 누락 보충).
-    api_notifications: ({ p_limit }) => [
-        { id: 3, created_at: new Date(Date.now() - 1800_000).toISOString(),
-          kind: "review_alert", channel: "mail", recipient: "ops@demo.example",
-          subject: "부정 리뷰 2건 — 샘플01점 외", status: "dry_run",
-          error: null, task_id: null },
-        { id: 2, created_at: new Date(Date.now() - 7200_000).toISOString(),
-          kind: "notice", channel: "mail", recipient: "ops@demo.example",
-          subject: "내용증명 발송 — 샘플02점 2단계", status: "sent",
-          error: null, task_id: 1 },
-        { id: 1, created_at: new Date(Date.now() - 86400_000).toISOString(),
-          kind: "store_close", channel: "alimtalk", recipient: "운영지원팀",
-          subject: "폐점 매장 계정 정리 — 샘플03점", status: "failed",
-          error: "알림톡 제공자 미구성", task_id: null },
-    ].slice(0, Number(p_limit) || 200),
+    // 31_notifications.sql — 발송 이력. 픽스처는 위 demoNotifications 입니다
+    // (행 삭제가 배열을 고치므로 여기서 매번 베끼지 않고 그대로 읽습니다).
+    api_notifications: ({ p_limit }) =>
+        demoNotifications.slice(0, Number(p_limit) || 200),
 
     // 65_hq_imports.sql — 수신처 목록. 상태는 위 demoRecipients 입니다.
     api_notify_recipients: () => ({
@@ -3423,12 +3488,29 @@ export function demoClient() {
                     return { data: null, error: null };
                 },
             }),
+            // 발송 이력 삭제는 지운 행을 .select() 로 돌려받습니다(0건 =
+            // 못 지움 구분 — notifications.js). eq 가 promise 를 그대로 주면
+            // .select() 를 못 붙이므로 thenable 로 감쌉니다.
             delete: () => ({
-                eq: async (_col, val) => {
-                    if (table === "store_visits") {
-                        storeVisits = storeVisits.filter((x) => x.id !== Number(val));
-                    }
-                    return { data: null, error: null };
+                eq: (_col, val) => {
+                    const run = async () => {
+                        if (table === "store_visits") {
+                            storeVisits = storeVisits.filter((x) => x.id !== Number(val));
+                            return { data: null, error: null };
+                        }
+                        if (table === "notifications") {
+                            const hit = demoNotifications
+                                .filter((n) => n.id === Number(val))
+                                .map((n) => ({ id: n.id }));
+                            demoNotifications = demoNotifications
+                                .filter((n) => n.id !== Number(val));
+                            return { data: hit, error: null };
+                        }
+                        return { data: null, error: null };
+                    };
+                    const done = run();
+                    return { select: () => done,
+                             then: (res, rej) => done.then(res, rej) };
                 },
             }),
         };

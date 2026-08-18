@@ -285,6 +285,27 @@ header.top h1::before {
     outline-offset: 1px;
 }
 
+/* 3라운드 공통(0-1·0-2) — 월 달력 입력과 매장 검색 콤보는 select 와 같은 옷.
+   콤보(.combo)는 dom.js searchify 가 숨긴 select 옆에 만들어 넣는 입력입니다. */
+.field input[type="month"],
+.field .combo {
+    font: inherit;
+    padding: 6px 10px;
+    min-width: 120px;
+    color: var(--text-primary);
+    background: var(--surface-1);
+    border: 1px solid var(--baseline);
+    border-radius: 6px;
+}
+
+.field .combo { min-width: 160px; }
+
+.field input[type="month"]:focus-visible,
+.field .combo:focus-visible {
+    outline: 2px solid var(--series-1);
+    outline-offset: 1px;
+}
+
 /* 배달 지도(6번) — 카카오맵이 이 컨테이너를 채웁니다. 높이가 0이면 지도가
    안 보이므로 고정 높이가 필요합니다. */
 #dmap-container {
@@ -331,6 +352,80 @@ header.top h1::before {
     cursor: pointer;
 }
 .dmap-popup .dmap-popup-close:hover { color: var(--text-primary); }
+
+/* 지도 아래 매장 상세 블록 (3라운드) — 팝업은 요약, 여기가 상세입니다.
+   마커 클릭 또는 매장 고르개로 열리고, SDK 없이도 그려집니다(map.js 판단 [4]). */
+#dmap-detail {
+    margin-top: 12px;
+    border: 1px solid var(--baseline);
+    border-radius: 8px;
+    padding: 12px 14px;
+    background: var(--surface-1);
+}
+.dmap-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+.dmap-detail-head strong { font-size: 15px; color: var(--text-primary); }
+.dmap-detail-open { color: var(--text-muted); font-size: 12px; }
+.dmap-detail-close {
+    margin-left: auto;
+    border: 0;
+    background: none;
+    color: var(--text-muted);
+    font-size: 18px;
+    line-height: 1;
+    padding: 2px 8px;
+    cursor: pointer;
+}
+.dmap-detail-close:hover { color: var(--text-primary); }
+.dmap-badge {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--baseline);
+    color: var(--text-secondary);
+}
+.dmap-badge-down { color: var(--critical); border-color: currentColor; }
+.dmap-detail-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    margin-bottom: 10px;
+}
+.dmap-stat span { color: var(--text-muted); font-size: 12px; margin-right: 6px; }
+.dmap-stat b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.dmap-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+}
+.dmap-detail-grid h3 {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 0 0 6px;
+}
+.dmap-detail-lines p { margin: 2px 0; font-size: 13px; color: var(--text-secondary); }
+.dmap-line-up { color: var(--good); }
+.dmap-line-down { color: var(--critical); }
+.dmap-trend svg { width: 100%; max-width: 320px; height: auto; display: block; }
+.dmap-trend-legend {
+    display: flex;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+.dmap-trend-legend i {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    margin-right: 4px;
+    vertical-align: -1px;
+}
 
 /* 공지 본문(12번) — .field select 와 같은 옷. 본문은 여러 줄이라 textarea. */
 .field textarea {
@@ -467,9 +562,7 @@ header.top h1::before {
     .tile.hometile::after { transition: none; }
 }
 
-/* ---- 홈 '바로 가기' -----------------------------------------------------
-   자주 여는 화면으로 한 번에 이동. 버튼은 .navitem 을 겸해 nav.js 가 클릭을
-   이미 잇습니다 — 여기서는 사이드 메뉴 행이 아니라 카드처럼 보이게 덮습니다. */
+/* 홈 소제목(지금 처리할 일 · 최근 매출 · 알아야 할 변화) */
 
 .home-sub-h {
     margin: 22px 0 10px;
@@ -582,45 +675,87 @@ header.top h1::before {
     .home-anom-row { transition: none; }
 }
 
-.quicklinks {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 10px;
+/* ---- 홈 경고 배너 -------------------------------------------------------
+   계정 점검 '실패' 또는 수집 PC 24시간 무응답일 때만 보입니다(app.js
+   loadHomeHealth). 평소에는 hidden — 홈에서 가장 급한 신호라 빨강을 씁니다. */
+
+.home-warn {
+    margin: 2px 0 16px;
+    padding: 12px 16px;
+    border: 1px solid var(--critical);
+    border-left-width: 4px;
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--critical) 9%, var(--surface-1));
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
 
-.quicklink.navitem {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    width: 100%;
-    padding: 14px 16px;
-    font-size: 14px;
+.home-warn p {
+    margin: 0;
+    font-size: 13px;
     font-weight: 600;
     color: var(--text-primary);
-    background: var(--surface-1);
+    line-height: 1.5;
+}
+
+/* ---- 홈 매출 한 줄 ------------------------------------------------------
+   최근 완성월 전 매장 합계 + 전월·전년동월 대비. 버튼이라 누르면 매출 탭으로
+   (nav.js). 상세 차트는 매출 탭 몫이므로 홈에는 이 한 줄뿐입니다. */
+
+.home-sales-line {
+    appearance: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 18px;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 14px 16px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
+    background: var(--surface-1);
     box-shadow: var(--shadow-card);
-    transition: border-color 160ms ease-out, box-shadow 160ms ease-out,
-                transform 160ms ease-out;
+    transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
 }
 
-.quicklink.navitem:hover {
-    background: var(--surface-1);
+.home-sales-line:hover {
     border-color: var(--primary);
     box-shadow: var(--shadow-raise);
-    transform: translateY(-2px);
-    color: var(--text-primary);
 }
 
-.quicklink .ql-ico { font-size: 18px; line-height: 1; }
+.home-sales-line:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
 
-/* 바로 가기는 사이드 메뉴가 아니므로 활성 강조 바를 쓰지 않습니다. */
-.quicklink.is-on::before { display: none; }
+.home-sales-line .hs-amount {
+    font-size: 22px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+.home-sales-line .hs-cmp {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.home-sales-line .hs-cmp b {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.home-sales-line .hs-go {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-muted);
+}
 
 @media (prefers-reduced-motion: reduce) {
-    .quicklink.navitem { transition: none; }
-    .quicklink.navitem:hover { transform: none; }
+    .home-sales-line { transition: none; }
 }
 
 /* ---------------------------------------------------------------- 카드 */
@@ -774,6 +909,29 @@ tbody tr:hover td { background: var(--page); }
 }
 
 .reqform .grow { flex: 1 1 260px; }
+
+/* 폼 안의 선택 칸 접기(광고 카드) — 카드째 접는 .cardfold 와 달리 폼 한 줄에
+   끼어드는 작은 접기입니다. 닫혀 있으면 글줄 하나, 열면 제 줄을 통째로 차지해
+   숨은 칸들이 한 줄로 펼쳐집니다. */
+.reqfold { align-self: flex-end; }
+.reqfold[open] { flex-basis: 100%; }
+.reqfold > summary {
+    cursor: pointer;
+    list-style: none;
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 6px 0;
+}
+.reqfold > summary::-webkit-details-marker { display: none; }
+.reqfold > summary::before { content: "+ "; color: var(--text-muted); }
+.reqfold[open] > summary::before { content: "\2212 "; }
+.reqfold-fields {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    margin-top: 4px;
+}
 
 .reqform input[type="date"] {
     font: inherit;
@@ -1048,6 +1206,34 @@ button.ghost:focus-visible {
     cursor: pointer;
 }
 
+/* 로열티 수정 플로팅 — 매장 줄은 버튼(클릭 = 선택)이고 오른쪽에 지금 요율.
+   매장 선택창의 modal-list 격자를 한 줄짜리 목록으로 좁혀 씁니다. */
+.modal-list.rate-list {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    max-height: 42vh;
+}
+
+.rate-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    padding: 5px 8px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.rate-row:hover { background: var(--surface-2); }
+.rate-row.is-on { background: var(--primary-soft); }
+.rate-row .rate-now { margin-left: auto; color: var(--text-muted); font-size: 12px; }
+.rate-row .rate-now .tag { margin-left: 6px; }
+
 .st-pending  { background: var(--text-muted); }
 .st-running  { background: var(--series-1); }
 .st-done     { background: var(--good); }
@@ -1174,6 +1360,54 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
     outline: 2px solid var(--series-1);
     outline-offset: 1px;
 }
+
+/* 검색줄 안의 매장 콤보(0-2) — 검색 입력과 같은 옷, 폭은 select 수준으로. */
+.cardsearch .combo {
+    font: inherit;
+    flex: 0 1 200px;
+    min-width: 150px;
+    padding: 7px 10px;
+    color: var(--text-primary);
+    background: var(--surface-1);
+    border: 1px solid var(--baseline);
+    border-radius: 6px;
+}
+
+.cardsearch .combo:focus-visible {
+    outline: 2px solid var(--series-1);
+    outline-offset: 1px;
+}
+
+/* ------------------------------------------------- 매출 (3라운드 2차) */
+
+/* 전 매장 막대그래프 — 94곳이면 SVG 가 2,000px 를 넘으므로 카드 안에서만
+   스크롤합니다. 카드 자체는 요약 화면의 다른 카드와 같은 높이로 남습니다. */
+.plotscroll {
+    max-height: 460px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+/* 급증·급감 표의 매장 행 펼침 토글. 화살표를 글자가 아니라 ::before 로 그려
+   카드 엑셀 내보내기(exportCell)의 텍스트에 안 섞이게 합니다. */
+.alerts-exp {
+    font: inherit;
+    width: 22px;
+    margin-right: 4px;
+    padding: 0;
+    color: var(--text-secondary);
+    background: none;
+    border: 0;
+    cursor: pointer;
+}
+
+.alerts-exp::before { content: "▸"; }
+.alerts-exp.open::before { content: "▾"; }
+.alerts-exp:hover { color: var(--text-primary); }
+
+/* 펼쳐진 홀/배달 채널 행 — 매장 행과 구분되게 들여 쓰고 살짝 가라앉힙니다. */
+tr.alerts-chrow td { background: var(--surface-2, rgba(127, 127, 127, 0.06)); }
+tr.alerts-chrow td:first-child { padding-left: 34px; }
 
 /* ---------------------------------------------------------------- 리뷰 */
 
@@ -1877,3 +2111,70 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+
+/* ---- AI 답변 시안 슬라이드(우측 패널) ----
+   리뷰 목록의 'AI 답변 시안 보기' 버튼이 엽니다(담당자 지시 2026-08-16 ⑦).
+   시안 상자(.rvdraft)·조작 버튼 스타일은 위 것을 그대로 쓰고, 여기는 패널
+   껍데기(자리·슬라이드·머리)만 정의합니다 — 전역 규칙은 건드리지 않습니다.
+   색은 전부 테마 변수라 라이트·다크가 같이 맞습니다. */
+
+.rvpanel-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 110;                  /* 모달(50)·env-badge(100) 위 */
+    background: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transition: opacity 0.22s ease;
+}
+
+.rvpanel-backdrop.open { opacity: 1; }
+
+.rvpanel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 111;
+    width: min(460px, 94vw);
+    display: flex;
+    flex-direction: column;
+    background: var(--surface-1);
+    border-left: 1px solid var(--border);
+    box-shadow: var(--shadow-raise);
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+}
+
+.rvpanel.open { transform: translateX(0); }
+
+.rvpanel-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--gridline);
+}
+
+.rvpanel-head h3 { margin: 0; font-size: 15px; flex: 1; }
+
+.rvpanel-msg { font-size: 12px; color: var(--text-muted); }
+.rvpanel-msg.ok { color: var(--text-secondary); }
+.rvpanel-msg.error { color: var(--critical); }
+
+.rvpanel-close { padding: 4px 10px; font-size: 14px; line-height: 1; }
+
+.rvpanel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px 20px;
+}
+
+/* 패널 위쪽의 리뷰 원문 요약 — 목록의 .rvhead/.rvbody 모양을 그대로 씁니다. */
+.rvpanel-review {
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--gridline);
+}
+
+/* 목록 쪽 열기 버튼 줄 */
+.rvopen-wrap { margin-top: 8px; }
+.rvopen { padding: 4px 12px; font-size: 12px; }

@@ -19,6 +19,13 @@ import { refreshTasksSummary, refreshTaskList, taskStatusTag } from "./tasks.js"
 // 청구 출처(computed/hq)와 입금 출처(web/hq)를 같이 씁니다.
 const SETTLE_SOURCE_LABEL = { computed: "매출 계산", hq: "본사 자료", web: "웹 입력" };
 
+// 서버 상태값 → 화면 라벨. 값 자체는 서버 판정(41)이고 여기서는 읽히는
+// 말로만 바꿉니다(2026-08-16 담당자 피드백 2 — 태그가 자체로 읽혀야 함).
+const SETTLE_STATUS_LABEL = {
+    "미수": "미수(연체)", "완납": "완납", "부분 입금": "부분 입금",
+    "기한 전": "납기 전", "미청구": "청구 없음",
+};
+
 let stRows = [];   // api_royalty_month 의 stores. 입금 내역 패널이 다시 씁니다.
 
 export function initSettlement() {
@@ -38,6 +45,7 @@ export function initSettlement() {
     $("st-generate").addEventListener("click", generateInvoices);
     $("pay-submit").addEventListener("click", submitPayment);
     initSettlementActions();
+    initRoyaltyRates();
 
     Promise.all([refreshSettlementMonth(), refreshReceivables()]);
 }
@@ -53,7 +61,7 @@ function dateAddDays(iso, days) {
 }
 
 function settleStatusTag(status) {
-    const label = escape(status);
+    const label = escape(SETTLE_STATUS_LABEL[status] || status);
     if (status === "미수") return `<span class="tag warn">${label}</span>`;
     if (status === "완납") return `<span class="tag up">${label}</span>`;
     if (status === "미청구") return `<span class="tag h-warn">${label}</span>`;
@@ -83,20 +91,28 @@ async function refreshSettlementMonth() {
     const t = d.totals || {};
 
     $("st-month-meta").textContent =
-        `요율 ${d.rate_pct}% · 납기 ${d.due_date || "—"} — 본사가 정합니다`;
+        `기본 요율 ${d.rate_pct}% · 납기 ${d.due_date || "—"}`;
+    // 타일은 돈의 흐름 순서(청구 → 입금 → 남은 돈)로 읽힙니다(피드백 1).
     // 정산은 대사(맞춰보기) 화면이라 금액 타일도 표 셀처럼 원 단위 정확 표기
     // 입니다 — 만/억 반올림(won)은 다른 화면의 매출 헤드라인에만 씁니다.
-    $("st-outstanding").textContent = wonFull(t.outstanding);
-    $("st-outstanding-sub").textContent = `미수 매장 ${int(t.overdue_stores)}곳`;
     $("st-billed").textContent = wonFull(t.billed);
-    $("st-billed-sub").textContent = `청구 ${int(t.billed_stores)}곳`;
+    $("st-billed-sub").textContent = `매장 ${int(t.billed_stores)}곳에 청구`;
     $("st-paid").textContent = wonFull(t.paid);
-    $("st-unbilled").textContent = int(t.unbilled_stores);
+    $("st-paid-sub").textContent = t.billed_stores > 0
+        ? `완납 ${int(t.paid_stores || stRows.filter((s) => s.status === "완납").length)}곳`
+        : "";
+    $("st-outstanding").textContent = wonFull(t.outstanding);
+    $("st-outstanding-sub").textContent = t.outstanding > 0
+        ? `매장 ${int(t.overdue_stores)}곳 — 아래 미수 목록에서 처리`
+        : "다 들어왔습니다";
+    // 남은 돈이 있으면 타일 값이 빨간 강조를 받습니다(0원은 강조 없음).
+    $("st-outstanding-tile").classList.toggle("t-urgent", Number(t.outstanding) > 0);
 
-    // 스냅샷 어긋남 — 청구는 생성 시점 매출 스냅샷(billed_sales)이고 '매출액'
+    // 스냅샷 어긋남 — 청구는 생성 시점 매출 스냅샷(billed_sales)이고 '매출'
     // 열은 live 라, 청구 뒤 매출이 소급 수집되면 한 행 안에서 계산이 안 맞게
     // 됩니다. 신호가 없으면 언제 '청구 생성·갱신'을 눌러야 하는지 알 수 없어
     // 행 배지 + 상단 안내로 알립니다(hq 청구는 본사 확정값이라 비교 대상 아님).
+    // 문구는 짧고 행동 중심(피드백 1) — 왜인지는 행 배지의 메타가 보여줍니다.
     const driftIds = new Set(stRows
         .filter((s) => s.invoice_id != null && s.source === "computed"
             && s.billed_sales != null && s.sales_amount != null
@@ -105,9 +121,8 @@ async function refreshSettlementMonth() {
     const drift = $("st-drift");
     drift.hidden = driftIds.size === 0;
     if (driftIds.size) {
-        drift.textContent = `청구가 현재 매출과 다른 매장 ${int(driftIds.size)}곳 — `
-            + "청구 뒤에 매출이 소급 수집됐습니다. '청구 생성·갱신'을 누르면 "
-            + "지금 매출로 다시 계산됩니다.";
+        drift.textContent = `갱신 필요 ${int(driftIds.size)}곳 — `
+            + "'청구 생성·갱신'을 누르면 지금 매출로 다시 계산됩니다.";
     }
 
     // 청구가 안 만들어진 매장은 미납이어도 미수 목록에 영영 안 잡힙니다.
@@ -116,9 +131,9 @@ async function refreshSettlementMonth() {
     unbilledWarn.hidden = !(t.unbilled_stores > 0);
     if (t.unbilled_stores > 0) {
         unbilledWarn.textContent = (t.billed_stores > 0
-                ? `이 달 매출 매장 ${int(t.stores)}곳 중 ${int(t.unbilled_stores)}곳은 청구가 없습니다`
-                : "이 달은 청구가 아직 생성되지 않았습니다")
-            + " — 미납이어도 미수 목록에 잡히지 않습니다. '청구 생성·갱신'을 누르세요.";
+                ? `청구 없는 매장 ${int(t.unbilled_stores)}곳`
+                : "이 달 청구가 아직 없습니다")
+            + " — '청구 생성·갱신'을 누르면 만들어집니다.";
     }
 
     // 입금 폼의 매장 목록 = 이 달 청구가 있는 매장. 선택은 유지합니다.
@@ -141,12 +156,14 @@ async function refreshSettlementMonth() {
         return;
     }
 
+    // 열 이름은 위 타일의 말과 같게 갑니다(청구한 돈 → 들어온 돈 → 못 받은
+    // 돈). '출처' 열은 뺐습니다 — 청구액 밑의 메타('요율 N%'/'본사 확정')가
+    // 같은 정보를 이미 보여줍니다. 상권 표기도 뺐습니다(피드백 4).
     table($("t-settlement"),
-        ["상태", "매장", "매출액", "청구액", "출처", "입금", "미수", "납기", "처리"],
+        ["상태", "매장", "이 달 매출", "청구한 돈", "들어온 돈", "못 받은 돈", "납기일", "처리"],
         stRows.map((s) => [
             settleStatusTag(s.status),
-            escape(s.store)
-                + (s.trade_area ? `<div class="meta">${escape(s.trade_area)}</div>` : ""),
+            escape(s.store),
             s.sales_amount != null ? wonFull(s.sales_amount) : "—",
             s.invoice_id != null
                 ? wonFull(s.billed_amount)
@@ -154,14 +171,15 @@ async function refreshSettlementMonth() {
                     // "이 요율로 계산됐다"는 오해가 됩니다 — '본사 확정'으로 갈랐습니다.
                     + (s.source === "hq"
                         ? '<div class="meta">본사 확정</div>'
-                        : `<div class="meta">요율 ${escape(String(s.rate_pct))}%</div>`)
+                        : `<div class="meta">매출 × ${escape(String(s.rate_pct))}%</div>`)
                     + (driftIds.has(s.invoice_id)
                         ? '<div><span class="tag h-warn">갱신 필요</span>'
                             + `<div class="meta">청구 당시 매출 ${wonFull(s.billed_sales)}</div></div>`
                         : "")
-                // 생성 전 미리보기 — 서버와 같은 규칙(round(매출×요율/100))입니다.
-                : `<span class="meta">예상 ${wonFull(Math.round((s.sales_amount || 0) * (d.rate_pct || 0) / 100))}</span>`,
-            s.source ? escape(SETTLE_SOURCE_LABEL[s.source] || s.source) : "—",
+                // 생성 전 미리보기 — 서버와 같은 규칙(round(매출×요율/100)).
+                // 요율은 그 매장의 유효 요율(apply_rate_pct, 84)입니다.
+                : `<span class="meta">예상 ${wonFull(Math.round((s.sales_amount || 0)
+                        * (s.apply_rate_pct ?? d.rate_pct ?? 0) / 100))}</span>`,
             wonFull(s.paid_amount)
                 + (s.payments && s.payments.length
                     ? `<div class="meta">${int(s.payments.length)}건</div>` : ""),
@@ -390,6 +408,123 @@ function initSettlementActions() {
     });
 }
 
+// ---- 로열티 수정 플로팅 (84_royalty_store_rate.sql) ------------------------
+//
+// 매장을 찾아 그 매장만 다른 요율을 줍니다. 공통 요율은 본사 값
+// (settlement_settings)이라 여기서 못 바꾸고, 예외 매장만 넣고 뺍니다.
+// 바꾼 요율은 다음 '청구 생성·갱신'부터 반영됩니다(청구는 생성 시점 스냅샷).
+
+let rateStores = [];        // api_royalty_store_rates 의 stores
+let rateDefaultPct = null;
+let rateSelected = null;    // 고른 매장 { store_id, store, rate_pct }
+
+function rateNotice(text, isError) {
+    const notice = $("rate-notice");
+    notice.className = isError ? "notice error" : "notice";
+    notice.textContent = text;
+}
+
+function renderRateList() {
+    const query = $("rate-search").value.trim();
+    const list = $("rate-list");
+    const rows = rateStores.filter((s) => !query || s.store.includes(query));
+    if (!rows.length) {
+        list.innerHTML = '<p class="hint">찾는 매장이 없습니다.</p>';
+        return;
+    }
+    list.innerHTML = rows.map((s) =>
+        `<button type="button" class="rate-row${
+            rateSelected && rateSelected.store_id === s.store_id ? " is-on" : ""
+        }" data-store-id="${s.store_id}">${escape(s.store)}<span class="rate-now">${
+            s.rate_pct != null
+                ? `${escape(String(s.rate_pct))}%<span class="tag st-partial">개별</span>`
+                : `${rateDefaultPct != null ? escape(String(rateDefaultPct)) + "%" : "—"} (공통)`
+        }</span></button>`).join("");
+}
+
+async function openRateModal() {
+    $("royalty-modal").hidden = false;
+    $("rate-form").hidden = true;
+    $("rate-search").value = "";
+    rateSelected = null;
+    rateNotice("", false);
+    $("rate-list").innerHTML = '<p class="hint">불러오는 중…</p>';
+
+    const { data, error } = await db.rpc("api_royalty_store_rates");
+    if (error) {
+        $("rate-list").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + "</p>";
+        return;
+    }
+    const d = data || {};
+    rateStores = d.stores || [];
+    rateDefaultPct = d.default_rate_pct;
+    $("rate-default-meta").textContent =
+        `공통 요율 ${rateDefaultPct != null ? rateDefaultPct : "—"}% · 다른 요율을 줄 매장만 고르세요`;
+    renderRateList();
+    $("rate-search").focus();
+}
+
+function pickRateStore(storeId) {
+    rateSelected = rateStores.find((s) => s.store_id === storeId) || null;
+    if (!rateSelected) return;
+    $("rate-form").hidden = false;
+    $("rate-form-label").textContent = `${rateSelected.store} 요율(%)`;
+    $("rate-input").value = rateSelected.rate_pct != null
+        ? String(rateSelected.rate_pct)
+        : (rateDefaultPct != null ? String(rateDefaultPct) : "");
+    rateNotice(rateSelected.rate_pct != null
+        ? `지금 ${rateSelected.rate_pct}% (개별 요율)`
+        : `지금 ${rateDefaultPct}% (공통 요율)`, false);
+    renderRateList();
+    $("rate-input").focus();
+}
+
+async function saveRate(reset) {
+    if (!rateSelected) return;
+    const rate = reset ? null : Number($("rate-input").value);
+    if (!reset && (!Number.isFinite(rate) || rate < 0 || rate > 100)) {
+        rateNotice("요율(%)은 0 이상 100 이하 숫자여야 합니다.", true);
+        return;
+    }
+    $("rate-save").disabled = true;
+    $("rate-reset").disabled = true;
+    const { data, error } = await db.rpc("set_royalty_store_rate", {
+        p_store_id: rateSelected.store_id,
+        p_rate_pct: rate,
+    });
+    $("rate-save").disabled = false;
+    $("rate-reset").disabled = false;
+    if (error || (data && data.ok === false)) {
+        rateNotice(error ? error.message : (data.reason || "저장하지 못했습니다"), true);
+        return;
+    }
+    rateSelected.rate_pct = rate;
+    rateNotice((reset
+            ? `${rateSelected.store}을(를) 공통 요율 ${rateDefaultPct}%로 되돌렸습니다.`
+            : `${rateSelected.store} 요율을 ${rate}%로 저장했습니다.`)
+        + " 이미 만들어진 청구는 그대로입니다 — '청구 생성·갱신'을 누르면 반영됩니다.",
+        false);
+    renderRateList();
+    // 미청구 매장의 '예상 청구' 미리보기가 이 요율을 쓰므로 같이 새로 그립니다.
+    await refreshSettlementMonth();
+}
+
+function initRoyaltyRates() {
+    $("st-rate-edit").addEventListener("click", openRateModal);
+    $("rate-close").addEventListener("click", () => { $("royalty-modal").hidden = true; });
+    $("royalty-modal").addEventListener("click", (event) => {
+        if (event.target === $("royalty-modal")) $("royalty-modal").hidden = true;
+    });
+    $("rate-search").addEventListener("input", renderRateList);
+    $("rate-list").addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-store-id]");
+        if (button) pickRateStore(Number(button.dataset.storeId));
+    });
+    $("rate-save").addEventListener("click", () => saveRate(false));
+    $("rate-reset").addEventListener("click", () => saveRate(true));
+}
+
 async function refreshReceivables() {
     const { data, error } = await db.rpc("api_royalty_receivables");
     if (error) {
@@ -410,8 +545,10 @@ async function refreshReceivables() {
         return;
     }
 
+    // 열 이름은 월별 표와 같은 말을 씁니다 — 두 표를 오가며 읽어야 하는
+    // 화면이라 같은 돈이 다른 이름으로 불리면 안 됩니다(피드백 2).
     table($("t-receivables"),
-        ["매장", "연월", "청구액", "입금", "미수", "납기", "연체", "지연이자(참고)", "처리"],
+        ["매장", "청구 달", "청구한 돈", "들어온 돈", "못 받은 돈", "납기일", "연체", "지연이자(참고)", "처리"],
         items.map((r) => [
             escape(r.store),
             ymLabel(r.ym),

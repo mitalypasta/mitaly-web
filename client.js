@@ -31,8 +31,32 @@ if (DEMO) {
             '<p>먼저 화면만 보려면 <a href="?demo=1">데모 모드</a>로 여세요.</p></div>';
         throw new Error("config.js 가 설정되지 않았습니다.");
     }
-    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+    // 버전을 고정하고 ?bundle 로 한 덩어리를 받습니다(3라운드 0-5 실측).
+    // 떠 있는 @2 는 매 방문 재검증되는 10분짜리 캐시 + 하위 모듈 20여 개를
+    // 3~4단 체인으로 불러 부팅에서 가장 오래 걸리는 구간이었습니다(로컬에서도
+    // 1초 안팎 — db 준비 전에는 로그인 화면조차 안 뜹니다). 고정판+번들은
+    // 요청 3개, immutable 캐시(1년)라 재방문에는 네트워크 비용이 없습니다.
+    // 2.112.3 = 2026-08-16 에 @2 가 실제로 풀리던 버전(동작 변화 없음).
+    const { createClient } =
+        await import("https://esm.sh/@supabase/supabase-js@2.112.3?bundle&target=es2022");
     client = createClient(CONFIG.url, CONFIG.anonKey);
 }
 
 export const db = client;
+
+// 매장 목록(id·name)은 부팅 때 여러 영역(업무·방문·오픈폐점·공지·식자재·
+// 매장DB·위반)이 각자 조회해 같은 REST 호출이 9번 나갔습니다(2026-08-16 실측,
+// 3라운드 0-5). 한 번만 조회해 나눠 씁니다. 매장 목록은 한 세션 안에서
+// 사실상 안 바뀌므로(신규 등록은 화면 새로고침 뒤에 보여도 충분) 캐시가
+// 안전합니다. 실패하면 캐시를 비워 다음 호출이 다시 시도합니다.
+let storesPromise = null;
+export function fetchStores() {
+    if (!storesPromise) {
+        storesPromise = db.from("stores").select("id,name").order("name")
+            .then((r) => {
+                if (r.error) storesPromise = null;
+                return r;
+            }, (e) => { storesPromise = null; throw e; });
+    }
+    return storesPromise;
+}

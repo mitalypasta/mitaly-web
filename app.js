@@ -10,12 +10,12 @@
 import { won, wonFull, int, ymLabel, catLabel, ymDash } from "./format.js";
 import { escape, clip, debounce, niceTicks, monthsBetween } from "./util.js";
 import { S } from "./state.js";
-import { table, $ } from "./dom.js";
+import { table, $, monthPicker, searchify, loadSheetJS, showTip, hideTip } from "./dom.js";
 import { palette, renderHeat, drawLine, drawBars } from "./charts.js";
 
 // Supabase 클라이언트(데모 분기·설정 게이트)는 client.js 로 빠졌습니다 —
 // docs/web-split-plan.md 3단계. db 를 쓰는 화면 모듈이 같은 인스턴스를 씁니다.
-import { db, CONFIG } from "./client.js";
+import { db, CONFIG, fetchStores } from "./client.js";
 // 영역 모듈들 — 각자 db + foundation 만 import 하는 독립 화면입니다
 // (docs/web-split-plan.md 3·4단계). 대시보드가 init* 를 부릅니다.
 import { initAds } from "./ads.js";
@@ -34,7 +34,7 @@ import { initComms } from "./comms.js";
 import { initPosMenu } from "./pos.js";
 import { initInquiries } from "./inquiries.js";
 import { initSettlement } from "./settlement.js";
-import { initDeliveryMap, drawStoreMap, dmapMap } from "./map.js";
+import { initDeliveryMap, dmapFilterChanged } from "./map.js";
 import { initNotifications } from "./notifications.js";
 import { initRecipients } from "./recipients.js";
 import { initConsents } from "./consents.js";
@@ -190,8 +190,20 @@ async function initDashboard() {
     }
 
     const months = monthsBetween(info.ym_min, info.ym_max);
-    fillSelect($("f-from"), months, ymLabel);
-    fillSelect($("f-to"), months, ymLabel);
+    // 시작·종료월은 select 가 아니라 브라우저 달력(input[type=month])입니다
+    // (3라운드 0-1). 고를 수 있는 범위 = 데이터가 실존하는 범위.
+    monthPicker("f-from", { min: info.ym_min, max: info.ym_max });
+    monthPicker("f-to", { min: info.ym_min, max: info.ym_max });
+
+    // 매장 select 는 전부 검색 가능한 콤보로 바꿉니다(3라운드 0-2). select 는
+    // 숨은 값의 원본으로 남으므로 각 영역 파일의 채우기·읽기 코드는 그대로
+    // 동작합니다. 옵션이 나중에 채워지는 select 도 콤보가 알아서 따라갑니다.
+    for (const id of ["f-store", "dmap-store", "oh-store", "iu-store",
+                      "cred-store", "cred-f-store", "ct-store", "ct-f-store",
+                      "v-store", "vs-store", "la-store", "pm-store",
+                      "dm-store", "tk-store", "tk-filter-store", "pay-invoice"]) {
+        searchify(id);
+    }
 
     // 기본값: **최근 한 달**(지난달~이번달). 담당자 요구(2026-07-30).
     //
@@ -230,8 +242,8 @@ async function initDashboard() {
     // (showArea) 이론 사용량 카드처럼 카드가 직접 갖습니다 — 지도는 이제 이
     // 고르개만 읽습니다(dmapFilters). 고를 수 있는 달·매장은 전역 필터와 같은
     // 원천(api_filters)이고 기본값도 같은 규칙(최근 한 달)입니다.
-    fillSelect($("dmap-from"), months, ymLabel);
-    fillSelect($("dmap-to"), months, ymLabel);
+    monthPicker("dmap-from", { min: info.ym_min, max: info.ym_max });
+    monthPicker("dmap-to", { min: info.ym_min, max: info.ym_max });
     $("dmap-from").value = String(defFrom);
     $("dmap-to").value = String(defTo);
     for (const name of info.stores || []) {
@@ -241,11 +253,10 @@ async function initDashboard() {
         $("dmap-store").append(option);
     }
     for (const id of ["dmap-from", "dmap-to", "dmap-store"]) {
-        // 지도가 아직 안 떴으면(게으른 로드) 값만 남겨 두면 됩니다 — 첫
-        // 그리기가 어차피 이 고르개를 읽습니다.
-        $(id).addEventListener("change", () => {
-            if (dmapMap) drawStoreMap();
-        });
+        // 카드가 아직 안 떴으면(게으른 로드) 값만 남겨 두면 됩니다 — 첫
+        // 그리기가 어차피 이 고르개를 읽습니다. 떠 있으면 마커·상세를 같이
+        // 다시 그립니다(지도 유무는 map.js 가 판단 — SDK 없이도 상세는 돕니다).
+        $(id).addEventListener("change", dmapFilterChanged);
     }
 
     // 내보내기 기본 기간을 데이터 범위에 맞추는 데 씁니다.
@@ -263,12 +274,13 @@ async function initDashboard() {
         });
     });
 
-    // 전 품목 검색. 표만 다시 그리므로 데이터를 새로 받지 않습니다.
-    $("ai-search").addEventListener("input",
-        debounce(() => allItemsRender && allItemsRender(), 150));
-
-    // 급증·급감 매장만 보기. 이미 받아 온 데이터를 다시 그리기만 합니다.
+    // 급증·급감 매장만 보기 / 매장 검색. 이미 받아 온 데이터를 다시 그리기만 합니다.
     $("alerts-only").addEventListener("change", () => S.lastData && drawAlerts(S.lastData));
+    $("alerts-q").addEventListener("input",
+        debounce(() => S.lastData && drawAlerts(S.lastData), 150));
+
+    // 매출 탭 엑셀 내보내기(필터 줄 버튼) — 조회 없는 클릭 배선이라 여기서 겁니다.
+    $("sales-export").addEventListener("click", runSalesExport);
 
     // 리뷰 필터는 서버에서 걸러야 하므로 다시 받습니다.
     for (const id of ["rv-unanswered", "rv-drafts-only", "rv-platform", "rv-rating"]) {
@@ -301,6 +313,7 @@ async function initDashboard() {
 
     // 홈 타일 배선과 지도 nav 배선은 조회가 없어(클릭 리스너뿐) 먼저 겁니다.
     initHomeTiles();
+    initHome();
     initDeliveryMap();
 
     // 보이는 화면(홈·매출)의 위 4칸을 먼저 그립니다. 안 보이는 20여 개 영역의
@@ -311,10 +324,10 @@ async function initDashboard() {
     // 실렸습니다). 첫 그리기 뒤에 시작하므로 영역 조회는 대시보드 나머지와
     // 겹쳐 돌아 예전만큼 일찍 채워지고, 매출 4칸만 먼저 자리를 차지합니다.
     // 홈 타일의 '업무·문의 수'가 먼저 차도록 그 둘을 앞에 둡니다. 나머지는
-    // 원래 순서를 지킵니다(수집요청→내보내기는 매장 고르개 상태를 공유).
+    // 원래 순서를 지킵니다. (수집 요청·계정 상태·내보내기 화면의 init 3개는
+    // 3라운드 2차에서 화면과 함께 빠졌습니다 — 엑셀은 위 필터 줄 버튼이 대신.)
     await load(() => runAfterPaint([
-        initTasks, initInquiries,
-        initRequests, initExport, initDrafts, loadAccountHealth,
+        initTasks, initInquiries, initDrafts,
         initNotices, initVisits, initStoreDb, initAccountPresence,
         initLifecycle, initKakaoStats, initNotifications, initRecipients,
         initConsents, initSettlement, initAds, initIngredients,
@@ -339,611 +352,13 @@ function runAfterPaint(inits) {
     setTimeout(pump, 0);
 }
 
-// ---------------------------------------------------------------- 수집 요청
-
-// 5개 채널 전부 동작합니다. (요기요는 2026-07-23 완성)
-// 네이버는 매출이 없는 리뷰 전용 채널이라 리뷰 요청에서만 선택됩니다.
-// 공개 경로라 계정·로그인이 필요 없습니다 — docs/naver-review-api.md 6절.
-const PLUGIN_LIST = [
-    { id: "easypos", name: "이지포스", ready: true },
-    { id: "baemin", name: "배달의민족", ready: true },
-    { id: "imu", name: "아임유", ready: true },
-    { id: "coupangeats", name: "쿠팡이츠", ready: true },
-    { id: "yogiyo", name: "요기요", ready: true },
-    { id: "naver", name: "네이버(리뷰)", ready: true, reviewOnly: true },
-];
-
-const STATUS_LABEL = {
-    pending: "대기 중 — 수집 PC가 가져가면 시작합니다",
-    running: "실행 중",
-    done: "완료",
-    failed: "실패",
-    canceled: "취소됨",
-};
-
-let requestTimer = null;
-let runnerTimer = null;
-
-// 수집 화면의 두 폴링(러너 상태 30초·요청 내역 5/60초)은 화면을 떠나도 영원히
-// 돌았습니다 (큐 #107 F6). 다른 영역을 보는 동안은 서버 조회를 쉬고 타이머만
-// 이어 갑니다 — 수집 영역으로 돌아오면 nav 의 mitaly:area 이벤트가 바로 한 번
-// 돌려 최신으로 맞춥니다. S.area 가 아직 없으면(부팅 순서) 종전대로 돕니다.
-function inCollectArea() {
-    return !S.area || S.area === "collect";
-}
-window.addEventListener("mitaly:area", (e) => {
-    if (e.detail === "collect") {
-        refreshRequests();
-        refreshRunner();
-    }
-});
-let targets = [];              // 수집 대상 매장 카탈로그 (러너가 올려줌)
-let chosenStores = new Set();  // 수집 요청용. 비어 있으면 '전체'
-let xStores = new Set();       // 엑셀 내보내기용. 비어 있으면 '전체'
-
-// 매장 선택창은 수집 요청과 내보내기가 함께 씁니다. 지금 어느 쪽이 열었는지에 따라
-// 다른 선택 집합을 만집니다. 이렇게 안 하면 두 기능이 같은 선택을 공유해 버립니다.
-let pickerCtx = "request";
-function curStoreSet() { return pickerCtx === "export" ? xStores : chosenStores; }
-
-function initRequests() {
-    const box = $("r-plugins");
-    for (const plugin of PLUGIN_LIST) {
-        const label = document.createElement("label");
-        // 리뷰 전용 채널은 매출 요청에 실리면 안 되므로 처음부터 꺼 둡니다 —
-        // syncKind() 가 리뷰 모드에서만 켭니다.
-        label.innerHTML =
-            `<input type="checkbox" value="${plugin.id}"` +
-            `${plugin.reviewOnly ? ' data-review-only="1"' : ""}` +
-            `${plugin.ready && !plugin.reviewOnly ? " checked" : ""}` +
-            `${plugin.ready ? "" : " disabled"}>` +
-            `<span>${escape(plugin.name)}</span>`;
-        box.append(label);
-    }
-
-    // 이지포스는 계정이 굿모닝/착한통신으로 나뉩니다. 기존 프로그램과 같은 규칙입니다.
-    const profileBox = $("r-profiles");
-    for (const name of ["굿모닝", "착한통신"]) {
-        const label = document.createElement("label");
-        label.innerHTML = `<input type="checkbox" value="${name}" checked><span>${name}</span>`;
-        profileBox.append(label);
-    }
-
-    // 이지포스를 껐다 켜면 계정 선택칸도 같이 숨기고 보입니다.
-    const syncProfileVisibility = () => {
-        const easypos = document.querySelector('#r-plugins input[value="easypos"]');
-        $("r-profile-field").hidden = !(easypos && easypos.checked);
-        refreshStoreButton();
-    };
-    document.querySelectorAll("#r-plugins input").forEach((el) =>
-        el.addEventListener("change", syncProfileVisibility));
-    syncProfileVisibility();
-
-    $("r-kind").addEventListener("change", () => syncKind(syncProfileVisibility));
-    syncKind(syncProfileVisibility);
-
-    const today = new Date();
-    const yesterday = new Date(today.getTime() - 86400000);
-    const firstOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    $("r-from").value = isoDate(firstOfLastMonth);
-    $("r-to").value = isoDate(yesterday);
-
-    $("r-submit").addEventListener("click", submitRequest);
-    initStorePicker();
-    loadTargets();
-    refreshRequests();
-    refreshRunner();
-}
-
-// ---- 수집 대상 매장 ----------------------------------------------------
-
-function selectedPlugins() {
-    return [...document.querySelectorAll("#r-plugins input:checked")].map((el) => el.value);
-}
-
-// 리뷰 수집기가 실제로 있는 채널. 러너의 REVIEW_PLUGINS 와 같아야 합니다.
-// 네이버는 최초 로그인(사람)이 끝난 매장만 실제로 수집됩니다.
-const REVIEW_PLUGINS = ["baemin", "yogiyo", "coupangeats", "naver"];
-
-// 리뷰 요청 오류에 다음 행동을 붙입니다. 문구는 agent/mitaly_cloud_agent.py
-// handle_review_request() 가 실제로 내보내는 error 문자열에 맞춰 골랐습니다 —
-// 러너 메시지가 바뀌면 이 매칭도 같이 손봐야 합니다.
-function reviewFailureHint(errorText) {
-    const msg = errorText || "";
-    if (msg.includes("리뷰 수집기가 있는 채널이 없습니다")) {
-        return "쿠팡이츠는 아직 리뷰 수집기가 없습니다. 배민 또는 요기요를 선택해 다시 요청하세요.";
-    }
-    if (msg.includes("수집하지 못했습니다") || msg.includes("실패:")) {
-        return "계정표(매장별_배달계정.xlsx)에 이 매장의 배민·요기요 계정 정보가 있는지 " +
-            "먼저 확인하세요. 계정이 맞다면 자리 PC가 켜져 있고 수집 프로그램이 " +
-            "정상 동작 중인지 확인하세요.";
-    }
-    if (msg.includes("업로드")) {
-        return "자리 PC가 켜져 있고 수집 프로그램이 정상 동작 중인지 확인하세요. " +
-            "이어지면 로그를 펼쳐 원인을 확인하세요.";
-    }
-    if (msg.includes("기간이 비어")) {
-        return "조회 기간을 채워 다시 요청하세요.";
-    }
-    return "계정표 확인 → 선택한 채널에 리뷰 수집기가 있는지 확인 → 자리 PC가 켜져 " +
-        "있는지 확인, 순서로 살펴보세요.";
-}
-
-// '매출' 과 '리뷰' 는 받는 방식이 달라 고를 수 있는 것도 다릅니다.
-// 리뷰는 (a) 수집기가 있는 채널만 (b) 이지포스 계정 구분이 없고
-// (c) '이미 받은 기간 다시 받기' 가 무의미합니다 — 리뷰는 늘 겹쳐 받습니다.
-// 매출 모드에서 무엇을 골라 뒀는지. 리뷰로 갔다 돌아올 때 되돌립니다.
-// 이게 없으면 리뷰를 한 번 보기만 해도 채널 선택이 날아갑니다.
-let salesChecked = null;
-
-function syncKind(syncProfileVisibility) {
-    const reviews = $("r-kind").value === "reviews";
-    const inputs = [...document.querySelectorAll("#r-plugins input")];
-
-    if (reviews && salesChecked === null) {
-        salesChecked = inputs.filter((el) => el.checked).map((el) => el.value);
-    }
-
-    for (const el of inputs) {
-        // 리뷰 전용 채널(네이버)은 매출 모드에서 끕니다.
-        const ok = reviews ? REVIEW_PLUGINS.includes(el.value)
-            : el.dataset.reviewOnly !== "1";
-        // 원래 상태(준비 안 된 채널)를 기억해 두었다가 되돌립니다.
-        if (el.dataset.ready === undefined) el.dataset.ready = String(!el.disabled);
-        el.disabled = !ok || el.dataset.ready === "false";
-
-        if (reviews) {
-            el.checked = ok;
-        } else if (salesChecked !== null) {
-            el.checked = salesChecked.includes(el.value);
-        }
-        // 흐림·취소선은 .checks input[disabled] + span 이 이미 해 줍니다.
-    }
-    if (!reviews) salesChecked = null;
-
-    $("r-force-wrap").hidden = reviews;
-    $("r-kind-note").hidden = !reviews;
-    // 채널 이름은 목록에서 만들어냅니다. 손으로 적어 두면 채널을 더할 때마다
-    // 문구가 낡습니다(실제로 요기요를 붙이고 한 번 어긋났습니다).
-    const names = inputs
-        .filter((el) => REVIEW_PLUGINS.includes(el.value))
-        .map((el) => el.closest("label").textContent.trim())
-        .join(" · ");
-    $("r-kind-note").textContent = reviews
-        ? "리뷰는 같은 기간을 겹쳐 받아도 중복이 쌓이지 않습니다. "
-          + "배민 답글에는 기한(대략 30일)이 있어 수집 PC 가 하루 한 번 스스로도 받습니다. "
-          + `지금 리뷰 수집기가 있는 채널: ${names}.`
-        : "";
-
-    if (reviews) $("r-profile-field").hidden = true;
-    else if (syncProfileVisibility) syncProfileVisibility();
-    refreshStoreButton();
-}
-
-async function loadTargets() {
-    const { data, error } = await db.rpc("api_targets", { p_plugins: null });
-    if (error) {
-        // 아직 러너가 목록을 안 올렸거나 SQL 적용 전입니다.
-        $("r-store-open").textContent = "전체 매장";
-        $("r-store-open").disabled = false;
-        return;
-    }
-    targets = data || [];
-    refreshStoreButton();
-    // 내보내기 '대상 매장' 버튼도 같은 목록을 셉니다 — 여기서 같이 갱신해야
-    // 처음부터 "전체 매장 (N개)" 로 요청 버튼과 표기가 맞습니다 (큐 #107 F5).
-    refreshExportStoreButton();
-}
-
-// 고른 채널에 실제로 붙어 있는 매장만 보여줍니다.
-function visibleTargets() {
-    const plugins = selectedPlugins();
-    if (!plugins.length) return targets;
-    return targets.filter((t) => (t.plugins || []).some((p) => plugins.includes(p)));
-}
-
-// 매장 선택창이 보여줄 목록 (큐 #107 F1). 채널 필터는 '수집 요청' 폼의
-// 체크박스라 요청 모드에만 뜻이 있습니다. 내보내기는 전 채널 대상이므로
-// 여기서 걸러 버리면 홀 전용 매장 등이 내보내기에서 조용히 빠집니다 —
-// 버튼(refreshExportStoreButton)도 targets 전체를 세므로 이걸로 둘이 일치합니다.
-function pickerTargets() {
-    return pickerCtx === "export" ? targets : visibleTargets();
-}
-
-function refreshStoreButton() {
-    const total = visibleTargets().length;
-    const chosen = [...chosenStores].filter((name) =>
-        visibleTargets().some((t) => t.name === name)).length;
-    $("r-store-open").textContent = chosen === 0
-        ? `전체 매장${total ? ` (${total}개)` : ""}`
-        : `${chosen}개 선택됨 / ${total}개`;
-}
-
-function initStorePicker() {
-    const modal = $("store-modal");
-    const open = (ctx) => {
-        // 요청↔내보내기 사이를 오갈 때 옛 검색어가 남아 있으면 다른 기능의
-        // 필터가 그대로 적용됩니다 (큐 #107 F7). 같은 쪽을 다시 열 때는 둡니다.
-        if (pickerCtx !== ctx) $("store-search").value = "";
-        pickerCtx = ctx;
-        modal.hidden = false;
-        renderStoreList();
-    };
-    const close = () => { modal.hidden = true; };
-    const applyRefresh = () => {
-        // 열었던 쪽의 버튼만 갱신합니다.
-        if (pickerCtx === "export") refreshExportStoreButton();
-        else refreshStoreButton();
-    };
-
-    $("r-store-open").addEventListener("click", () => open("request"));
-    const xOpen = $("x-store-open");
-    if (xOpen) xOpen.addEventListener("click", () => open("export"));
-
-    $("store-close").addEventListener("click", close);
-    $("store-apply").addEventListener("click", () => { close(); applyRefresh(); });
-    modal.addEventListener("click", (e) => { if (e.target === modal) close(); });
-    $("store-search").addEventListener("input", renderStoreList);
-
-    $("store-all").addEventListener("click", () => {
-        pickerTargets().forEach((t) => curStoreSet().add(t.name));
-        renderStoreList();
-    });
-    $("store-none").addEventListener("click", () => {
-        curStoreSet().clear();
-        renderStoreList();
-    });
-    $("store-filtered").addEventListener("click", () => {
-        filteredTargets().forEach((t) => curStoreSet().add(t.name));
-        renderStoreList();
-    });
-}
-
-function filteredTargets() {
-    const query = ($("store-search").value || "").trim();
-    const list = pickerTargets();
-    return query ? list.filter((t) => t.name.includes(query)) : list;
-}
-
-const PLUGIN_SHORT = {
-    easypos: "포스", baemin: "배민", imu: "아임유",
-    coupangeats: "쿠팡", yogiyo: "요기요", naver: "네이버",
-};
-
-function renderStoreList() {
-    const set = curStoreSet();
-    const list = filteredTargets();
-    const total = pickerTargets().length;
-    const tail = pickerCtx === "export" ? "전체 내보내기" : "전체 수집";
-
-    $("store-count").textContent =
-        `${set.size}개 선택 · 검색결과 ${list.length}개 / 전체 ${total}개` +
-        (set.size === 0 ? `  (아무것도 안 고르면 ${tail})` : "");
-
-    $("store-list").innerHTML = list.map((t) => `
-        <label>
-            <input type="checkbox" value="${escape(t.name)}"
-                   ${set.has(t.name) ? "checked" : ""}>
-            <span>${escape(t.name)}</span>
-            <span class="chan">${(t.plugins || []).map((p) => PLUGIN_SHORT[p] || p).join("·")}</span>
-        </label>`).join("")
-        || '<p class="hint">해당하는 매장이 없습니다. 수집 PC가 목록을 아직 안 올렸을 수 있습니다.</p>';
-
-    $("store-list").querySelectorAll("input").forEach((el) => {
-        el.addEventListener("change", () => {
-            if (el.checked) set.add(el.value);
-            else set.delete(el.value);
-            $("store-count").textContent =
-                `${set.size}개 선택 · 검색결과 ${list.length}개 / 전체 ${total}개`;
-        });
-    });
-}
-
-function refreshExportStoreButton() {
-    const btn = $("x-store-open");
-    if (!btn) return;
-    const total = targets.length;
-    const chosen = [...xStores].filter((name) =>
-        targets.some((t) => t.name === name)).length;
-    btn.textContent = chosen === 0
-        ? `전체 매장${total ? ` (${total}개)` : ""}`
-        : `${chosen}개 선택됨 / ${total}개`;
-}
-
-// ---- 러너 상태 --------------------------------------------------------
-
-async function refreshRunner() {
-    // 직접 호출(영역 진입)과 타이머 호출이 겹쳐도 폴링 루프가 늘지 않게 합니다.
-    clearTimeout(runnerTimer);
-    if (!inCollectArea()) {
-        runnerTimer = setTimeout(refreshRunner, 30000);
-        return;
-    }
-    const el = $("runner-state");
-    const { data, error } = await db
-        .from("runner_status").select("last_seen_at,hostname,busy,current_note").limit(1);
-
-    if (error || !data || !data.length) {
-        el.className = "runner";
-        el.textContent = "수집 PC 상태를 알 수 없음";
-    } else {
-        const row = data[0];
-        const ageSec = (Date.now() - new Date(row.last_seen_at).getTime()) / 1000;
-        if (ageSec > 150) {
-            el.className = "runner off";
-            el.textContent = `수집 PC 꺼짐 · 마지막 응답 ${timeAgo(ageSec)}`;
-        } else if (row.busy) {
-            el.className = "runner busy";
-            el.textContent = `수집 PC 작업 중 · ${row.current_note || ""}`;
-        } else {
-            el.className = "runner on";
-            el.textContent = `수집 PC 연결됨${row.hostname ? ` (${row.hostname})` : ""}`;
-        }
-    }
-    runnerTimer = setTimeout(refreshRunner, 30000);
-}
-
-function timeAgo(seconds) {
-    if (seconds < 3600) return `${Math.round(seconds / 60)}분 전`;
-    if (seconds < 86400) return `${Math.round(seconds / 3600)}시간 전`;
-    return `${Math.round(seconds / 86400)}일 전`;
-}
-
-// ---- 계정 상태 (34_account_health.sql) -------------------------------
+// ---------------------------------------------------------------- (옛 수집 요청 화면)
 //
-// 러너가 매일 새벽 5채널 로그인만 찔러 본 마지막 결과를 보여줍니다.
-// 하루 한 번 바뀌는 데이터라 화면을 열 때 한 번만 받습니다.
-
-const HEALTH_STATUS = {
-    ok:   { label: "정상", cls: "h-ok" },
-    warn: { label: "주의", cls: "h-warn" },
-    fail: { label: "실패", cls: "h-fail" },
-};
-
-async function loadAccountHealth() {
-    const meta = $("health-meta");
-    const { data, error } = await db.rpc("api_account_health");
-    if (error) {
-        meta.textContent = "불러오지 못했습니다";
-        $("t-health").innerHTML =
-            '<p class="hint">' + escape(error.message) + "</p>";
-        return;
-    }
-    if (!data || !data.run_id) {
-        meta.textContent = "점검 전";
-        $("t-health").innerHTML =
-            '<p class="hint">아직 점검 이력이 없습니다. 수집 PC가 매일 새벽 한 번 ' +
-            "5채널 로그인을 확인해 여기 표시합니다.</p>";
-        return;
-    }
-
-    const results = data.results || [];
-    const count = (s) => results.filter((r) => r.status === s).length;
-    const when = new Date(data.finished_at || data.started_at);
-    meta.textContent =
-        `마지막 점검 ${when.getMonth() + 1}/${when.getDate()} ` +
-        `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}` +
-        ` · 정상 ${count("ok")} · 주의 ${count("warn")} · 실패 ${count("fail")}`;
-
-    const channelName = (id) =>
-        (PLUGIN_LIST.find((p) => p.id === id) || { name: id }).name;
-
-    table($("t-health"),
-        ["채널", "계정", "상태", "내용"],
-        results.map((r) => {
-            const st = HEALTH_STATUS[r.status] || HEALTH_STATUS.fail;
-            return [
-                escape(channelName(r.channel)),
-                escape(r.account || r.store || "—"),
-                `<span class="tag ${st.cls}">${st.label}</span>`,
-                escape(r.detail || ""),
-            ];
-        }),
-        { html: true });
-}
-
-const isoDate = (d) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
-async function submitRequest() {
-    const notice = $("r-notice");
-    const button = $("r-submit");
-    const plugins = [...document.querySelectorAll("#r-plugins input:checked")]
-        .map((el) => el.value);
-    const from = $("r-from").value;
-    const to = $("r-to").value;
-
-    if (!plugins.length) {
-        notice.className = "notice error";
-        notice.textContent = "채널을 하나 이상 고르세요.";
-        return;
-    }
-    if (!from || !to) {
-        notice.className = "notice error";
-        notice.textContent = "기간을 정하세요.";
-        return;
-    }
-    if (from > to) {
-        notice.className = "notice error";
-        notice.textContent = "시작일이 종료일보다 뒤입니다.";
-        return;
-    }
-
-    button.disabled = true;
-    notice.className = "notice";
-    notice.textContent = "요청하는 중…";
-
-    // 고른 채널에 없는 매장은 빼고 보냅니다.
-    const usable = new Set(visibleTargets().map((t) => t.name));
-    const stores = [...chosenStores].filter((name) => usable.has(name));
-
-    const profiles = plugins.includes("easypos")
-        ? [...document.querySelectorAll("#r-profiles input:checked")].map((el) => el.value)
-        : [];
-
-    if (plugins.includes("easypos") && !profiles.length) {
-        notice.className = "notice error";
-        notice.textContent = "이지포스 계정을 하나 이상 고르세요 (굿모닝 / 착한통신).";
-        button.disabled = false;
-        return;
-    }
-
-    const forceEl = $("r-force");
-    const kind = $("r-kind").value === "reviews" ? "reviews" : "sales";
-    const { data: { session } } = await db.auth.getSession();
-    const { error } = await db.from("collect_requests").insert({
-        requested_by: session?.user?.id,
-        kind,
-        plugins,
-        date_from: from,
-        date_to: to,
-        stores,
-        // 리뷰에는 이지포스 계정 구분도, '다시 받기' 도 해당이 없습니다.
-        profiles: kind === "reviews" ? [] : profiles,
-        force: kind === "reviews" ? false
-            : (forceEl ? forceEl.checked : false),
-    });
-
-    button.disabled = false;
-    if (error) {
-        notice.className = "notice error";
-        notice.textContent = "요청하지 못했습니다: " + error.message;
-        return;
-    }
-
-    notice.className = "notice";
-    notice.textContent = "요청했습니다. 수집 PC가 가져가면 아래에 진행 상황이 보입니다.";
-    refreshRequests();
-}
-
-async function refreshRequests() {
-    clearTimeout(requestTimer);
-    if (!inCollectArea()) {
-        // 진행 중 여부를 모르는 동안은 느린 쪽 주기로만 이어 갑니다.
-        requestTimer = setTimeout(refreshRequests, 60000);
-        return;
-    }
-    const { data, error } = await db
-        .from("collect_requests")
-        .select("id,kind,requested_at,plugins,date_from,date_to,stores,profiles," +
-                "status,progress,error,finished_at,log_tail")
-        .order("id", { ascending: false })
-        .limit(20);
-
-    if (error) return;
-    const rows = data || [];
-
-    // 진행 중인 것만 카드 위에 크게 보여줍니다.
-    const active = rows.filter((r) => r.status === "pending" || r.status === "running");
-
-    // 요청이 한참 '대기 중'이면 수집 PC가 꺼져 있다는 뜻입니다.
-    // 이 안내가 없으면 사용자는 버튼이 고장 난 줄 압니다.
-    const STALE_MS = 120000;
-    const stale = active.some((r) =>
-        r.status === "pending" && Date.now() - new Date(r.requested_at).getTime() > STALE_MS);
-
-    $("r-active").innerHTML = active.map((r) => {
-        const waiting = r.status === "pending"
-            && Date.now() - new Date(r.requested_at).getTime() > STALE_MS;
-        return `
-        <div class="runrow">
-            <span class="dot st-${r.status}"></span>
-            <span><b>#${r.id}</b>${r.kind === "reviews" ? " 리뷰" : ""} ${escape(r.date_from)} ~ ${escape(r.date_to)}</span>
-            <span class="grow">${escape(
-                r.progress || (waiting ? "수집 PC를 기다리는 중" : STATUS_LABEL[r.status] || r.status)
-            )}</span>
-            <button class="linkish" data-cancel="${r.id}">취소</button>
-        </div>`;
-    }).join("") + (stale ? `
-        <p class="notice">
-            2분 넘게 시작되지 않고 있습니다. 수집 담당 PC가 꺼져 있거나
-            수집 프로그램(<code>START_CLOUD_AGENT.bat</code>)이 실행되지 않은 상태입니다.
-            <b>요청은 사라지지 않고, PC가 켜지면 그때 자동으로 실행됩니다.</b>
-        </p>` : "");
-
-    // 요청 내역 — 로그를 펼쳐 볼 수 있어야 문제가 생겼을 때 원인을 찾습니다.
-    $("r-history").innerHTML = rows.map((r) => {
-        const when = new Date(r.requested_at)
-            .toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" });
-        const scope = (r.stores || []).length ? `매장 ${r.stores.length}개` : "전 매장";
-        const prof = (r.profiles || []).length ? ` · ${r.profiles.join("+")}` : "";
-        // 리뷰 요청에서 오류가 나면(전체 실패든 일부 채널 실패든) 원인 문자열만
-        // 던지지 않고 사람이 바로 할 수 있는 다음 행동을 붙입니다.
-        const reviewHint = r.kind === "reviews" && r.error
-            ? reviewFailureHint(r.error) : null;
-        return `
-        <div class="runrow">
-            <span class="dot st-${r.status}"></span>
-            <span><b>#${r.id}</b></span>
-            <span class="grow">${when} · ${escape(r.date_from)}~${escape(r.date_to)}
-                · ${escape((r.plugins || []).map((p) => PLUGIN_SHORT[p] || p).join("·"))}
-                · ${escape(scope)}${escape(prof)}
-                · ${escape(STATUS_LABEL[r.status] || r.status)}
-                ${r.error ? `· <b>${escape(r.error)}</b>` : ""}</span>
-            ${r.log_tail ? `<button class="linkish" data-log="${r.id}">로그</button>` : ""}
-        </div>
-        ${reviewHint ? `<p class="hint">${escape(reviewHint)}</p>` : ""}
-        <pre class="logbox" id="log-${r.id}" hidden>${escape(r.log_tail || "")}</pre>`;
-    }).join("") || '<p class="hint">아직 요청이 없습니다.</p>';
-
-    // 대기/실행 중 요청 취소 (큐 #107 F4). 러너가 죽어 running 으로 굳은 좀비
-    // 요청은 지금까지 담당자 터미널(enqueue_backfill 고아 정리)로만 풀 수
-    // 있었습니다. RLS 가 update 를 막으므로 definer 함수(81_cancel_request.sql)
-    // 를 부릅니다 — 함수 쪽에서 pending/running 만 취소되게 다시 확인합니다.
-    // 실행 중인 살아 있는 러너를 멈추는 것은 아닙니다(러너가 끝내면 그 결과로
-    // 덮일 수 있음) — 안내문이 그 차이를 알립니다.
-    $("r-active").querySelectorAll("[data-cancel]").forEach((button) => {
-        button.addEventListener("click", async () => {
-            const id = Number(button.dataset.cancel);
-            if (!window.confirm(
-                `요청 #${id} 을 취소할까요?\n` +
-                "수집 PC가 이미 실행 중이면 돌던 작업까지 멈추지는 않습니다.")) return;
-            button.disabled = true;
-            const { error } = await db.rpc("api_cancel_request", { p_id: id });
-            if (error) {
-                const notice = $("r-notice");
-                notice.className = "notice error";
-                notice.textContent = "취소하지 못했습니다: " + error.message;
-                button.disabled = false;
-                return;
-            }
-            refreshRequests();
-        });
-    });
-
-    $("r-history").querySelectorAll("[data-log]").forEach((button) => {
-        button.addEventListener("click", () => {
-            const box = $(`log-${button.dataset.log}`);
-            box.hidden = !box.hidden;
-            button.textContent = box.hidden ? "로그" : "로그 닫기";
-            if (!box.hidden) box.scrollTop = box.scrollHeight;
-        });
-    });
-
-    // 진행 중이면 자주, 아니면 느리게 확인합니다.
-    clearTimeout(requestTimer);
-    requestTimer = setTimeout(refreshRequests, active.length ? 5000 : 60000);
-
-    // 방금 끝난 요청이 있으면 대시보드 숫자도 새로 읽습니다.
-    const justFinished = rows.some((r) =>
-        r.status === "done" && r.finished_at &&
-        Date.now() - new Date(r.finished_at).getTime() < 70000);
-    if (justFinished) {
-        load();
-        loadLastUpdated();
-    }
-}
-
-
-function fillSelect(select, values, label) {
-    select.innerHTML = "";
-    for (const value of values) {
-        const option = document.createElement("option");
-        option.value = String(value);
-        option.textContent = label(value);
-        select.append(option);
-    }
-}
+// 수집 요청·러너 상태·계정 상태·수집용 매장 선택창 코드는 3라운드 2차에서
+// 화면과 함께 내렸습니다(담당자 확정 — 자리 PC 가 매일 알아서 수집).
+// 서버 쪽(collect_requests·runner_status·api_account_health·러너)은 전부
+// 무변경이고, 웹에서 그리던 부분만 없습니다. 계정·러너 이상 경고는 홈
+// 배너가 이어받습니다(다른 라운드 카드).
 
 function currentFilters() {
     let from = Number($("f-from").value);
@@ -993,7 +408,8 @@ async function load(onFirstPaint) {
         () => db.rpc("api_menu_matrix", { p_field: "daypart", ...args }),
         () => db.rpc("api_unmapped", {}),
         () => db.rpc("api_by_category", args),
-        () => db.rpc("api_all_items", args),
+        // ('전 품목' 카드가 3라운드 2차에서 내려가면서 api_all_items 호출도
+        //  뺐습니다 — 2,600종짜리 가장 무거운 조회였습니다. 함수·SQL 은 그대로.)
         // ⚠️ 요약은 reviewArgs() 를 그대로 넘기면 안 됩니다. 별점·미답변 필터는
         //    목록(api_reviews)에만 있고 요약 함수는 기간·매장·채널 4개만 받습니다.
         //    7개를 넘기면 PostgREST 가 맞는 함수를 못 찾아 화면이 통째로 안 뜹니다.
@@ -1011,24 +427,8 @@ async function load(onFirstPaint) {
         // 회사 전체·채널별 합계는 함수 안에서 항상 전 매장 기준입니다.
         () => db.rpc("api_sales_alerts", { p_ym: args.p_ym_to, p_store: args.p_store }),
         () => db.rpc("api_sales_compare", { p_ym: args.p_ym_to, p_store: args.p_store }),
-        // 홈 '이상 신호' 전용 부정 리뷰(별점 ≤3). 위 17번(api_reviews)은 리뷰
-        // 화면의 rv-* 필터가 걸린 배열이라 홈이 같이 쓰면 그 필터가 홈 목록에
-        // 샙니다('5점만'으로 두고 홈에 오면 "부정 리뷰가 없습니다"). 홈은 매출
-        // 필터(기간·매장)만 따르는 자기 몫을 따로 받습니다. 서버가 ≤3 만 골라
-        // 주므로 limit 이 부정 리뷰 자체에 걸립니다 — '최근 200건 표본에서 ≤3
-        // 추출'이라 리뷰 많은 기간에 최신 부정을 놓치던 한계도 같이 풀립니다.
-        () => db.rpc("api_reviews", {
-            p_ym_from: args.p_ym_from, p_ym_to: args.p_ym_to, p_store: args.p_store,
-            p_platform: null, p_unanswered_only: false,
-            p_min_rating: null, p_max_rating: 3, p_limit: 200,
-        }),
-        // 홈 '부정 리뷰' 타일 전용 요약. 16번(api_review_summary)은 리뷰 화면의
-        // 플랫폼 필터(rv-platform)가 걸려 있어 타일 수에 샙니다. by_rating 이
-        // 전수 집계라 위 목록 limit 과 무관하게 타일 수가 정확합니다.
-        () => db.rpc("api_review_summary", {
-            p_ym_from: args.p_ym_from, p_ym_to: args.p_ym_to, p_store: args.p_store,
-            p_platform: null,
-        }),
+        // (홈 전용 부정 리뷰·요약 호출은 3라운드 1번에서 홈이 매출 필터와
+        //  무관해지며 loadHome 으로 옮겨 갔습니다 — 아래 '홈' 절.)
     ];
 
     // 초안 요약은 있으면 좋고 없어도 그만입니다. 위 묶음에 넣으면
@@ -1044,11 +444,12 @@ async function load(onFirstPaint) {
         .catch(() => ({}));
 
     // 화면 맨 위 4개(요약·월별추이·매장별·매장비교)를 먼저 받아 그리고,
-    // 나머지 14개는 그 뒤에 채웁니다.
+    // 나머지는 그 뒤에 채웁니다.
     //
-    // 왜: 카드가 15개인데 전부 기다렸다 한 번에 그리면 스크롤 한참 아래에 있는
-    // '전 품목'(2,600종) 때문에 맨 위 총매출까지 20초 넘게 못 봅니다. 사용자는
-    // 대개 위 몇 개만 보고 판단합니다. 받는 총량은 같지만 **보이기까지가 짧아집니다.**
+    // 왜: 전부 기다렸다 한 번에 그리면 뒤쪽의 무거운 조회 때문에 맨 위
+    // 총매출까지 한참 못 봅니다(옛 '전 품목' 2,600종 시절 실측 20초+).
+    // 사용자는 대개 위 몇 개만 보고 판단합니다. 받는 총량은 같지만
+    // **보이기까지가 짧아집니다.**
     // 이 둘은 없어도 화면이 떠야 하는 것들이라 위 묶음에 안 넣었습니다.
     // 늦게 오면 2차 그리기에 반영됩니다.
     const pending = { draftSummary: {}, reviewSync: {} };
@@ -1112,33 +513,16 @@ function pack(results, args, pending) {
         menuDaypart: d(12),
         unmapped: d(13),
         byCategory: d(14),
-        allItems: unwrapItems(d(15)),
-        reviewSummary: ((d(16))[0] || {}).summary || {},
-        reviews: ((d(17))[0] || {}).items || [],
-        alerts: ((d(18))[0] || {}).alerts || [],
-        compare: ((d(19))[0] || {}).compare || {},
-        homeNegReviews: ((d(20))[0] || {}).items || [],
-        homeReviewSummary: ((d(21))[0] || {}).summary || {},
-        // 홈 이상신호의 원천(알림·부정 리뷰)이 아직 안 온 상태인가 —
-        // 1차 그리기(FIRST 4개 직후)가 여기 해당합니다. drawHome 이 이 값으로
-        // '없음' 대신 로딩 표시를 그립니다(빈 데이터 = 이상 무로 보이는 문제).
-        homeLoading: !(results[18] && results[20] && results[21]),
+        // 전 품목(구 15번)은 3라운드 2차에서 내렸고(담당자 확정), 홈 전용
+        // 호출(구 19·20번)은 홈 재구성이 loadHome 으로 분리했습니다 — 두 제거를
+        // 합치면 인덱스가 이렇게 당겨집니다. calls 배열과 짝이 맞아야 합니다.
+        reviewSummary: ((d(15))[0] || {}).summary || {},
+        reviews: ((d(16))[0] || {}).items || [],
+        alerts: ((d(17))[0] || {}).alerts || [],
+        compare: ((d(18))[0] || {}).compare || {},
         draftSummary: pending.draftSummary,
         reviewSync: pending.reviewSync,
     };
-}
-
-
-
-// api_all_items 는 11_all_items_fix.sql 이후 jsonb 배열 한 줄로 옵니다.
-// 품목이 2,612종이라 줄마다 보내면 1,000행에서 조용히 잘립니다(2026-07-27 실측).
-// SQL 적용 전 저장소를 보는 사람도 화면이 안 깨지게 옛 형태도 받습니다.
-function unwrapItems(rows) {
-    const first = (rows || [])[0];
-    if (first && Object.prototype.hasOwnProperty.call(first, "items")) {
-        return first.items || [];
-    }
-    return rows || [];
 }
 
 async function loadLastUpdated() {
@@ -1176,11 +560,14 @@ function draw(d) {
     $("kpi-menus").textContent = int(d.summary.menu_count);
 
     drawMonthly(d.monthly, c);
+    drawMonthlyChannels(d.monthly, c);
     drawAlerts(d);
     drawReport(d);
 
+    // 상위 15 제한 없이 전 매장(3라운드 2차, 담당자 피드백 3-3) —
+    // 카드가 끝없이 길어지지 않게 .plotscroll 이 카드 안에서 스크롤합니다.
     drawBars($("c-store"), {
-        rows: d.stores.slice(0, 15).map((r) => ({ label: r.store, value: Number(r.amount) })),
+        rows: d.stores.map((r) => ({ label: r.store, value: Number(r.amount) })),
         color: c.s1, horizontal: true, colors: c,
     });
     table($("t-store"), ["매장", "상권", "매출", "수량"],
@@ -1220,59 +607,131 @@ function draw(d) {
     drawMenuMatrix($("c-mpart"), $("t-mpart"), d.menuDaypart, "daypart",
         ["아침", "점심", "오후", "저녁"]);
     drawCategory(d, c);
-    drawAllItems(d);
     drawReviews(d, c);
     drawUnmapped(d);
-    drawHome(d);
 }
 
-// ---- 홈(할 일 타일) ----------------------------------------------------
+// ---- 홈 (오늘 할 일 + 알아야 할 변화) ---------------------------------
 //
-// 알림(alerts)·초안(draftSummary)은 위에서 받아 온 것을 다시 세고, 부정
-// 리뷰만 홈 전용 호출(homeNegReviews·homeReviewSummary — calls 20·21번)을
-// 씁니다. 리뷰 화면의 rv-* 필터가 걸린 reviews·reviewSummary 를 같이 쓰면
-// 그 필터가 홈 숫자·목록에 새기 때문입니다.
-// 답글 초안(draftSummary)만 전체 기간 기준이고, 부정 리뷰·급감 매장은
-// 위 매출 필터(기간·매장)를 따릅니다 — 아래 sub 문구로 그 차이를 알립니다.
+// 3라운드 담당자 피드백 1번 — 홈은 "오늘 처리할 일 + 알아야 할 변화" 만 담고
+// 매출 필터(기간·매장)와 **무관**하게 그립니다. 매출은 매출 탭에서 보므로
+// 홈에는 필터 줄도 없습니다(nav.js showArea 가 숨김). 그래서 홈은 draw(d)
+// 파이프라인이 아니라 여기 loadHome 이 전 매장 기준으로 따로 받습니다.
+//   · 처리할 일 타일 — tasks.js(refreshTasksSummary)·inquiries.js 가 채우고
+//     '승인 대기' 는 nav.js 가 업무 타일(tk-waiting)을 거울로 비춥니다.
+//     'AI 답글 초안' 만 여기서 받습니다(api_draft_summary — 전체 기간).
+//   · 매출 한 줄·급감 매장 — 기준월은 매출 기본값과 같은 '마지막 완성 월'
+//     규칙(initDashboard 의 H3 주석): 진행 중인 달을 기준으로 잡으면 수집이
+//     덜 끝나 전 매장이 급감으로 오탐합니다.
+//   · 새 부정 리뷰 — 리뷰는 매출과 달리 지금도 들어오므로 이번 달 포함
+//     최근 두 달을 봅니다(별점 3점 이하 — 리뷰 화면 '3점 이하만'과 같은 기준).
+//   · 경고 배너 — loadHomeHealth(아래). 평소에는 안 보입니다.
 
-function drawHome(d) {
-    $("home-range").textContent =
-        `${ymLabel(d.args.p_ym_from)} – ${ymLabel(d.args.p_ym_to)}` +
-        (d.args.p_store ? ` · ${d.args.p_store}` : "") + " 기준";
+let homeLoadedAt = 0;
 
-    const draft = Number((d.draftSummary || {}).draft) || 0;
-    $("home-drafts").textContent = int(draft);
+function initHome() {
+    // 홈에 들어올 때마다 신선하면 그대로 두고, 오래됐으면 다시 받습니다.
+    // 부팅 착지가 홈이면 첫 area-shown 이벤트는 이미 지나갔으므로(nav.js
+    // initAreas 가 먼저 돎) 지금 상태(S.area)를 직접 봅니다.
+    document.addEventListener("mitaly:area-shown", (e) => {
+        if ((e.detail || {}).area === "home") loadHome();
+    });
+    if (S.area === "home") loadHome();
+}
 
-    // 이상 신호의 원천(알림·부정 리뷰)은 2차 배치라 1차 그리기 때는 아직
-    // 없습니다. 빈 데이터로 그리면 홈 착지·필터 변경마다 잠깐 "없습니다"
-    // (= 이상 무)로 보였다 실값으로 바뀝니다 — 이상 감시 화면에서 가장 나쁜
-    // 거짓말이라, 다 오기 전에는 값 대신 로딩 표시를 둡니다.
-    if (d.homeLoading) {
-        $("home-negative").textContent = "—";
-        $("home-declining").textContent = "—";
-        const loading = '<p class="home-anom-empty">불러오는 중…</p>';
-        $("home-anom-declining").innerHTML = loading;
-        $("home-anom-reviews").innerHTML = loading;
-        return;
+async function loadHome() {
+    if (Date.now() - homeLoadedAt < 10 * 60_000) return;
+    homeLoadedAt = Date.now();
+    loadHomeHealth();
+
+    // 'AI 답글 초안 검토' 타일. draw 파이프라인(draftSummary)과 같은 함수지만
+    // 홈은 필터 변경과 무관해 이 타일 몫 한 번이면 됩니다.
+    db.rpc("api_draft_summary", {})
+        .then((r) => {
+            const s = (r.error ? {} : ((r.data || [])[0] || {}).summary) || {};
+            $("home-drafts").textContent = int(Number(s.draft) || 0);
+        })
+        .catch(() => { /* 14_reply_drafts.sql 적용 전 — 타일만 '—' 로 남습니다 */ });
+
+    const range = S.filterRange || {};
+    if (!range.max) return;   // 데이터 없음 — initDashboard 가 이미 안내합니다
+    const t = new Date();
+    const nowYm = t.getFullYear() * 100 + (t.getMonth() + 1);
+    // '마지막 완성 월' — 진행 중인 달이 올라와 있으면 전월로 물립니다(H3).
+    const baseYm = (range.max >= nowYm && range.max > range.min)
+        ? shiftYm(range.max, -1) : range.max;
+    const reviewFromYm = shiftYm(nowYm, -1);
+
+    const [cmpRes, alertRes, negRes, negSumRes] = await Promise.all([
+        db.rpc("api_sales_compare", { p_ym: baseYm, p_store: null }),
+        db.rpc("api_sales_alerts", { p_ym: baseYm, p_store: null }),
+        // 서버가 ≤3 만 골라 주므로 limit 이 부정 리뷰 자체에 걸립니다.
+        db.rpc("api_reviews", {
+            p_ym_from: reviewFromYm, p_ym_to: nowYm, p_store: null,
+            p_platform: null, p_unanswered_only: false,
+            p_min_rating: null, p_max_rating: 3, p_limit: 50,
+        }),
+        // 전수 집계(by_rating) — 목록 limit 과 무관하게 '외 N건' 이 정확하도록.
+        db.rpc("api_review_summary", {
+            p_ym_from: reviewFromYm, p_ym_to: nowYm,
+            p_store: null, p_platform: null,
+        }),
+    ]);
+    // 실패한 채로 10분을 묵히지 않습니다 — 다음 홈 진입이 다시 시도합니다.
+    if (cmpRes.error || alertRes.error || negRes.error || negSumRes.error) {
+        homeLoadedAt = 0;
     }
 
-    // 부정 리뷰 = 별점 3점 이하(앱 공통 정의 — 리뷰 화면 '3점 이하만' 필터와
-    // 같은 기준). 리뷰 화면의 플랫폼 필터가 새지 않게 홈 전용 요약에서 셉니다.
-    const byRating = (d.homeReviewSummary || {}).by_rating || [];
-    const negative = byRating
-        .filter((r) => Number(r.rating) <= 3)
-        .reduce((sum, r) => sum + (Number(r.count) || 0), 0);
-    $("home-negative").textContent = int(negative);
+    drawHomeSales(cmpRes, baseYm);
+    drawHomeDeclining(alertRes, baseYm);
+    drawHomeNegReviews(negRes, negSumRes);
+}
+
+// 6행 넘으면 '외 N건 더 보기'로 잘렸음을 알립니다(조용한 잘림 방지).
+// 클릭 규칙은 행과 같고(nav.js 위임) data-store 가 없어 전체 목록으로 갑니다.
+function homeMoreRow(n, go, kind, card) {
+    return n > 0
+        ? `<button type="button" class="home-anom-row home-anom-more" data-go="${go}" data-kind="${kind}" data-card="${card}">외 ${int(n)}건 더 보기</button>`
+        : "";
+}
+
+function drawHomeSales(res, baseYm) {
+    const el = $("home-sales-line");
+    if (res.error) {
+        $("home-sales-sub").textContent = "";
+        el.innerHTML = `<span class="home-anom-empty">불러오지 못했습니다: ${escape(res.error.message || res.error)}</span>`;
+        return;
+    }
+    const cmp = ((res.data || [])[0] || {}).compare || {};
+    const co = cmp.company || {};
+    // '전 매장 · 매출 탭 필터와 무관' 을 명시합니다(담당자 피드백) — 매출
+    // 탭에서 매장을 좁혀 두고 와도 이 줄은 항상 회사 전체 기준입니다.
+    $("home-sales-sub").textContent =
+        `${ymLabel(cmp.ym || baseYm)} 마감분 · 전 매장 — 매출 탭 필터와 무관`;
+    el.innerHTML =
+        `<span class="hs-amount">${won(co.amount)}</span>`
+        + `<span class="hs-cmp">전월(${ymLabel(cmp.prev_mom_ym)}) 대비 <b class="${pctClass(co.mom_pct_change)}">${pctText(co.mom_pct_change)}</b></span>`
+        + `<span class="hs-cmp">전년동월 대비 <b class="${pctClass(co.yoy_pct_change)}">${pctText(co.yoy_pct_change)}</b></span>`
+        + `<span class="hs-go">매출 탭에서 자세히 →</span>`;
+}
+
+function drawHomeDeclining(res, baseYm) {
+    const listEl = $("home-anom-declining");
+    if (res.error) {
+        $("home-declining-h").textContent = "";
+        listEl.innerHTML = `<p class="home-anom-empty">불러오지 못했습니다: ${escape(res.error.message || res.error)}</p>`;
+        return;
+    }
+    const alerts = ((res.data || [])[0] || {}).alerts || [];
 
     // 급감은 매장 단위로 묶습니다 — 한 매장이 홀·배달 둘 다 급감이어도
-    // 타일 "1"에 목록도 1행이 되게(타일 수 = 목록 행 수 기준 일치).
-    const alerts = d.alerts || [];
+    // 머리글 "1곳" 에 목록도 1행이 되게(수 = 행 수 기준 일치, 직전 라운드 유지).
     const declByStore = new Map();
     for (const s of alerts) {
         for (const ch of (s.channels || [])) {
             let hit = null;
             if (ch.mom_direction === "급감") hit = { channel: ch.channel, pct: ch.mom_pct_change, base: "전월" };
-            else if (ch.yoy_direction === "급감") hit = { channel: ch.channel, pct: ch.yoy_pct_change, base: "전년" };
+            else if (ch.yoy_direction === "급감") hit = { channel: ch.channel, pct: ch.yoy_pct_change, base: "전년동월" };
             if (!hit) continue;
             if (!declByStore.has(s.store)) declByStore.set(s.store, []);
             declByStore.get(s.store).push(hit);
@@ -1284,35 +743,113 @@ function drawHome(d) {
         // 채널이 여럿이면 가장 크게 빠진 쪽을 대표로 보입니다.
         worst: hits.reduce((a, b) => (Number(b.pct) < Number(a.pct) ? b : a)),
     }));
-    $("home-declining").textContent = int(declRows.length);
 
-    // ---- 이상 신호 목록 (급감 매장 · 부정 리뷰) ----
-    // 타일은 '몇 건'만 알려주고, 여기서 실제 무엇인지 바로 훑고 눌러 들어갑니다.
-    // 행 클릭은 nav.js(initHomeTiles)가 위임으로 이어 해당 화면 필터까지 맞춰
-    // 줍니다 — data-store 가 있으면 그 매장으로 좁혀서.
-    // 6행 넘으면 '외 N건 더 보기'로 잘렸음을 알립니다(조용한 잘림 방지).
-    const moreRow = (n, go, kind, card) => (n > 0
-        ? `<button type="button" class="home-anom-row home-anom-more" data-go="${go}" data-kind="${kind}" data-card="${card}">외 ${int(n)}건 더 보기</button>`
-        : "");
+    $("home-declining-h").textContent =
+        `${int(declRows.length)}곳 · ${ymLabel(baseYm)} 기준`;
 
-    $("home-anom-declining").innerHTML = declRows.length
+    // '무엇이 이상인지' 가 행에서 문장으로 읽히게 — "배달 매출이 전월 대비 -N%".
+    // 행 클릭은 nav.js(initHomeTiles)가 위임으로 이어 매출 화면을 그 매장으로
+    // 좁혀 줍니다(data-store).
+    listEl.innerHTML = declRows.length
         ? declRows.slice(0, 6).map((r) =>
             `<button type="button" class="home-anom-row" data-go="sales" data-kind="alert" data-card="alerts-card" data-store="${escape(r.store)}">
-               <span class="ar-main">${escape(r.store)} · ${escape(r.channels)}</span>
-               <span class="ar-side pct-down">${escape(r.worst.base)} ${pctText(r.worst.pct)}</span>
-             </button>`).join("") + moreRow(declRows.length - 6, "sales", "alert", "alerts-card")
+               <span class="ar-main">${escape(r.store)}</span>
+               <span class="ar-side">${escape(r.worst.channel)} 매출이 ${escape(r.worst.base)} 대비 <b class="pct-down">${pctText(r.worst.pct)}</b>${r.channels.includes("·") ? ` (${escape(r.channels)} 모두 급감)` : ""}</span>
+             </button>`).join("") + homeMoreRow(declRows.length - 6, "sales", "alert", "alerts-card")
         : '<p class="home-anom-empty">급감으로 판정된 매장이 없습니다.</p>';
+}
 
-    const negRows = (d.homeNegReviews || []).filter((r) => Number(r.rating) <= 3);
-    $("home-anom-reviews").innerHTML = negRows.length
-        ? negRows.slice(0, 6).map((r) =>
+function drawHomeNegReviews(negRes, sumRes) {
+    const listEl = $("home-anom-reviews");
+    if (negRes.error) {
+        $("home-reviews-h").textContent = "";
+        listEl.innerHTML = `<p class="home-anom-empty">불러오지 못했습니다: ${escape(negRes.error.message || negRes.error)}</p>`;
+        return;
+    }
+    // 부정 리뷰 = 별점 3점 이하(앱 공통 정의). 새로 들어온 순으로 보입니다.
+    const rows = (((negRes.data || [])[0] || {}).items || [])
+        .filter((r) => Number(r.rating) <= 3)
+        .sort((a, b) => String(b.written_at || "").localeCompare(String(a.written_at || "")));
+
+    // 전수는 요약(by_rating)으로 셉니다 — 목록은 limit 에 걸릴 수 있습니다.
+    // 요약이 실패하면 목록 수로라도 채웁니다(없는 것보다 낫습니다).
+    const byRating = (sumRes.error ? []
+        : (((sumRes.data || [])[0] || {}).summary || {}).by_rating) || [];
+    const negative = byRating
+        .filter((r) => Number(r.rating) <= 3)
+        .reduce((sum, r) => sum + (Number(r.count) || 0), 0) || rows.length;
+
+    $("home-reviews-h").textContent =
+        `${int(negative)}건 · 최근 두 달 · 별점 3점 이하`;
+
+    const md = (iso) => {
+        const when = new Date(iso);
+        return Number.isNaN(when.getTime()) ? "" : `${when.getMonth() + 1}/${when.getDate()}`;
+    };
+    // '왜 떴는지' 를 행이 문장으로 알립니다 — 언제 들어온 몇 점짜리 리뷰인지.
+    listEl.innerHTML = rows.length
+        ? rows.slice(0, 6).map((r) =>
             `<button type="button" class="home-anom-row" data-go="reviews" data-kind="review" data-card="review-card" data-store="${escape(r.store || "")}">
-               <span class="ar-main"><span class="ar-star">★${r.rating ?? "—"}</span> ${escape(r.store || "")}</span>
+               <span class="ar-main">${escape(r.store || "")} — ${md(r.written_at)} <span class="ar-star">★${r.rating ?? "—"}</span> 새 리뷰</span>
                <span class="ar-side ar-text">${escape(clip(r.contents || "내용 없음", 34))}</span>
              </button>`).join("")
-          // '외 N건'은 목록 길이(limit 걸림)가 아니라 요약의 전수(negative)로 셉니다.
-          + moreRow(negative - Math.min(6, negRows.length), "reviews", "review", "review-card")
-        : '<p class="home-anom-empty">부정 리뷰가 없습니다.</p>';
+          + homeMoreRow(negative - Math.min(6, rows.length), "reviews", "review", "review-card")
+        : '<p class="home-anom-empty">최근 두 달에 새로 들어온 부정 리뷰가 없습니다.</p>';
+}
+
+// ---- 홈 경고 배너 (수집·계정 이상 신호 통합 — 담당자 확정) -------------
+//
+// 계정 점검(34_account_health)에 '실패' 가 있거나 수집 PC heartbeat
+// (runner_status.last_seen_at)이 24시간 이상 끊겼을 때만 홈 맨 위에 보입니다.
+// 평소에는 안 보입니다. 수집 탭이 없어져 이 배너가 유일한 신호이고, 러너는
+// 퇴근 시 절전이 정상 운영이라(CLAUDE.md 실수 18의 전제 변경) 기준을 2분이
+// 아니라 24시간으로 넉넉히 둡니다 — 긴 작업 중 heartbeat 공백 오판도 이
+// 여유가 막습니다.
+//
+// 채널 표기를 PLUGIN_LIST(수집 화면)와 따로 두는 이유: 수집 화면 코드는
+// 병렬 개편에서 움직이므로 홈이 그쪽 상수를 붙들지 않습니다.
+
+const HOME_CHANNEL_NAMES = {
+    easypos: "이지포스", baemin: "배달의민족", imu: "아임유",
+    coupangeats: "쿠팡이츠", yogiyo: "요기요", naver: "네이버",
+};
+
+async function loadHomeHealth() {
+    const el = $("home-warn");
+    const [healthRes, runnerRes] = await Promise.all([
+        db.rpc("api_account_health").catch((e) => ({ error: e })),
+        db.from("runner_status").select("last_seen_at").limit(1)
+            .then((r) => r, (e) => ({ error: e })),
+    ]);
+
+    const msgs = [];
+
+    const health = (healthRes && !healthRes.error && healthRes.data) || {};
+    const fails = (health.results || []).filter((r) => r.status === "fail");
+    if (fails.length) {
+        const names = [...new Set(fails.map((f) =>
+            HOME_CHANNEL_NAMES[f.channel] || f.channel))].join("·");
+        msgs.push(`수집 계정 이상 — ${names} 로그인 확인 실패. `
+            + "그 채널의 매출·리뷰가 안 들어오고 있을 수 있습니다.");
+    }
+
+    const runnerRow = (runnerRes && !runnerRes.error
+        && (runnerRes.data || [])[0]) || null;
+    if (runnerRow && runnerRow.last_seen_at) {
+        const ageH = (Date.now() - new Date(runnerRow.last_seen_at).getTime()) / 3600_000;
+        if (ageH >= 24) {
+            const ago = ageH >= 48 ? `${Math.floor(ageH / 24)}일` : `${Math.round(ageH)}시간`;
+            msgs.push(`수집 PC 무응답 — 마지막 응답이 ${ago} 전입니다. `
+                + "자리 PC가 켜져 있는지 확인이 필요합니다.");
+        }
+    }
+
+    if (!msgs.length) {
+        el.hidden = true;
+        return;
+    }
+    el.innerHTML = msgs.map((m) => `<p>⚠️ ${escape(m)}</p>`).join("");
+    el.hidden = false;
 }
 
 // ---- 리뷰 관리 --------------------------------------------------------
@@ -1416,12 +953,24 @@ function drawReviews(d, c) {
         syncNote.hidden = true;
     }
 
+    // 다시 그려도 보던 자리를 잃지 않게 목록 스크롤을 보존합니다.
+    // (초안 승인·전송이 load() 로 전체를 다시 받아 오기 때문)
+    // load() 의 1차 그리기는 리뷰가 빈 상태로 지나가므로(위 FIRST 4칸),
+    // 진짜 목록이 그려져 있을 때의 값만 기억해 2차에서 되살립니다.
+    const listEl = $("rv-list");
+    if (listEl.querySelector(".rvitem")) rvListScroll = listEl.scrollTop;
+
+    // 슬라이드 패널이 리뷰를 id 로 다시 찾을 색인. 필터로 목록에서 빠진
+    // 리뷰도 남게 rows(초안만 필터 적용본)가 아니라 받은 전체를 씁니다.
+    reviewIndex = new Map((d.reviews || []).map((r) => [Number(r.id), r]));
+
     if (!rows.length) {
-        $("rv-list").innerHTML = '<p class="hint">조건에 맞는 리뷰가 없습니다.</p>';
+        listEl.innerHTML = '<p class="hint">조건에 맞는 리뷰가 없습니다.</p>';
+        refreshDraftPanel();
         return;
     }
 
-    $("rv-list").innerHTML = rows.map((r) => {
+    listEl.innerHTML = rows.map((r) => {
         const when = r.written_at
             ? new Date(r.written_at).toLocaleDateString("ko-KR",
                 { year: "2-digit", month: "2-digit", day: "2-digit" })
@@ -1442,9 +991,15 @@ function drawReviews(d, c) {
             ${r.contents ? `<p class="rvbody">${escape(r.contents)}</p>` : ""}
             ${menus.length ? `<p class="rvmenus">${menus.join(" · ")}</p>` : ""}
             ${replies.map((x) => `<div class="rvreply"><b>답글</b> ${escape(x.contents || "")}</div>`).join("")}
-            ${(r.drafts || []).map(draftBox).join("")}
+            ${(r.drafts || []).length
+                ? `<div class="rvopen-wrap"><button type="button" class="ghost rvopen"
+                       data-review="${Number(r.id)}">AI 답변 시안 보기${r.drafts.length > 1 ? ` · ${r.drafts.length}건` : ""}</button></div>`
+                : ""}
           </article>`;
     }).join("");
+
+    listEl.scrollTop = rvListScroll;
+    refreshDraftPanel();
 }
 
 // ---- AI 답글 초안 ------------------------------------------------------
@@ -1453,6 +1008,83 @@ function drawReviews(d, c) {
 // 등록하게 하는 것입니다(QUEUE #94). 전송해도 라이브 스위치가 켜지기 전까지는
 // 자리 PC 가 큐만 잡고 등록은 담당자 입회 뒤에 열립니다 — 그 게이트는 러너와
 // DB(review_dispatch_config)에 있습니다(D9). '발송 취소' 로 큐에서 뺄 수 있습니다.
+//
+// 시안은 목록 안이 아니라 우측 슬라이드 패널에서 봅니다(담당자 지시
+// 2026-08-16 ⑦) — 목록의 'AI 답변 시안 보기' 버튼이 열고, 확인·수정·승인·
+// 전송을 그 안에서 끝냅니다. 검토 함수 호출 경로는 그대로이고 그리는 자리만
+// 옮긴 것입니다.
+
+// drawReviews() 가 받은 리뷰를 id 로 다시 찾는 색인과, 지금 패널이 보여 주는
+// 리뷰 id. load() 가 목록을 다시 그려도 이 둘로 패널 내용을 이어 갑니다.
+let reviewIndex = new Map();
+let panelReviewId = null;
+let rvListScroll = 0;      // 마지막으로 실제 목록이 있던 때의 스크롤 위치
+
+function openDraftPanel(reviewId) {
+    panelReviewId = reviewId;
+    $("rvpanel-msg").textContent = "";
+    $("rvpanel-msg").className = "rvpanel-msg";
+    renderDraftPanel();
+
+    const backdrop = $("rvpanel-backdrop");
+    const panel = $("rvpanel");
+    backdrop.hidden = false;
+    panel.hidden = false;
+    // hidden 해제와 같은 프레임에 .open 을 붙이면 transition 이 안 돕니다.
+    requestAnimationFrame(() => {
+        backdrop.classList.add("open");
+        panel.classList.add("open");
+    });
+    $("rvpanel-close").focus();
+}
+
+function closeDraftPanel() {
+    if (panelReviewId === null) return;
+    panelReviewId = null;
+    const backdrop = $("rvpanel-backdrop");
+    const panel = $("rvpanel");
+    backdrop.classList.remove("open");
+    panel.classList.remove("open");
+    // 슬라이드가 빠져나간 뒤에 숨깁니다(styles.css 의 0.22s 와 짝).
+    setTimeout(() => {
+        if (panelReviewId !== null) return;   // 그 사이 다시 열림
+        backdrop.hidden = true;
+        panel.hidden = true;
+    }, 230);
+}
+
+// 패널 본문을 reviewIndex 의 현재 데이터로 그립니다. 열려 있지 않으면 아무
+// 것도 안 합니다 — drawReviews() 가 매번 불러 목록과 패널을 같이 맞춥니다.
+// ⚠️ 색인에 없다고 닫지 않습니다: load() 의 1차 그리기는 리뷰가 아직 안 온
+// 빈 상태로도 오고(위 FIRST 4칸), 그때 닫으면 승인 한 번에 패널이 사라집니다.
+// 들고 있던 내용을 그대로 두면 2차 그리기가 맞춥니다.
+function refreshDraftPanel() {
+    if (panelReviewId === null) return;
+    if (!reviewIndex.has(panelReviewId)) return;
+    renderDraftPanel();
+}
+
+function renderDraftPanel() {
+    const r = reviewIndex.get(panelReviewId);
+    if (!r) return;
+    const when = r.written_at
+        ? new Date(r.written_at).toLocaleDateString("ko-KR",
+            { year: "2-digit", month: "2-digit", day: "2-digit" })
+        : "";
+    const drafts = r.drafts || [];
+    $("rvpanel-body").innerHTML = `
+        <div class="rvpanel-review">
+            <div class="rvhead">
+              <span class="rvstars">${ratingStars(r.rating)}</span>
+              <span class="rvscore">${r.rating ?? "—"}</span>
+              <span class="rvmeta">${escape(r.store || "")} · ${escape(r.platform || "")} · ${when}</span>
+            </div>
+            ${r.contents ? `<p class="rvbody">${escape(r.contents)}</p>` : ""}
+            ${(r.replies || []).map((x) => `<div class="rvreply"><b>답글</b> ${escape(x.contents || "")}</div>`).join("")}
+        </div>
+        ${drafts.length ? drafts.map(draftBox).join("")
+            : '<p class="hint">이 리뷰에 남은 시안이 없습니다.</p>'}`;
+}
 
 const DRAFT_STATUS = {
     draft: "검토 대기",
@@ -1505,9 +1137,23 @@ function draftBox(draft) {
       </div>`;
 }
 
-// 버튼은 다시 그릴 때마다 새로 생깁니다. 목록에 한 번만 걸어 둡니다.
+// 버튼은 다시 그릴 때마다 새로 생깁니다. 컨테이너에 한 번만 걸어 둡니다.
 function initDrafts() {
-    $("rv-list").addEventListener("click", async (event) => {
+    // 목록 쪽은 패널 열기만 담당합니다.
+    $("rv-list").addEventListener("click", (event) => {
+        const open = event.target.closest("button.rvopen");
+        if (open) openDraftPanel(Number(open.dataset.review));
+    });
+
+    // 닫기 3종 — X · 배경 클릭 · ESC.
+    $("rvpanel-close").addEventListener("click", closeDraftPanel);
+    $("rvpanel-backdrop").addEventListener("click", closeDraftPanel);
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && panelReviewId !== null) closeDraftPanel();
+    });
+
+    // 시안 조작(승인·전송·수정·반려·발송취소)은 패널 안에서만 일어납니다.
+    $("rvpanel-body").addEventListener("click", async (event) => {
         const button = event.target.closest("button[data-act]");
         if (!button) return;
 
@@ -1532,6 +1178,8 @@ function initDrafts() {
         buttons.forEach((b) => { b.disabled = true; });
         message.className = "rvdraft-msg";
         message.textContent = "처리 중…";
+        $("rvpanel-msg").textContent = "";
+        $("rvpanel-msg").className = "rvpanel-msg";
 
         const call = act === "approve"
             ? db.rpc("approve_reply_draft", { p_draft_id: id })
@@ -1561,8 +1209,7 @@ function initDrafts() {
             return;
         }
 
-        message.className = "rvdraft-msg ok";
-        message.textContent = act === "approve" ? "승인했습니다"
+        const doneText = act === "approve" ? "승인했습니다"
             : act === "reject" ? "반려했습니다"
             : act === "cancel" ? "발송을 취소했습니다"
             : act === "send"
@@ -1570,7 +1217,18 @@ function initDrafts() {
                     ? "전송했습니다 · 동의서 등록 뒤 자리 PC가 올립니다"
                     : "전송했습니다 · 자리 PC가 등록합니다")
                 : "저장했습니다";
-        await load();     // 목록·요약을 다시 받습니다
+        message.className = "rvdraft-msg ok";
+        message.textContent = doneText;
+
+        await load();     // 목록·요약을 다시 받습니다 (패널도 같이 다시 그려짐)
+
+        // 다시 그린 패널에 결과를 남깁니다. 반려처럼 시안 상자가 사라진
+        // 경우는 패널 머리의 공용 자리에 씁니다.
+        const fresh = $("rvpanel-body")
+            .querySelector(`[data-draft="${id}"] .rvdraft-msg`);
+        const target = fresh || $("rvpanel-msg");
+        target.className = (fresh ? "rvdraft-msg" : "rvpanel-msg") + " ok";
+        target.textContent = doneText;
     });
 }
 
@@ -1787,71 +1445,9 @@ function drawCategory(d, c) {
         ]));
 }
 
-// ---- 전 품목 ----------------------------------------------------------
-//
-// 품목이 801종이라 한 화면에 다 보여주는 대신 검색과 정렬을 답니다.
-// 매출 0 · 수량만 있는 품목(리뷰이벤트 증정품 등)은 매출 정렬에서 맨 아래로
-// 밀리므로 '증정품' 표시를 달아 검색으로 찾을 수 있게 합니다.
-
-let allItemsSort = { key: 2, asc: false };
-let allItemsRender = null;
-
-function drawAllItems(d) {
-    const rows = (d.allItems || []).map((r) => [
-        r.menu,
-        catLabel(r.category),
-        Number(r.amount) || 0,
-        Number(r.qty) || 0,
-        Number(r.store_count) || 0,
-        r.is_giveaway === true,
-    ]);
-
-    $("allitems-count").textContent = rows.length ? `${int(rows.length)}종` : "없음";
-
-    const headers = ["품목", "분류", "매출", "수량", "판매 매장", "비고"];
-    const format = [
-        escape, escape, wonFull, int,
-        (v) => `${v}곳`,
-        (v) => (v ? '<span class="tag">증정품</span>' : ""),
-    ];
-
-    const render = () => {
-        const query = ($("ai-search").value || "").trim().toLowerCase();
-        const kept = query
-            ? rows.filter((r) => String(r[0]).toLowerCase().includes(query)
-                              || String(r[1]).toLowerCase().includes(query))
-            : rows;
-
-        $("allitems-shown").textContent =
-            query ? `${int(kept.length)}종 표시 중` : "";
-
-        const sorted = [...kept].sort((a, b) => {
-            const [x, y] = [a[allItemsSort.key], b[allItemsSort.key]];
-            const cmp = typeof x === "string"
-                ? x.localeCompare(y)
-                : Number(x) - Number(y);
-            return allItemsSort.asc ? cmp : -cmp;
-        });
-
-        // html:true 라 셀을 자동으로 이스케이프하지 않습니다. 품목명·분류는
-        // format 에서 escape 를 거칩니다(원본 품목명에 <> 가 섞여 들어옵니다).
-        table($("t-allitems"), headers,
-            sorted.map((r) => r.map((v, i) => format[i](v))),
-            { sortable: true, sortState: allItemsSort, html: true });
-
-        $("t-allitems").querySelectorAll("th.sortable").forEach((th, i) => {
-            th.addEventListener("click", () => {
-                allItemsSort = allItemsSort.key === i
-                    ? { key: i, asc: !allItemsSort.asc }
-                    : { key: i, asc: i === 0 || i === 1 };
-                render();
-            });
-        });
-    };
-
-    allItemsRender = render;
-    render();
-}
+// ('전 품목' 카드는 3라운드 2차에서 담당자 확정으로 내렸습니다 —
+//  drawAllItems·검색·정렬 코드와 api_all_items 호출을 함께 뺐고,
+//  서버 함수(11_all_items_fix.sql)와 데이터·미매핑 카드는 그대로입니다.)
 
 // ---- 급증·급감 · 기간 대비 ---------------------------------------------
 //
@@ -1888,6 +1484,41 @@ function compareTile(label, block) {
     </div>`;
 }
 
+// 매장 행의 판정 요약 — 급증·급감으로 판정된 채널만 채널 이름을 붙여 보이고,
+// 없으면 정상/비교 대상 없음 한 장으로 줄입니다(펼치기 전에도 어느 채널이
+// 문제인지 보이게 — 담당자 피드백 3-2).
+function storeDirTags(channels, key) {
+    const flags = channels.filter((c) => c[key] === "급증" || c[key] === "급감");
+    if (flags.length) {
+        return flags.map((c) =>
+            `<span class="tag ${c[key] === "급증" ? "up" : "down"}">` +
+            `${c[key]} · ${escape(c.channel)}</span>`).join(" ");
+    }
+    if (channels.some((c) => c[key] === "정상")) return '<span class="tag">정상</span>';
+    return '<span class="meta">비교 대상 없음</span>';
+}
+
+// 펼쳐 둔 매장. 필터·검색으로 다시 그려도 펼침 상태를 잃지 않습니다.
+const alertsOpen = new Set();
+
+// 매장 행 아래 채널(홀/배달) 행의 보이기를 펼침 상태에 맞춥니다.
+// 행은 table() 이 새로 만들지만 컨테이너(t-alerts)는 그대로라, 위임 클릭도
+// 컨테이너에 한 번만 겁니다(drawAlerts 의 expWired).
+function syncAlertRows() {
+    $("t-alerts").querySelectorAll("tbody tr").forEach((tr) => {
+        const marker = tr.querySelector(".alerts-chind");
+        if (!marker) return;
+        tr.classList.add("alerts-chrow");
+        tr.hidden = !alertsOpen.has(marker.dataset.parent);
+    });
+}
+
+// 3라운드 2차 재설계(담당자 피드백 3-2): 채널별 행 나열 대신 **매장 단위로
+// 묶고**, 매장 행의 ▸ 토글로 홀/배달 채널 행을 펼칩니다. 매장 행의 매출·
+// 증감률은 채널 합(서버가 준 prev_*_amount 합산)이고, 판정은 서버 판정을
+// 채널 이름과 함께 요약합니다 — 여기서 임계값을 다시 계산하지 않습니다.
+// '기간 대비'도 같은 구조입니다: 회사 전체·홀·배달 타일(compare) 아래에
+// 매장 → 홀/배달 두 단으로 전월·전년동월 대비가 이 표 하나에 실립니다.
 function drawAlerts(d) {
     const alerts = d.alerts || [];
     const compare = d.compare || {};
@@ -1901,23 +1532,85 @@ function drawAlerts(d) {
         compareTile("회사 전체", compare.company) +
         (compare.by_channel || []).map((ch) => compareTile(ch.channel, ch)).join("");
 
-    const flagged = alerts.filter((s) => s.has_alert);
-    $("alerts-shown").textContent =
-        `급증·급감 ${flagged.length} / 전체 ${alerts.length}개 매장`;
+    // 매장 검색 자동완성 목록 — 지금 표에 실제로 있는 매장만.
+    const dl = $("alerts-store-list");
+    const names = alerts.map((s) => s.store);
+    if (dl.dataset.names !== names.join("|")) {
+        dl.dataset.names = names.join("|");
+        dl.innerHTML = names
+            .map((n) => `<option value="${escape(n)}"></option>`).join("");
+    }
 
-    const shown = $("alerts-only").checked ? flagged : alerts;
-    const rows = shown.flatMap((s) => (s.channels || []).map((c) => [
-        s.store, s.trade_area || "—", c.channel,
-        wonFull(c.amount),
-        `<span class="${pctClass(c.mom_pct_change)}">${pctText(c.mom_pct_change)}</span>`,
-        directionTag(c.mom_direction),
-        `<span class="${pctClass(c.yoy_pct_change)}">${pctText(c.yoy_pct_change)}</span>`,
-        directionTag(c.yoy_direction),
-    ]));
+    const flagged = alerts.filter((s) => s.has_alert);
+    const query = ($("alerts-q").value || "").trim();
+    // 검색어가 있으면 전 매장에서 찾습니다 — '급증·급감만' 이 켜져 있어도
+    // 찾는 매장이 정상이라는 답("정상" 행)을 볼 수 있어야 하기 때문입니다.
+    const shown = query
+        ? alerts.filter((s) => s.store.includes(query))
+        : ($("alerts-only").checked ? flagged : alerts);
+
+    $("alerts-shown").textContent =
+        `급증·급감 ${flagged.length} / 전체 ${alerts.length}개 매장`
+        + (query ? ` · 검색 ${shown.length}개` : "");
+
+    const rows = shown.flatMap((s) => {
+        const chs = s.channels || [];
+        const open = alertsOpen.has(s.store);
+
+        // 매장 합계와 그 증감률. 서버가 채널별 이전 금액(prev_*_amount)을
+        // 주므로 합산 뒤 다시 계산합니다(퍼센트는 합산할 수 없음).
+        const amount = chs.reduce((a, c) => a + (Number(c.amount) || 0), 0);
+        const sumIf = (k) => (chs.some((c) => c[k] != null)
+            ? chs.reduce((a, c) => a + (Number(c[k]) || 0), 0) : null);
+        const pct = (prev) => (prev && prev > 0
+            ? Math.round(((amount - prev) / prev) * 1000) / 10 : null);
+        const momPct = pct(sumIf("prev_mom_amount"));
+        const yoyPct = pct(sumIf("prev_yoy_amount"));
+
+        const storeRow = [
+            `<button type="button" class="alerts-exp${open ? " open" : ""}"`
+                + ` data-exp="${escape(s.store)}" aria-expanded="${open}"`
+                + ` aria-label="홀/배달 펼치기"></button>${escape(s.store)}`,
+            escape(s.trade_area || "—"),
+            chs.map((c) => escape(c.channel)).join("·") || "—",
+            wonFull(amount),
+            `<span class="${pctClass(momPct)}">${pctText(momPct)}</span>`,
+            storeDirTags(chs, "mom_direction"),
+            `<span class="${pctClass(yoyPct)}">${pctText(yoyPct)}</span>`,
+            storeDirTags(chs, "yoy_direction"),
+        ];
+        const channelRows = chs.map((c) => [
+            `<span class="alerts-chind" data-parent="${escape(s.store)}"></span>`,
+            "",
+            escape(c.channel),
+            wonFull(c.amount),
+            `<span class="${pctClass(c.mom_pct_change)}">${pctText(c.mom_pct_change)}</span>`,
+            directionTag(c.mom_direction),
+            `<span class="${pctClass(c.yoy_pct_change)}">${pctText(c.yoy_pct_change)}</span>`,
+            directionTag(c.yoy_direction),
+        ]);
+        return [storeRow, ...channelRows];
+    });
 
     table($("t-alerts"),
         ["매장", "상권", "채널", "매출", "전월 대비", "전월 판정", "전년동월 대비", "전년동월 판정"],
         rows, { html: true });
+
+    const container = $("t-alerts");
+    if (!container.dataset.expWired) {
+        container.dataset.expWired = "1";
+        container.addEventListener("click", (event) => {
+            const button = event.target.closest(".alerts-exp");
+            if (!button) return;
+            const store = button.dataset.exp;
+            if (alertsOpen.has(store)) alertsOpen.delete(store);
+            else alertsOpen.add(store);
+            button.classList.toggle("open", alertsOpen.has(store));
+            button.setAttribute("aria-expanded", String(alertsOpen.has(store)));
+            syncAlertRows();
+        });
+    }
+    syncAlertRows();
 }
 
 // ---- 미매핑 -----------------------------------------------------------
@@ -1969,6 +1662,107 @@ function drawMonthly(rows, c) {
     drawLine($("c-monthly"), { xLabels: months.map(ymLabel), series, colors: c });
 }
 
+// ---- 월별 홀/배달 막대 (3라운드 2차, 담당자 피드백 3-1) -----------------
+//
+// 위 선 그래프와 같은 api_monthly 결과를 달마다 홀·배달 짝 막대로 그립니다.
+// charts.js 의 drawBars 는 단일 시리즈 전용이라, 같은 시각 문법(니스 눈금·
+// 시리즈 색·툴팁)을 재사용해 두 시리즈 짝 막대만 여기서 조립합니다 —
+// 색·눈금·툴팁은 charts.js/dom.js 공통 것(palette·niceTicks·showTip)입니다.
+function drawMonthlyChannels(rows, c) {
+    const svg = $("c-monthly-ch");
+    if (!svg) return;
+
+    const months = [...new Set(rows.map((r) => r.ym))].sort((a, b) => a - b);
+    const channels = [...new Set(rows.map((r) => r.channel))]
+        .sort((a, b) => (a === "홀" ? -1 : b === "홀" ? 1 : 0));
+    const series = channels.map((name) => ({
+        name,
+        color: c[CHANNEL_COLORS[name] || "s1"],
+        values: months.map((ym) => {
+            const found = rows.find((r) => r.ym === ym && r.channel === name);
+            return found ? Number(found.amount) : 0;
+        }),
+    }));
+
+    // 범례 — 선 그래프 카드와 같은 규칙(시리즈 2개 이상일 때만).
+    const legend = $("legend-monthly-ch");
+    legend.innerHTML = "";
+    if (series.length >= 2) {
+        for (const s of series) {
+            const span = document.createElement("span");
+            span.innerHTML = `<i style="background:${s.color}"></i>${s.name}`;
+            legend.append(span);
+        }
+    }
+
+    const width = svg.clientWidth || 720;
+    const height = 260;
+    const pad = { top: 18, right: 8, bottom: 28, left: 56 };
+    const plotW = Math.max(10, width - pad.left - pad.right);
+    const plotH = height - pad.top - pad.bottom;
+
+    const max = Math.max(1, ...series.flatMap((s) => s.values));
+    const ticks = niceTicks(max, 4);
+    const top = ticks[ticks.length - 1];
+    const y = (v) => pad.top + plotH - (plotH * v) / top;
+
+    const slot = plotW / Math.max(1, months.length);       // 달 하나의 자리
+    const gap = 2;                                          // 짝 막대 사이
+    const barW = Math.min(20, Math.max(3,
+        (slot - 8 - gap * (series.length - 1)) / Math.max(1, series.length)));
+
+    const parts = [];
+    for (const t of ticks) {
+        parts.push(
+            `<line x1="${pad.left}" y1="${y(t)}" x2="${pad.left + plotW}" y2="${y(t)}"` +
+            ` stroke="${c.grid}" stroke-width="1"/>`,
+            `<text x="${pad.left - 8}" y="${y(t) + 4}" text-anchor="end" font-size="11"` +
+            ` fill="${c.muted}" style="font-variant-numeric:tabular-nums">${won(t)}</text>`
+        );
+    }
+
+    const labels = months.map(ymLabel);
+    const labelStep = Math.ceil(months.length / Math.max(2, Math.floor(plotW / 64)));
+    months.forEach((_, i) => {
+        const cx = pad.left + slot * i + slot / 2;
+        const groupW = barW * series.length + gap * (series.length - 1);
+        series.forEach((s, k) => {
+            const v = s.values[i];
+            const h = Math.max(2, plotH * (v / top));
+            const x = cx - groupW / 2 + k * (barW + gap);
+            // 막대 위쪽만 살짝 둥글게(차트 공통 문법) — 경로 대신 rx 로 충분합니다.
+            parts.push(
+                `<rect x="${x}" y="${y(v)}" width="${barW}" height="${h}" rx="3"` +
+                ` fill="${s.color}" data-tip="${escape(labels[i])} ${escape(s.name)}|${v}"/>`
+            );
+        });
+        if (i % labelStep === 0 || i === months.length - 1) {
+            parts.push(
+                `<text x="${cx}" y="${height - 8}" text-anchor="middle" font-size="11"` +
+                ` fill="${c.muted}">${escape(labels[i])}</text>`
+            );
+        }
+    });
+
+    parts.push(
+        `<line x1="${pad.left}" y1="${pad.top + plotH}" x2="${pad.left + plotW}"` +
+        ` y2="${pad.top + plotH}" stroke="${c.base}" stroke-width="1"/>`
+    );
+
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.setAttribute("height", String(height));
+    svg.innerHTML = parts.join("");
+
+    // 툴팁 — charts.js hookBarHover 와 같은 data-tip 규약을 그대로 씁니다.
+    svg.querySelectorAll("[data-tip]").forEach((mark) => {
+        mark.addEventListener("mousemove", (event) => {
+            const [label, value] = mark.dataset.tip.split("|");
+            showTip(event, `<strong>${label}</strong><div>${wonFull(value)}</div>`);
+        });
+        mark.addEventListener("mouseleave", hideTip);
+    });
+}
+
 // fmt/fmtFull: 축·끝점과 툴팁의 값 표기. 기본은 원화 — 건수 차트는 바꿔 씁니다.
 // (drawLine·hookLineHover·drawBars·hookBarHover·roundedRight·roundedTop 는
 //  charts.js 로 이동 — 위 import)
@@ -1980,193 +1774,40 @@ function drawMonthly(rows, c) {
 
 // ================================================================ 엑셀 내보내기
 //
-// 흐름 (담당자 결정: 월 단위 + 수집 안 된 곳은 전 채널 자동 수집)
-//   1. 선택한 매장 × 월 중 '수집 안 된 칸' 을 커버리지로 확인
-//   2. 있으면 → 그 매장·기간을 전 채널로 수집 요청 → 끝날 때까지 대기(진행 표시)
-//              → 대시보드까지 갱신되므로 웹 분석 화면도 같이 최신이 됨
-//   3. 없으면 → 바로 엑셀 생성·내려받기
-//
-// 클라우드 fact 는 월 단위라 기간도 월 단위입니다.
+// 매출 탭 필터 줄의 '엑셀 내보내기' 버튼(3라운드 2차, 담당자 확정) —
+// 지금 고른 기간·매장의 모든 매출 정보를 buildAndDownloadWorkbook 으로 즉시
+// 만듭니다. 옛 수집·내보내기 화면의 자동수집 대기 경로(커버리지 확인 →
+// collect_requests → 2시간 폴링)는 부르지 않습니다: 자리 PC 가 매일 알아서
+// 수집하므로 웹은 이미 수집된 데이터만 묶으면 됩니다. api_export_* 함수와
+// 시트 구성은 그대로입니다.
 
-// YYYY-MM (input[type=month]) → 202601 (integer)
-function ymToInt(value) {
-    if (!value) return null;
-    const [y, m] = value.split("-");
-    if (!y || !m) return null;
-    return parseInt(y, 10) * 100 + parseInt(m, 10);
-}
-
-
-function initExport() {
-    const fromEl = $("x-from");
-    const toEl = $("x-to");
-    const submit = $("x-submit");
-    if (!fromEl || !toEl || !submit) return;
-
-    // 기본값: 데이터가 있는 최근 3개월. api_filters 가 준 범위를 씁니다.
-    if (S.filterRange && S.filterRange.max) {
-        toEl.value = ymDash(S.filterRange.max);
-        const maxS = String(S.filterRange.max);
-        let y = parseInt(maxS.slice(0, 4), 10);
-        let m = parseInt(maxS.slice(4, 6), 10) - 2;
-        while (m <= 0) { m += 12; y -= 1; }
-        fromEl.value = `${y}-${String(m).padStart(2, "0")}`;
-        if (S.filterRange.min && ymToInt(fromEl.value) < S.filterRange.min) {
-            fromEl.value = ymDash(S.filterRange.min);
-        }
-    }
-
-    submit.addEventListener("click", () => runExport());
-    // 매장 목록(loadTargets)이 먼저 와 있었으면 여기서 개수를 채웁니다 (F5).
-    refreshExportStoreButton();
-}
-
-async function runExport() {
-    const notice = $("x-notice");
-    const progress = $("x-progress");
-    const submit = $("x-submit");
-
-    const ymFrom = ymToInt($("x-from").value);
-    const ymTo = ymToInt($("x-to").value);
-    progress.innerHTML = "";
+async function runSalesExport() {
+    const button = $("sales-export");
+    const msg = $("sales-export-msg");
+    const { p_ym_from: ymFrom, p_ym_to: ymTo, p_store: store } = currentFilters();
 
     if (!ymFrom || !ymTo) {
-        notice.className = "notice error";
-        notice.textContent = "시작 월과 종료 월을 고르세요.";
-        return;
-    }
-    if (ymFrom > ymTo) {
-        notice.className = "notice error";
-        notice.textContent = "시작 월이 종료 월보다 늦습니다.";
+        msg.textContent = "시작·종료 월을 먼저 고르세요.";
         return;
     }
 
-    const stores = [...xStores];               // 비어 있으면 전 매장
-    const storeArg = stores.length ? stores : null;
-    submit.disabled = true;
+    // 필터 줄의 매장 콤보를 그대로 씁니다 — 전체면 전 매장, 골랐으면 그 매장만.
+    const storeArg = store ? [store] : null;
+    const storeNames = store ? [store] : [];
 
+    button.disabled = true;
+    msg.textContent = "엑셀을 만드는 중…";
     try {
-        // 1. 수집 안 된 (매장, 월) 확인
-        notice.className = "notice";
-        notice.textContent = "수집 현황을 확인하는 중…";
-        const { data: cov, error: covErr } = await db.rpc("api_export_coverage", {
-            p_ym_from: ymFrom, p_ym_to: ymTo, p_stores: storeArg,
-        });
-        if (covErr) throw new Error("수집 현황 조회 실패: " + covErr.message);
-
-        const missing = (cov || []).filter((r) => !r.has_data);
-
-        // 2. 비어 있으면 자동 수집 (담당자 결정: 전 채널)
-        if (missing.length > 0) {
-            const ok = await exportCollectMissing(missing, notice, progress);
-            if (!ok) { submit.disabled = false; return; }
-        }
-
-        // 3. 엑셀 생성
-        notice.className = "notice";
-        notice.textContent = "엑셀을 만드는 중…";
-        await buildAndDownloadWorkbook(ymFrom, ymTo, storeArg, stores);
-
-        notice.className = "notice";
-        notice.textContent = "엑셀을 내려받았습니다.";
+        await buildAndDownloadWorkbook(ymFrom, ymTo, storeArg, storeNames);
+        msg.textContent = "엑셀을 내려받았습니다.";
     } catch (err) {
-        notice.className = "notice error";
-        notice.textContent = String(err.message || err);
+        msg.textContent = "엑셀을 만들지 못했습니다: " + String(err.message || err);
     } finally {
-        submit.disabled = false;
+        button.disabled = false;
+        // 안내는 잠시 뒤 지웁니다 — 필터 줄이라 오래 남으면 자리를 차지합니다.
+        setTimeout(() => { if (!button.disabled) msg.textContent = ""; }, 8000);
     }
 }
-
-// 수집 안 된 매장·월을 전 채널로 수집 요청하고, 끝날 때까지 기다립니다.
-async function exportCollectMissing(missing, notice, progress) {
-    // 매장·월을 모읍니다. 요청은 '기간(연-월-01 ~ 연-월-말일)' 단위라
-    // 빠진 달의 최소~최대 월을 한 번에 겁니다.
-    const storeSet = [...new Set(missing.map((r) => r.store))];
-    const monthsMissing = [...new Set(missing.map((r) => r.ym))].sort();
-    const first = monthsMissing[0];
-    const last = monthsMissing[monthsMissing.length - 1];
-
-    const from = firstDayOf(first);
-    const to = lastDayOf(last);
-
-    progress.innerHTML =
-        `<p class="hint">수집이 안 된 매장 ${storeSet.length}곳 · `
-        + `${monthsMissing.map(ymDash).join(", ")} 을 먼저 모읍니다. `
-        + `전 채널을 수집하므로 시간이 걸립니다.</p>`
-        + `<div class="logbox" id="x-log"></div>`;
-
-    const { data: { session } } = await db.auth.getSession();
-    const { data: inserted, error } = await db.from("collect_requests").insert({
-        requested_by: session?.user?.id,
-        plugins: ["easypos", "baemin", "imu", "coupangeats", "yogiyo"],
-        date_from: from,
-        date_to: to,
-        stores: storeSet,     // 빠진 매장만
-        profiles: [],
-    }).select();
-    if (error) {
-        notice.className = "notice error";
-        notice.textContent = "수집 요청을 넣지 못했습니다: " + error.message;
-        return false;
-    }
-
-    const reqId = inserted[0].id;
-    return await waitForRequest(reqId, progress);
-}
-
-// 요청 하나가 끝날 때까지 상태를 지켜봅니다. 진행 상황을 화면에 보여줍니다.
-async function waitForRequest(reqId, progress) {
-    const log = $("x-log");
-    const started = Date.now();
-    // 수집은 오래 걸릴 수 있습니다. 최대 2시간까지 기다립니다.
-    const deadline = started + 2 * 60 * 60 * 1000;
-
-    while (Date.now() < deadline) {
-        await sleep(4000);
-        const { data, error } = await db
-            .from("collect_requests")
-            .select("status,progress,error")
-            .eq("id", reqId)
-            .single();
-        if (error) continue;
-
-        const mins = Math.floor((Date.now() - started) / 60000);
-        if (log) {
-            log.textContent =
-                `상태: ${data.status}\n` +
-                `진행: ${data.progress || "…"}\n` +
-                `경과: ${mins}분`;
-        }
-
-        if (data.status === "done") return true;
-        if (data.status === "failed") {
-            if (log) log.textContent += `\n\n실패: ${data.error || ""}`;
-            return false;
-        }
-        // 수집 화면에서 취소한 요청(F4) 뒤에 줄 서 있었으면 같이 끝냅니다 —
-        // 아니면 2시간 대기(deadline)까지 헛돕니다.
-        if (data.status === "canceled") {
-            if (log) log.textContent += "\n\n요청이 취소되었습니다.";
-            return false;
-        }
-    }
-    if (log) log.textContent += "\n\n시간이 너무 오래 걸립니다. 나중에 다시 시도하세요.";
-    return false;
-}
-
-function firstDayOf(ymInt) {
-    const s = String(ymInt);
-    return `${s.slice(0, 4)}${s.slice(4, 6)}01`;
-}
-function lastDayOf(ymInt) {
-    const s = String(ymInt);
-    const y = parseInt(s.slice(0, 4), 10);
-    const m = parseInt(s.slice(4, 6), 10);
-    const last = new Date(y, m, 0).getDate();   // m월의 말일
-    return `${s.slice(0, 4)}${s.slice(4, 6)}${String(last).padStart(2, "0")}`;
-}
-
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 // 동시에 도는 요청 수를 묶습니다.
 //
@@ -2343,13 +1984,7 @@ function addSheet(XLSX, wb, sheetName, rows, columns) {
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
 }
 
-// SheetJS 를 필요할 때만 불러옵니다. supabase-js 처럼 CDN 에서 가져옵니다.
-let _sheetjs = null;
-async function loadSheetJS() {
-    if (_sheetjs) return _sheetjs;
-    _sheetjs = await import("https://esm.sh/xlsx@0.18.5");
-    return _sheetjs;
-}
+// (loadSheetJS 는 dom.js 로 이동 — 카드 엑셀 버튼과 같은 사본을 씁니다)
 
 // ================================================================ 방문·점검 (9번 영역)
 //
@@ -2378,8 +2013,7 @@ const VISIT_CYCLE_DAYS = 60;
 
 async function initVisits() {
     const storeSelect = $("vs-store");
-    const { data: stores, error: storeErr } = await db.from("stores")
-        .select("id,name").order("name");
+    const { data: stores, error: storeErr } = await fetchStores();
     if (!storeErr) visitAllStores = stores || [];
     rebuildVisitStoreOptions();
 

@@ -4,7 +4,7 @@
 import { int } from "./format.js";
 import { escape, clip } from "./util.js";
 import { $, table } from "./dom.js";
-import { db } from "./client.js";
+import { db, fetchStores } from "./client.js";
 import { refreshTasksSummary, refreshTaskList, taskStatusTag } from "./tasks.js";
 
 // ---- 공지 (12번 영역, 53_announcements.sql) --------------------------------
@@ -18,7 +18,7 @@ let anStores = [];     // {id, name}
 let anProfiles = [];   // {store_id, region, sv_name, ...}
 
 export async function initComms() {
-    const { data: stores } = await db.from("stores").select("id,name").order("name");
+    const { data: stores } = await fetchStores();
     anStores = stores || [];
     for (const s of anStores) {
         const opt = document.createElement("option");

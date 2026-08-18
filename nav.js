@@ -62,14 +62,21 @@ export function showArea(area) {
         { detail: { area } }));
 
     const salesOnly = area === "sales";
-    // 홈 화면의 타일도 위 필터(기간·매장)를 따르므로 필터 줄은 같이 보여줍니다.
-    // 리뷰 카드(api_review_summary)도 같은 f-from/f-to/f-store 를 그대로 쓰므로
-    // 리뷰 영역에서도 필터 줄이 필요합니다.
+    // 필터 줄(기간·매장)은 매출·리뷰에서만 보입니다. 홈은 3라운드 피드백
+    // 1번으로 필터와 무관해졌습니다(전체 기간·전 매장 고정 — app.js loadHome)
+    // — 매출은 매출 탭에서 보므로 홈에 필터 줄 자체가 필요 없습니다.
+    // 리뷰 카드(api_review_summary)는 같은 f-from/f-to/f-store 를 그대로
+    // 쓰므로 리뷰 영역에서는 필터 줄이 필요합니다.
     // 맨 위 매출 4칸(총매출 등)은 매출 화면에서만 뜻이 있어 그대로 숨깁니다.
     const filters = document.querySelector(".filters");
     const tiles = $("sales-kpis");
-    if (filters) filters.hidden = !(salesOnly || area === "home" || area === "reviews");
+    if (filters) filters.hidden = !(salesOnly || area === "reviews");
     if (tiles) tiles.hidden = !salesOnly;
+    // 엑셀 내보내기 버튼(3라운드 2차 — 옛 수집·내보내기 화면의 후신)은 매출
+    // 자료를 뽑는 것이라 매출 영역에서만 보입니다. 필터 줄 자체는 홈·리뷰도
+    // 같이 쓰므로 버튼 칸만 따로 숨깁니다.
+    const exportField = $("sales-export-field");
+    if (exportField) exportField.hidden = !salesOnly;
     try { localStorage.setItem(AREA_KEY, area); } catch (e) { /* 사생활 모드 */ }
     window.scrollTo({ top: 0, behavior: "instant" });
 }
@@ -88,8 +95,8 @@ export function initAreas() {
     showArea(saved);
 }
 
-// 홈 화면의 할 일 타일 → 관련 카드로 이동. 답글·부정 리뷰 타일은 리뷰
-// 영역(review-card), 급감 매장 타일은 매출 영역(alerts-card)을 가리킵니다
+// 홈 화면의 할 일 타일 → 관련 카드로 이동. 업무 3종(미처리·승인 대기·문의
+// 답변)은 업무 영역, AI 답글 초안 타일은 리뷰 영역(review-card)을 가리킵니다
 // — 어느 영역으로 이동할지는 각 타일의 data-go-target(index.html)이 정합니다.
 // 필터를 바꿀 때는 그 필터가 이미 쓰고 있는 이벤트를 그대로 흉내 냅니다
 // (rv-rating 은 change 시 서버에 다시 묻고, alerts-only 는 이미 받아 둔
@@ -97,11 +104,28 @@ export function initAreas() {
 export function initHomeTiles() {
     const targets = {
         "home-tile-tasks": "task-list-card",
+        "home-tile-approvals": "task-list-card",
         "home-tile-inquiry": "inquiry-card",
         "home-tile-drafts": "review-card",
-        "home-tile-negative": "review-card",
-        "home-tile-declining": "alerts-card",
     };
+
+    // '승인 대기 업무' 타일은 업무 화면 타일(tk-waiting)을 거울로 비춥니다 —
+    // 같은 숫자(api_tasks_summary)를 홈이 또 조회하지 않기 위해서입니다.
+    // 값은 tasks.js(refreshTasksSummary)가 비동기로 채우므로 관찰만 합니다
+    // (아래 0 판정 MutationObserver 와 같은 방식).
+    const waiting = document.getElementById("tk-waiting");
+    const homeApprovals = document.getElementById("home-approvals");
+    if (waiting && homeApprovals) {
+        const mirror = () => { homeApprovals.textContent = waiting.textContent; };
+        mirror();
+        new MutationObserver(mirror).observe(waiting, {
+            childList: true, characterData: true, subtree: true,
+        });
+    }
+
+    // 매출 한 줄(전 매장·최근 완성월 — app.js loadHome)을 누르면 매출 탭으로.
+    const salesLine = document.getElementById("home-sales-line");
+    if (salesLine) salesLine.addEventListener("click", () => showArea("sales"));
     for (const [tileId, cardId] of Object.entries(targets)) {
         const tile = document.getElementById(tileId);
         if (!tile) continue;
@@ -123,17 +147,16 @@ export function initHomeTiles() {
 
         tile.addEventListener("click", () => {
             showArea(tile.dataset.goTarget || "sales");
-            if (tileId === "home-tile-negative") {
-                $("rv-rating").value = "low";
-                $("rv-rating").dispatchEvent(new Event("change"));
-            }
-            if (tileId === "home-tile-declining") {
-                $("alerts-only").checked = true;
-                $("alerts-only").dispatchEvent(new Event("change"));
-            }
             if (tileId === "home-tile-tasks") {
                 $("tk-filter-overdue").checked = true;
                 $("tk-filter-overdue").dispatchEvent(new Event("change"));
+            }
+            if (tileId === "home-tile-approvals") {
+                // 업무 화면의 상태 필터를 '승인 대기' 로 맞춥니다. 미처리
+                // 체크가 남아 있으면 두 필터가 AND 로 걸려 목록이 비므로 끕니다.
+                $("tk-filter-status").value = "waiting_approval";
+                $("tk-filter-overdue").checked = false;
+                $("tk-filter-status").dispatchEvent(new Event("change"));
             }
             if (tileId === "home-tile-inquiry") {
                 $("iq-filter").value = "draft";

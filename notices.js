@@ -5,7 +5,7 @@
 import { int } from "./format.js";
 import { escape } from "./util.js";
 import { $, table } from "./dom.js";
-import { db } from "./client.js";
+import { db, fetchStores } from "./client.js";
 import { showArea } from "./nav.js";
 import { TASK_STATUS_LABEL, refreshTasksSummary, refreshTaskList } from "./tasks.js";
 
@@ -92,8 +92,7 @@ function initAttachmentOpen() {
 
 export async function initNotices() {
     const storeSelect = $("v-store");
-    const { data: stores, error: storeErr } = await db.from("stores")
-        .select("id,name").order("name");
+    const { data: stores, error: storeErr } = await fetchStores();
     if (!storeErr) {
         for (const s of stores || []) {
             const opt = document.createElement("option");

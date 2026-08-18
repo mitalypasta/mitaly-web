@@ -1,7 +1,12 @@
 // DOM 조립 헬퍼 — 표 그리기와 툴팁. app.js 에서 뽑아낸 2단계 조각
 // (docs/web-split-plan.md). 값을 받아 컨테이너에 채워 넣는 일만 합니다.
+//
+// 3라운드 공통(담당자 피드백 0번): 월 고르개(monthPicker) · 매장 검색 콤보
+// (searchify) · 카드 표 엑셀 내보내기(table 이 자동 부착)도 여기 삽니다 —
+// 전 화면이 같은 동작을 갖도록 공통 층 한 곳에만 둡니다.
 
 import { escape } from "./util.js";
+import { ymDash } from "./format.js";
 
 // id 로 요소를 잡는 짧은 헬퍼. 화면 모듈 어디서나 씁니다.
 export const $ = (id) => document.getElementById(id);
@@ -46,8 +51,10 @@ function numericColumn(rows, index) {
 export function table(container, headers, rows, options = {}) {
     if (!rows.length) {
         container.innerHTML = '<p class="hint">데이터가 없습니다.</p>';
+        registerExport(container, headers, null);
         return;
     }
+    registerExport(container, headers, rows);
     const cell = options.html ? (v) => String(v ?? "") : escape;
     const sort = options.sortState;
 
@@ -98,4 +105,211 @@ export function fillStoreSelect(select, names, allLabel) {
         o.value = name; o.textContent = name;
         select.appendChild(o);
     }
+}
+
+// ---------------------------------------------------------------- 월 고르개
+//
+// select 드롭다운 대신 브라우저 달력(input[type=month])을 씁니다(3라운드 0-1).
+// 화면 코드는 지금까지 select.value 를 'YYYYMM' 정수 문자열로 읽고 써 왔으므로
+// (currentFilters 의 Number(...), map.js 등), input 의 value 접근자를 요소
+// 단위로 가로채 바깥에는 계속 'YYYYMM' 으로 보이게 합니다. 이렇게 하면 값을
+// 읽는 쪽(다른 라운드 에이전트의 영역 파일 포함)을 한 줄도 안 고쳐도 됩니다.
+const MONTH_VALUE =
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+
+export function monthPicker(target, range = {}) {
+    const input = typeof target === "string" ? $(target) : target;
+    if (!input) return null;
+    if (!input.dataset.ymWired) {
+        input.dataset.ymWired = "1";
+        Object.defineProperty(input, "value", {
+            get() {
+                const v = MONTH_VALUE.get.call(this);
+                return v ? v.replace("-", "") : "";
+            },
+            set(v) {
+                MONTH_VALUE.set.call(this, v ? ymDash(v) : "");
+            },
+        });
+        // 달을 지워 버리면 조회가 0/NaN 기간으로 나갑니다 — 마지막으로
+        // 골랐던 달을 되살리고 change 를 다시 알려 화면을 맞춥니다.
+        input.addEventListener("change", () => {
+            if (input.value) {
+                input.dataset.last = input.value;
+            } else if (input.dataset.last) {
+                input.value = input.dataset.last;
+                input.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+        });
+    }
+    // 달력에서 고를 수 있는 범위 = 데이터가 실제로 있는 범위.
+    if (range.min) input.min = ymDash(range.min);
+    if (range.max) input.max = ymDash(range.max);
+    return input;
+}
+
+// ---------------------------------------------------------------- 매장 검색 콤보
+//
+// 매장 select 를 검색 가능한 입력(datalist)으로 바꿉니다(3라운드 0-2).
+// select 는 숨긴 채 값의 원본으로 남습니다 — 옵션을 채우는 코드(fillStoreSelect
+// ·각 영역의 append)와 값을 읽는 코드(.value·.options·selectedOptions)가
+// 전부 그대로 동작하고, 콤보는 select 를 비추기만 합니다.
+// 옵션의 value 와 표시 이름이 달라도(v-store 등 id 기반 select) 이름으로
+// 찾아 value 로 되돌립니다.
+let comboSeq = 0;
+const SELECT_VALUE =
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+
+export function searchify(target) {
+    const select = typeof target === "string" ? $(target) : target;
+    if (!select || select.tagName !== "SELECT" || select.dataset.combo) return select;
+    select.dataset.combo = "1";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "combo";
+    input.autocomplete = "off";
+    const list = document.createElement("datalist");
+    list.id = `combo-list-${++comboSeq}`;
+    input.setAttribute("list", list.id);
+    select.after(input, list);
+    select.hidden = true;
+    select.tabIndex = -1;
+    select.setAttribute("aria-hidden", "true");
+
+    const options = () => [...select.options];
+    const showSelected = () => {
+        const cur = SELECT_VALUE.get.call(select);
+        const opt = options().find((o) => o.value === cur);
+        input.value = opt && opt.value !== "" ? opt.textContent : "";
+    };
+    const rebuild = () => {
+        list.innerHTML = options().filter((o) => o.value !== "")
+            .map((o) => `<option value="${escape(o.textContent)}"></option>`)
+            .join("");
+        const blank = options().find((o) => o.value === "");
+        // '전체'류 항목이 있으면 빈 입력 = 그 항목. 자리 문구로 보여 줍니다.
+        input.placeholder = blank ? blank.textContent : "매장 검색";
+        showSelected();
+    };
+    new MutationObserver(rebuild)
+        .observe(select, { childList: true, subtree: true, characterData: true });
+    rebuild();
+
+    // 코드가 select.value = ... 로 값을 바꿔도(홈 타일 이동·입금 채우기 등)
+    // 콤보 표시가 따라오도록 접근자를 요소 단위로 가로챕니다.
+    Object.defineProperty(select, "value", {
+        get() { return SELECT_VALUE.get.call(this); },
+        set(v) { SELECT_VALUE.set.call(this, v); showSelected(); },
+    });
+
+    const commit = () => {
+        const typed = input.value.trim();
+        const opts = options();
+        let opt = typed === ""
+            ? opts.find((o) => o.value === "")
+            : opts.find((o) => o.textContent === typed);
+        if (!opt && typed) {
+            // 정확히 일치하는 항목이 없으면, 부분 일치가 하나뿐일 때만 그걸로.
+            const partial = opts.filter((o) => o.value !== "" &&
+                o.textContent.toLowerCase().includes(typed.toLowerCase()));
+            if (partial.length === 1) opt = partial[0];
+        }
+        if (!opt) { showSelected(); return; }   // 못 찾음 — 원래 값으로 되돌림
+        input.value = opt.value === "" ? "" : opt.textContent;
+        if (SELECT_VALUE.get.call(select) !== opt.value) {
+            SELECT_VALUE.set.call(select, opt.value);
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+    };
+    input.addEventListener("change", commit);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); });
+    return select;
+}
+
+// ---------------------------------------------------------------- 엑셀 내보내기
+//
+// table() 이 그린 표를 카드 단위로 xlsx 로 내립니다(3라운드 0-4). table() 이
+// 그릴 때마다 표 데이터를 등록하고 카드 헤더에 '엑셀' 버튼을 한 번 붙입니다 —
+// 화면 모듈은 아무것도 안 해도 표가 있는 카드 전부에 내보내기가 생깁니다.
+// 라이브러리는 기존 전체 내보내기(buildAndDownloadWorkbook)와 같은 SheetJS 를
+// 같은 주소에서 재사용합니다(새 CDN 금지). 버튼을 누를 때에만 내려받습니다.
+let sheetjs = null;
+export async function loadSheetJS() {
+    if (!sheetjs) sheetjs = await import("https://esm.sh/xlsx@0.18.5");
+    return sheetjs;
+}
+
+const EXPORT_DATA = new WeakMap();     // 표 컨테이너 → { headers, rows }
+const CARD_TABLES = new WeakMap();     // 카드 → Set(표 컨테이너)
+
+function registerExport(container, headers, rows) {
+    if (rows) EXPORT_DATA.set(container, { headers, rows });
+    else EXPORT_DATA.delete(container);
+
+    const card = container.closest("section.card, .card");
+    if (!card) return;
+    let set = CARD_TABLES.get(card);
+    if (!set) { set = new Set(); CARD_TABLES.set(card, set); }
+    set.add(container);
+
+    const header = card.querySelector(":scope > header")
+        || card.querySelector(":scope > details > summary");
+    if (!header || header.querySelector(".xlsx-btn")) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "linkish xlsx-btn";
+    btn.textContent = "엑셀";
+    btn.title = "이 카드의 표를 엑셀 파일로 내려받습니다";
+    btn.addEventListener("click", (e) => {
+        e.preventDefault();            // cardfold summary 안에서 접힘 토글 방지
+        e.stopPropagation();
+        exportCard(card);
+    });
+    header.append(btn);
+}
+
+// 셀 값을 엑셀 셀로. HTML(배지·meta 줄)은 글자만 남기고, '1,234'·'1,234원'
+// 같은 순수 숫자는 숫자 타입으로 넣어 엑셀에서 바로 계산되게 합니다.
+// (won() 의 '1.2억'·'%' 류는 단위를 잃으므로 문자열 그대로 둡니다.)
+function exportCell(v) {
+    if (typeof v === "number") return v;
+    const text = String(v ?? "")
+        .replace(/<(div|p|br|li)[^>]*>/gi, " ")
+        .replace(/<[^>]*>/g, "")
+        .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
+        .replace(/\s+/g, " ").trim();
+    // 정수만 숫자로 바꿉니다. 소수점이 있는 건 '2025.10'(연월 라벨) 같은
+    // 표기가 숫자 2025.1 로 망가질 수 있어 문자열 그대로 둡니다.
+    if (/^[-+]?[0-9][0-9,]*원?$/.test(text)) {
+        return Number(text.replace(/[,원]/g, ""));
+    }
+    return text;
+}
+
+function sheetTitle(base, index, total) {
+    const clean = base.replace(/[\\/\[\]*?:]/g, " ").replace(/\s+/g, " ").trim();
+    const suffix = total > 1 ? `_${index + 1}` : "";
+    return (clean.slice(0, 31 - suffix.length) || "표") + suffix;
+}
+
+async function exportCard(card) {
+    const parts = [...(CARD_TABLES.get(card) || [])]
+        .map((el) => EXPORT_DATA.get(el))
+        .filter((d) => d && d.rows && d.rows.length);
+    if (!parts.length) { alert("내보낼 표 데이터가 없습니다."); return; }
+
+    const XLSX = await loadSheetJS();
+    const wb = XLSX.utils.book_new();
+    const title = (card.querySelector("h2")?.textContent || "표").trim();
+    parts.forEach((d, i) => {
+        const aoa = [d.headers.map((h) => exportCell(h)),
+                     ...d.rows.map((r) => r.map(exportCell))];
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa),
+            sheetTitle(title, i, parts.length));
+    });
+    const day = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const safe = title.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
+    XLSX.writeFile(wb, `미태리_${safe}_${day}.xlsx`);
 }

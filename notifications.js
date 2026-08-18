@@ -11,7 +11,10 @@ import { showTaskEvents } from "./tasks.js";
 //
 // 발송 자체는 수집 PC 도구의 일이고(tools/alert_negative_reviews.py 등),
 // 웹은 이력(api_notifications)만 봅니다 — notify.py 머리 주석의 역할 분담.
-// 그래서 이 카드에는 버튼이 '업무 이력' 하나뿐입니다.
+// 3라운드 2차(담당자 피드백)로 행 삭제가 붙었습니다 — dry-run 시험이 쌓여
+// 실제 발송과 섞이는 문제. RLS delete 정책은 85_tasks_web_round3.sql 이 짝이고,
+// 지운 행을 .select() 로 돌려받아 0건이면(정책 미적용 프로젝트) 조용히
+// 넘어가지 않고 그렇다고 말합니다.
 
 export const NOTIFY_KIND_LABEL = {
     review_alert: "부정 리뷰",
@@ -58,7 +61,7 @@ function drawNotifications() {
     }
 
     table($("t-notifications"),
-        ["시각", "종류", "채널", "받는 곳", "제목", "상태", "업무"],
+        ["시각", "종류", "채널", "받는 곳", "제목", "상태", "업무", ""],
         rows.map((n) => [
             escape(String(n.created_at).replace("T", " ").slice(0, 16)),
             escape(NOTIFY_KIND_LABEL[n.kind] || n.kind || "—"),
@@ -72,8 +75,31 @@ function drawNotifications() {
                 ? `<button class="ghost" data-act="task-events" data-task-id="${n.task_id}"`
                   + ` data-task-title="업무 #${n.task_id}">이력</button>`
                 : "—",
+            `<button class="ghost" data-act="nf-delete" data-id="${n.id}">삭제</button>`,
         ]),
         { html: true });
+}
+
+async function deleteNotification(button) {
+    const id = Number(button.dataset.id);
+    const row = notifyRows.find((n) => n.id === id);
+    const ok = window.confirm(
+        `이 발송 이력을 지웁니다 — ${row?.subject || `#${id}`}\n`
+        + "지운 이력은 되돌릴 수 없습니다. 지울까요?");
+    if (!ok) return;
+
+    button.disabled = true;
+    // 지운 행을 돌려받아야(select) 0건 = 못 지움을 구분할 수 있습니다 —
+    // RLS 는 권한 없는 delete 를 오류가 아니라 '0행' 으로 조용히 넘깁니다.
+    const { data, error } = await db.from("notifications")
+        .delete().eq("id", id).select("id");
+    if (error || !(Array.isArray(data) && data.length)) {
+        window.alert("지우지 못했습니다"
+            + (error ? ": " + error.message : " — 발송 이력 삭제가 아직 이 서버에 열려 있지 않습니다."));
+        button.disabled = false;
+        return;
+    }
+    await refreshNotifications();
 }
 
 export function initNotifications() {
@@ -81,6 +107,8 @@ export function initNotifications() {
     // '업무' 열의 이력 버튼 — 업무 목록 카드의 이력 패널(showTaskEvents)을
     // 그대로 씁니다. 위임 대상 컨테이너가 달라 여기서 한 번 더 겁니다.
     $("t-notifications").addEventListener("click", (event) => {
+        const del = event.target.closest("button[data-act='nf-delete']");
+        if (del) { deleteNotification(del); return; }
         const button = event.target.closest("button[data-act='task-events']");
         if (button) {
             showTaskEvents(Number(button.dataset.taskId), button.dataset.taskTitle);

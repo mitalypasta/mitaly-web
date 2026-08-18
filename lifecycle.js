@@ -13,15 +13,14 @@
 //   [J] 요약 연도 선택 (RPC 는 원래 p_year 를 받는데 화면이 올해 고정이었음).
 //   [K] 세션 없이 insert 하면 RLS 원문 오류가 그대로 보였음 — 저장 전 확인.
 
-import { db } from "./client.js";
+import { db, fetchStores } from "./client.js";
 import { int } from "./format.js";
 import { escape } from "./util.js";
 import { table, $ } from "./dom.js";
 
 export async function initLifecycle() {
     const storeSelect = $("la-store");
-    const { data: stores, error: storeErr } = await db.from("stores")
-        .select("id,name").order("name");
+    const { data: stores, error: storeErr } = await fetchStores();
     if (!storeErr) {
         for (const s of stores || []) {
             const opt = document.createElement("option");

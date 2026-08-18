@@ -44,11 +44,12 @@ async function loadAds() {
     $("ads-orders").textContent = int(summary.orders);
 
     const byChannel = Array.isArray(data.by_channel) ? data.by_channel : [];
-    table($("t-ads-channel"), ["채널", "광고비", "노출", "클릭", "광고 경유 주문"],
+    table($("t-ads-channel"), ["채널", "광고비", "노출 수", "클릭 수", "광고로 들어온 주문"],
         byChannel.map((c) => [c.channel, wonFull(c.cost), int(c.impressions),
                               int(c.clicks), int(c.orders)]));
     table($("t-ads"),
-        ["월", "매장", "채널", "캠페인", "광고비", "노출", "클릭", "주문", "출처", ""],
+        ["월", "매장", "채널", "광고 이름", "광고비", "노출 수", "클릭 수",
+         "광고로 들어온 주문", "출처", ""],
         rows.map((r) => [
             ymLabel(r.ym), escape(r.store), escape(r.channel),
             escape(r.campaign || "—"), wonFull(r.cost),
@@ -62,36 +63,52 @@ async function loadAds() {
         { html: true });
 }
 
+// 채널 선택값 — '기타' 는 직접 입력 칸의 이름이 실제 채널입니다.
+// SQL(76 설계 판단 [5])이 채널을 자유 텍스트로 두므로 그대로 보내면 됩니다.
+function channelValue() {
+    const picked = $("ads-in-channel").value;
+    return picked === "기타" ? $("ads-in-channel-etc").value.trim() : picked;
+}
+
 async function saveAd() {
     const notice = $("ads-notice");
-    notice.textContent = "";
+    const button = $("ads-save");
     const ymRaw = $("ads-in-ym").value;              // "2026-01"
     const ym = ymRaw ? Number(ymRaw.replace("-", "")) : null;
+    const channel = channelValue();
     const num = (id) => {
         const v = $(id).value.trim();
         return v === "" ? null : Number(v);
     };
 
+    // 이중 제출 방지 — 공지·위반 카드와 같은 패턴(버튼을 잠그고 끝나면 풉니다).
+    button.disabled = true;
+    notice.className = "notice";
+    notice.textContent = "넣는 중…";
+
     const { data, error } = await db.rpc("api_ad_spend_save", {
         p_store:       $("ads-in-store").value,
         p_ym:          ym,
-        p_channel:     $("ads-in-channel").value,
+        p_channel:     channel,
         p_cost:        num("ads-in-cost") ?? 0,
         p_campaign:    $("ads-in-campaign").value,
         p_impressions: num("ads-in-impressions"),
         p_clicks:      num("ads-in-clicks"),
         p_orders:      num("ads-in-orders"),
     });
+    button.disabled = false;
     if (error) {
+        notice.className = "notice error";
         notice.textContent = "넣지 못했습니다: " + error.message;
         return;
     }
     if (!data?.ok) {
+        notice.className = "notice error";
         notice.textContent = data?.reason || "넣지 못했습니다.";
         return;
     }
     notice.textContent =
-        `넣었습니다 — ${$("ads-in-store").value.trim()} ${ymDash(ym)} ${$("ads-in-channel").value.trim()}`;
+        `넣었습니다 — ${$("ads-in-store").value.trim()} ${ymDash(ym)} ${channel}`;
     // 매장·월·채널은 다음 줄을 이어 넣기 좋게 남기고, 값 칸만 비웁니다.
     for (const id of ["ads-in-campaign", "ads-in-cost", "ads-in-impressions",
                       "ads-in-clicks", "ads-in-orders"]) {
@@ -103,6 +120,13 @@ async function saveAd() {
 export async function initAds() {
     $("ads-save").addEventListener("click", saveAd);
 
+    // 채널에서 '기타' 를 고르면 이름 칸이 나타납니다.
+    $("ads-in-channel").addEventListener("change", () => {
+        const etc = $("ads-etc-field");
+        etc.hidden = $("ads-in-channel").value !== "기타";
+        if (!etc.hidden) $("ads-in-channel-etc").focus();
+    });
+
     $("t-ads").addEventListener("click", async (event) => {
         const button = event.target.closest("button[data-act='del']");
         if (!button) return;
@@ -111,11 +135,13 @@ export async function initAds() {
         const { data, error } = await db.rpc("api_ad_spend_delete",
                                              { p_id: Number(button.dataset.id) });
         if (error || !data?.ok) {
+            $("ads-notice").className = "notice error";
             $("ads-notice").textContent =
                 "삭제하지 못했습니다: " + (error?.message || data?.reason || "");
             button.disabled = false;
             return;
         }
+        $("ads-notice").className = "notice";
         $("ads-notice").textContent = `삭제했습니다 — ${button.dataset.label}`;
         await loadAds();
     });

@@ -5,7 +5,7 @@
 import { int } from "./format.js";
 import { escape, clip } from "./util.js";
 import { $, table } from "./dom.js";
-import { db } from "./client.js";
+import { db, fetchStores } from "./client.js";
 import { refreshViolations } from "./notices.js";
 import { refreshAnnouncements } from "./comms.js";
 import { refreshPosMenu, refreshPosMenuSummary, refreshPosMenuRequests } from "./pos.js";
@@ -34,6 +34,24 @@ export const TASK_STATUS_LABEL = {
     escalated: "이관",
     done: "완료",
     rejected: "반려",
+};
+
+// 상태 이름만으로는 뜻이 안 읽힌다는 담당자 피드백(3라운드 2차) — 태그에
+// 마우스를 올리면 풀이가 보입니다. 필터 select 의 풀이(index.html)와 같은 말.
+const TASK_STATUS_DESC = {
+    received: "들어왔지만 아직 아무도 안 잡은 건",
+    in_progress: "담당자가 잡고 처리하고 있는 건",
+    waiting_approval: "담당자가 승인해야 다음으로 넘어가는 건",
+    escalated: "판단이 어려워 담당 SV에게 넘긴 건",
+    done: "끝난 건",
+    rejected: "처리하지 않기로 한 건",
+};
+
+// 목록 정렬 순서 — 담당자가 눌러야 풀리는 것(승인 대기·접수)이 앞(3라운드
+// 2차 ①). 같은 묶음 안에서는 서버가 준 차례(새 것 먼저)를 그대로 둡니다.
+const TASK_STATUS_RANK = {
+    waiting_approval: 0, received: 1, escalated: 2, in_progress: 3,
+    done: 4, rejected: 5,
 };
 
 export const TASK_SOURCE_LABEL = {
@@ -78,10 +96,15 @@ function applicablePreauth(kind) {
 export async function initTasks() {
     const { data: kinds } = await db.from("task_kinds").select("kind,name,needs_approval,enabled");
     taskKinds = (kinds || []).filter((k) => k.enabled !== false);
+    // '기타' 는 목록 맨 아래가 자연스럽습니다 — 나머지는 DB 차례 그대로.
+    taskKinds.sort((a, b) => (a.kind === "other") - (b.kind === "other"));
     for (const k of taskKinds) {
         const opt = document.createElement("option");
         opt.value = k.kind;
-        opt.textContent = k.needs_approval ? `${k.name} (승인 필요)` : k.name;
+        // 'other'(85 씨드)는 이름을 직접 적는 종류입니다 — 아래 change 에서
+        // 입력 칸이 열립니다. DB 에 아직 없으면 항목 자체가 안 생깁니다.
+        opt.textContent = k.kind === "other" ? `${k.name} (직접 입력)`
+            : (k.needs_approval ? `${k.name} (승인 필요)` : k.name);
         $("tk-kind").append(opt);
 
         const paOpt = document.createElement("option");
@@ -89,8 +112,11 @@ export async function initTasks() {
         paOpt.textContent = k.name;
         $("pa-kind").append(paOpt);
     }
+    $("tk-kind").addEventListener("change", () => {
+        $("tk-kind-custom-field").hidden = $("tk-kind").value !== "other";
+    });
 
-    const { data: stores } = await db.from("stores").select("id,name").order("name");
+    const { data: stores } = await fetchStores();
     for (const s of stores || []) {
         const opt = document.createElement("option");
         opt.value = s.id;
@@ -201,6 +227,10 @@ function drawTaskList() {
     const rows = taskRows.filter((t) =>
         (!openOnly || !["done", "rejected"].includes(t.status)) &&
         (!overdueOnly || t.overdue));
+    // 검토·승인 대기를 앞으로(3라운드 2차 ①). sort 는 안정 정렬이라 같은
+    // 상태 안에서는 서버 차례(새 것 먼저)가 유지됩니다.
+    rows.sort((a, b) =>
+        (TASK_STATUS_RANK[a.status] ?? 9) - (TASK_STATUS_RANK[b.status] ?? 9));
 
     $("task-list-summary").textContent = `${int(rows.length)}건`;
     $("tk-shown").textContent = rows.length === taskRows.length
@@ -232,11 +262,13 @@ function drawTaskList() {
 
 export function taskStatusTag(status) {
     const label = escape(TASK_STATUS_LABEL[status] || status);
-    if (status === "done") return `<span class="tag up">${label}</span>`;
+    const desc = TASK_STATUS_DESC[status];
+    const title = desc ? ` title="${escape(desc)}"` : "";
+    if (status === "done") return `<span class="tag up"${title}>${label}</span>`;
     if (status === "waiting_approval" || status === "escalated") {
-        return `<span class="tag h-warn">${label}</span>`;
+        return `<span class="tag h-warn"${title}>${label}</span>`;
     }
-    return `<span class="tag">${label}</span>`;
+    return `<span class="tag"${title}>${label}</span>`;
 }
 
 function taskActionButtons(t) {
@@ -245,14 +277,14 @@ function taskActionButtons(t) {
         `<button class="ghost" data-act="task-advance" data-task-id="${t.task_id}"`
         + ` data-to="${to}">${escape(label)}</button>`);
 
-    // D35 — 승인이 필요한 건을 살아 있는 고지로 바로 완료. 승인 대기 상태는
-    // 이미 '승인·완료' 가 있으므로 그때는 붙이지 않습니다.
+    // D35 — 승인이 필요한 건을 살아 있는 사전 승인(위반 통보 승인 카드)으로
+    // 바로 완료. 승인 대기 상태는 이미 '승인·완료' 가 있으므로 붙이지 않습니다.
     if (needsApproval && !["done", "rejected", "waiting_approval"].includes(t.status)) {
         const preauth = applicablePreauth(t.kind);
         if (preauth) {
             buttons.push(
                 `<button class="ghost" data-act="task-advance" data-task-id="${t.task_id}"`
-                + ` data-to="done" data-preauth-id="${preauth.id}">고지로 완료</button>`);
+                + ` data-to="done" data-preauth-id="${preauth.id}">승인 범위로 완료</button>`);
         }
     }
 
@@ -308,7 +340,7 @@ function initTaskActions() {
         if (preauthId) {
             const preauth = taskPreauths.find((p) => p.id === preauthId);
             const ok = window.confirm(
-                `사전 고지 「${preauth?.scope || preauthId}」를 근거로 완료 처리합니다.`);
+                `미리 승인된 범위 「${preauth?.scope || preauthId}」를 근거로 완료 처리합니다.`);
             if (!ok) return;
         }
 
@@ -373,12 +405,12 @@ export async function showTaskEvents(taskId, title) {
     }
 
     table($("t-task-events"),
-        ["시각", "전이", "승인 근거", "메모"],
+        ["시각", "무엇이 바뀌었나", "승인 근거", "메모"],
         list.map((e) => [
             String(e.created_at).slice(0, 16).replace("T", " "),
             `${TASK_STATUS_LABEL[e.from] || e.from} → ${TASK_STATUS_LABEL[e.to] || e.to}`,
             e.approval_kind === "preauthorized"
-                ? `사전 고지: ${e.preauth_scope || `#${e.preauth_id}`}`
+                ? `미리 승인된 범위: ${e.preauth_scope || `#${e.preauth_id}`}`
                 : (e.approval_kind === "manual" ? "승인 대기를 거침" : "—"),
             e.note || "—",
         ]));
@@ -451,12 +483,24 @@ async function saveTaskStore() {
 async function submitTask() {
     const notice = $("tk-notice");
     const button = $("tk-submit");
-    const title = $("tk-title").value.trim();
+    let title = $("tk-title").value.trim();
 
     if (!title) {
         notice.className = "notice error";
         notice.textContent = "제목은 필수입니다.";
         return;
+    }
+
+    // '기타 (직접 입력)' — 적은 이름을 제목 앞 「…」 로 붙입니다. kind 는
+    // FK(task_kinds)라 자유 입력을 그대로 못 넣습니다(85 머리 [1]).
+    if ($("tk-kind").value === "other") {
+        const custom = $("tk-kind-custom").value.trim();
+        if (!custom) {
+            notice.className = "notice error";
+            notice.textContent = "기타를 골랐으면 무슨 일인지 한 단어라도 적어 주세요.";
+            return;
+        }
+        title = `「${custom}」 ${title}`;
     }
 
     button.disabled = true;
@@ -486,6 +530,7 @@ async function submitTask() {
     notice.textContent = "접수했습니다.";
     $("tk-title").value = "";
     $("tk-body").value = "";
+    $("tk-kind-custom").value = "";
     await Promise.all([refreshTasksSummary(), refreshTaskList()]);
 }
 
@@ -507,7 +552,7 @@ async function refreshPreauths() {
 
     if (!taskPreauths.length) {
         $("t-preauths").innerHTML =
-            '<p class="hint">등록된 고지가 없습니다. 지금은 승인이 필요한 업무가 모두 승인 대기를 거칩니다.</p>';
+            '<p class="hint">등록된 승인이 없습니다. 지금은 승인이 필요한 업무가 모두 건별 승인을 거칩니다.</p>';
         return;
     }
 
@@ -515,7 +560,7 @@ async function refreshPreauths() {
         kind ? (taskKinds.find((k) => k.kind === kind)?.name || kind) : "종류 무관";
 
     table($("t-preauths"),
-        ["범위", "적용 종류", "고지 원문", "등록", "상태"],
+        ["승인된 범위", "적용 종류", "승인 문장", "등록", "상태"],
         taskPreauths.map((p) => [
             escape(p.scope),
             escape(kindName(p.kind)),
@@ -536,7 +581,7 @@ function initPreauthActions() {
 
         const preauthId = Number(button.dataset.preauthId);
         const ok = window.confirm(
-            "이 고지를 철회하면 해당 업무는 다시 승인 대기를 거칩니다. 철회할까요?");
+            "이 승인을 철회하면 해당 업무는 다시 건별 승인을 거칩니다. 철회할까요?");
         if (!ok) return;
 
         button.disabled = true;
@@ -551,7 +596,7 @@ function initPreauthActions() {
             return;
         }
 
-        // 철회하면 '고지로 완료' 버튼이 사라져야 하므로 목록도 다시 그립니다.
+        // 철회하면 '승인 범위로 완료' 버튼이 사라져야 하므로 목록도 다시 그립니다.
         await refreshPreauths();
         drawTaskList();
     });
@@ -564,7 +609,7 @@ async function submitPreauth() {
 
     if (!scope) {
         notice.className = "notice error";
-        notice.textContent = "승인 범위는 필수입니다 — 무엇이 승인됐는지 한 줄로 적어 주세요.";
+        notice.textContent = "승인된 범위는 필수입니다 — 무엇이 승인됐는지 한 줄로 적어 주세요.";
         return;
     }
 
