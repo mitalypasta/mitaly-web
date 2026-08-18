@@ -2,8 +2,8 @@
 // (docs/web-split-plan.md). dmapMap 은 시험·디버깅에서 '지도가 떠 있나'
 // 판단에 읽습니다(live import 바인딩).
 
-import { won, wonFull, int, ymLabel, catLabel } from "./format.js";
-import { $, table } from "./dom.js";
+import { won, int, ymLabel, catLabel } from "./format.js";
+import { $ } from "./dom.js";
 import { db } from "./client.js";
 import { palette } from "./charts.js";
 import { escape } from "./util.js";
@@ -355,6 +355,15 @@ function hideDetail() {
 //   리뷰           api_review_summary (평점 · 별점 1~2점 수)
 //   급증·급감      api_sales_alerts (종료월 · 채널별 전월/전년比 판정)
 //   오픈일·폐점    api_store_lifecycle (27 — 기록 없는 매장은 표시 안 함)
+//
+// 4라운드에서 렌더 구조를 갈아엎었습니다(담당자: "정보 정리가 안 되어 있어
+// 잘 안 보여"). 조회는 그대로 두고 배치만 위계로 다시 짰습니다:
+//   ① 머리 — 이름·폐점 배지 크게, 아랫줄에 기간·오픈일 (명함처럼)
+//   ② 핵심 숫자 — 총매출·홀·배달을 큰 타일 3개로 (홀/배달은 비중 %까지)
+//   ③ 급증·급감 — 판정이 있을 때만 색 태그 한 줄. 정상이면 아무것도 없음
+//   ④ 부가 — 평균 단가·리뷰를 작은 한 줄로
+//   ⑤ 추이 미니 차트 · 상위 메뉴 순위(표 대신 막대 목록) 좌우 2단,
+//      좁은 폭(960px↓)에서는 세로로 떨어집니다
 async function renderStoreDetail(store, filters, salesRow) {
     const box = $("dmap-detail");
     const seq = ++dmapDetailSeq;
@@ -391,6 +400,8 @@ async function renderStoreDetail(store, filters, salesRow) {
         ? openEvents[openEvents.length - 1].event_date : null;   // 최신순이라 끝이 첫 오픈
 
     box.innerHTML = "";
+
+    // ---- ① 머리 — 명함처럼: 이름·상태 크게, 아랫줄에 기간·오픈일 ----
     const head = document.createElement("div");
     head.className = "dmap-detail-head";
     const title = document.createElement("strong");
@@ -402,12 +413,6 @@ async function renderStoreDetail(store, filters, salesRow) {
         badge.textContent = `폐점 (${closed.since}부터)`;
         head.append(badge);
     }
-    if (openDate) {
-        const span = document.createElement("span");
-        span.className = "dmap-detail-open";
-        span.textContent = `오픈 ${openDate}`;
-        head.append(span);
-    }
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "dmap-detail-close";
@@ -417,66 +422,50 @@ async function renderStoreDetail(store, filters, salesRow) {
     head.append(closeBtn);
     box.append(head);
 
-    // ---- 기간 매출 (홀·배달 나눔) ----
-    const stats = document.createElement("div");
-    stats.className = "dmap-detail-stats";
-    const stat = (label, value) => {
+    const sub = document.createElement("div");
+    sub.className = "dmap-detail-sub";
+    sub.textContent = periodLabel + (openDate ? ` · 오픈 ${openDate}` : "");
+    box.append(sub);
+
+    // ---- ② 핵심 숫자 — 큰 타일: 총매출 · 홀 · 배달(비중 %) ----
+    // 타일 색점은 미니 차트와 같은 팔레트라 아래 추이와 눈으로 이어집니다.
+    const colors = palette();
+    const kpis = document.createElement("div");
+    kpis.className = "dmap-kpis";
+    const kpi = (label, value, note, dot) => {
         const d = document.createElement("div");
-        d.className = "dmap-stat";
-        d.innerHTML = `<span>${escape(label)}</span><b>${escape(value)}</b>`;
-        stats.append(d);
+        d.className = "dmap-kpi";
+        const s = document.createElement("span");
+        if (dot) {
+            const i = document.createElement("i");
+            i.style.background = dot;
+            s.append(i);
+        }
+        s.append(label);
+        const b = document.createElement("b");
+        b.textContent = value;
+        d.append(s, b);
+        if (note) {
+            const small = document.createElement("small");
+            small.textContent = note;
+            d.append(small);
+        }
+        kpis.append(d);
     };
     if (salesRow) {
-        stat(`${periodLabel} 매출`, `${won(Number(salesRow.amount) || 0)}원`);
-        stat("홀", `${won(Number(salesRow.hall_amount) || 0)}원`);
-        stat("배달", `${won(Number(salesRow.delivery_amount) || 0)}원`);
-        if (salesRow.avg_ticket) stat("평균 단가", `${int(salesRow.avg_ticket)}원`);
+        const hall = Number(salesRow.hall_amount) || 0;
+        const delivery = Number(salesRow.delivery_amount) || 0;
+        const split = hall + delivery;
+        const pct = (v) => (split ? `${Math.round(v * 100 / split)}%` : null);
+        kpi("총매출", `${won(Number(salesRow.amount) || 0)}원`);
+        kpi("홀", `${won(hall)}원`, pct(hall), colors.s1);
+        kpi("배달", `${won(delivery)}원`, pct(delivery), colors.s2);
     } else {
-        stat(`${periodLabel} 매출`, "없음");
+        kpi("총매출", "없음");
     }
-    box.append(stats);
+    box.append(kpis);
 
-    const grid = document.createElement("div");
-    grid.className = "dmap-detail-grid";
-    box.append(grid);
-
-    // ---- 최근 3개월 추이 (미니 차트) ----
-    const trendBox = document.createElement("div");
-    trendBox.innerHTML = `<h3>최근 3개월 (${ymLabel(shiftYm(to, -2))}~${ymLabel(to)})</h3>`;
-    trendBox.append(miniTrend(Array.isArray(monthly) ? monthly : []));
-    grid.append(trendBox);
-
-    // ---- 많이 팔린 메뉴 (상위 5) ----
-    const menuBox = document.createElement("div");
-    menuBox.innerHTML = "<h3>많이 팔린 메뉴</h3>";
-    const menuTable = document.createElement("div");
-    menuTable.className = "tableview";
-    const top = (Array.isArray(menus) ? menus : []).slice(0, 5);
-    table(menuTable, ["메뉴", "분류", "매출", "수량"], top.map((r) => [
-        r.menu, catLabel(r.category), wonFull(r.amount), int(r.qty),
-    ]));
-    menuBox.append(menuTable);
-    grid.append(menuBox);
-
-    // ---- 리뷰 · 급증급감 ----
-    const noteBox = document.createElement("div");
-    noteBox.innerHTML = "<h3>리뷰 · 판정</h3>";
-    const lines = document.createElement("div");
-    lines.className = "dmap-detail-lines";
-
-    const summary = (Array.isArray(reviewData) && reviewData[0]) ? reviewData[0].summary : null;
-    if (summary && summary.total) {
-        const negative = (summary.by_rating || [])
-            .filter((r) => Number(r.rating) <= 2)
-            .reduce((s, r) => s + (Number(r.count) || 0), 0);
-        lines.append(detailLine(
-            `리뷰 ${int(summary.total)}건 · 평점 ${summary.avg_rating ?? "—"}`
-            + (negative ? ` · 별점 1~2점 ${int(negative)}건` : ""),
-            negative ? "down" : null));
-    } else {
-        lines.append(detailLine(`${periodLabel} 리뷰 없음`, null));
-    }
-
+    // ---- ③ 급증·급감 — 판정 태그. 정상(판정 없음)이면 아무것도 안 그림 ----
     const alertRows = (Array.isArray(alertData) && alertData[0]) ? alertData[0].alerts : null;
     const mine = (alertRows || []).find((r) => r.store === store);
     const judged = [];
@@ -486,6 +475,8 @@ async function renderStoreDetail(store, filters, salesRow) {
             ["yoy_direction", "yoy_pct_change", "전년比"],
         ]) {
             if (ch[dirKey] === "급증" || ch[dirKey] === "급감") {
+                // 달 표기는 뺍니다 — 판정은 전부 종료월 하나라 태그마다 반복하면
+                // 소음입니다. 종료월은 머리 아랫줄(기간)에 이미 있습니다.
                 const pct = ch[pctKey];
                 judged.push({
                     text: `${ch.channel} ${label} ${pct > 0 ? "+" : ""}${pct}% ${ch[dirKey]}`,
@@ -495,22 +486,98 @@ async function renderStoreDetail(store, filters, salesRow) {
         }
     }
     if (judged.length) {
-        for (const j of judged) lines.append(detailLine(`${ymLabel(to)} ${j.text}`, j.kind));
-    } else if (mine) {
-        lines.append(detailLine(`${ymLabel(to)} 급증·급감 없음`, null));
-    } else {
-        lines.append(detailLine(`${ymLabel(to)} 판정 대상 매출 없음`, null));
+        const tags = document.createElement("div");
+        tags.className = "dmap-tags";
+        for (const j of judged) {
+            const t = document.createElement("span");
+            t.className = "dmap-tag " + (j.kind === "up" ? "dmap-tag-up" : "dmap-tag-down");
+            t.textContent = j.text;
+            tags.append(t);
+        }
+        box.append(tags);
     }
-    noteBox.append(lines);
-    grid.append(noteBox);
+
+    // ---- ④ 부가 — 평균 단가·리뷰 작은 한 줄 ----
+    const summary = (Array.isArray(reviewData) && reviewData[0]) ? reviewData[0].summary : null;
+    const negative = summary
+        ? (summary.by_rating || [])
+            .filter((r) => Number(r.rating) <= 2)
+            .reduce((s, r) => s + (Number(r.count) || 0), 0)
+        : 0;
+    const metaItems = [];
+    if (salesRow && salesRow.avg_ticket) {
+        metaItems.push({ text: `평균 단가 ${int(salesRow.avg_ticket)}원` });
+    }
+    if (summary && summary.total) {
+        metaItems.push({ text: `리뷰 ${int(summary.total)}건` });
+        if (summary.avg_rating != null) metaItems.push({ text: `평점 ${summary.avg_rating}` });
+        if (negative) metaItems.push({ text: `별점 1~2점 ${int(negative)}건`, low: true });
+    } else {
+        metaItems.push({ text: "리뷰 없음" });
+    }
+    const meta = document.createElement("div");
+    meta.className = "dmap-detail-meta";
+    metaItems.forEach((item, i) => {
+        if (i) meta.append(" · ");
+        const s = document.createElement("span");
+        if (item.low) s.className = "dmap-meta-low";
+        s.textContent = item.text;
+        meta.append(s);
+    });
+    box.append(meta);
+
+    // ---- ⑤ 추이 · 상위 메뉴 — 좌우 2단 (좁은 폭에서는 세로) ----
+    const cols = document.createElement("div");
+    cols.className = "dmap-cols";
+    const trendBox = document.createElement("div");
+    trendBox.innerHTML = "<h3>최근 3개월</h3>";   // 달 라벨은 차트 x축에 있음
+    trendBox.append(miniTrend(Array.isArray(monthly) ? monthly : []));
+    const menuBox = document.createElement("div");
+    menuBox.innerHTML = "<h3>많이 팔린 메뉴</h3>";
+    menuBox.append(menuRanking((Array.isArray(menus) ? menus : []).slice(0, 5)));
+    cols.append(trendBox, menuBox);
+    box.append(cols);
 }
 
-function detailLine(text, kind) {
-    const p = document.createElement("p");
-    p.textContent = text;
-    if (kind === "up") p.className = "dmap-line-up";
-    if (kind === "down") p.className = "dmap-line-down";
-    return p;
+// 상위 메뉴 — 표 대신 순위 목록. 1위 대비 매출 비율이 등 뒤 막대 길이입니다.
+function menuRanking(rows) {
+    if (!rows.length) {
+        const p = document.createElement("p");
+        p.className = "hint";
+        p.textContent = "이 기간 판매 기록이 없습니다.";
+        return p;
+    }
+    const wrap = document.createElement("div");
+    wrap.className = "dmap-menus";
+    const max = Math.max(1, ...rows.map((r) => Number(r.amount) || 0));
+    rows.forEach((r, i) => {
+        const amount = Number(r.amount) || 0;
+        const row = document.createElement("div");
+        row.className = "dmap-menu-row";
+        const bar = document.createElement("div");
+        bar.className = "dmap-menu-bar";
+        bar.style.width = `${Math.max(2, Math.round(amount * 100 / max))}%`;
+        const rank = document.createElement("span");
+        rank.className = "dmap-menu-rank";
+        rank.textContent = String(i + 1);
+        const name = document.createElement("span");
+        name.className = "dmap-menu-name";
+        name.textContent = r.menu;
+        name.title = `${r.menu} · ${catLabel(r.category)}`;
+        const cat = document.createElement("span");
+        cat.className = "dmap-menu-cat";
+        cat.textContent = catLabel(r.category);
+        name.append(cat);
+        const amt = document.createElement("span");
+        amt.className = "dmap-menu-amt";
+        amt.textContent = `${won(amount)}원`;
+        const qty = document.createElement("span");
+        qty.className = "dmap-menu-qty";
+        qty.textContent = `${int(r.qty)}개`;
+        row.append(bar, rank, name, amt, qty);
+        wrap.append(row);
+    });
+    return wrap;
 }
 
 // 최근 3개월 홀/배달 쌓은 미니 막대. charts.js 의 drawBars 는 상세 블록에

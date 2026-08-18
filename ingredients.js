@@ -70,6 +70,17 @@ export async function initIngredients() {
 }
 
 // ---- 조리 레시피 (58_menu_recipes) — 큐 #102 [A] ----
+//
+// 4라운드 재설계: 행 단위(메뉴×원료) 나열은 메뉴명이 원료 수만큼 반복돼
+// (98메뉴·833행) 보기 불편하다는 담당자 피드백 — 기본을 **메뉴 목록**으로
+// 바꾸고, 메뉴 행의 ▸ 토글로 원료 상세를 펼칩니다(급증·급감 카드의 매장→채널
+// 패턴 그대로 — 컨테이너 위임 클릭 + Set 으로 펼침 유지, styles.css 의
+// .alerts-exp/.alerts-chrow 재사용). 필터(검색·메뉴·상태)는 메뉴 단위로
+// 동작하고, 엑셀 내보내기는 options.export 로 평탄한 메뉴×원료 행을 그대로
+// 등록합니다(엑셀에서는 반복이 정상).
+
+// 펼쳐 둔 메뉴. 필터·검색으로 다시 그려도 펼침 상태를 잃지 않습니다.
+const mrOpen = new Set();
 
 function initMenuRecipes(mrRes, mrStatusRes) {
     if (mrRes.error) {
@@ -115,9 +126,37 @@ function initMenuRecipes(mrRes, mrStatusRes) {
             (openLines ? ` · g·부피 미확정 ${int(openLines)}행` : "");
     }
 
-    menuSelect.addEventListener("change", renderMenuRecipes);
+    menuSelect.addEventListener("change", () => {
+        // 특정 메뉴를 골랐으면 바로 펼쳐 보입니다 — 접힌 한 줄만 남아
+        // 한 번 더 눌러야 하는 헛걸음을 막습니다.
+        if (menuSelect.value) mrOpen.add(menuSelect.value);
+        renderMenuRecipes();
+    });
     statusSelect.addEventListener("change", renderMenuRecipes);
+    $("mr-q").addEventListener("input", renderMenuRecipes);
+
+    // 행은 다시 그려도 컨테이너는 그대로라 위임 클릭을 한 번만 겁니다.
+    $("t-menu-recipes").addEventListener("click", (event) => {
+        const button = event.target.closest(".mr-exp");
+        if (!button) return;
+        const name = button.dataset.exp;
+        if (mrOpen.has(name)) mrOpen.delete(name);
+        else mrOpen.add(name);
+        button.classList.toggle("open", mrOpen.has(name));
+        button.setAttribute("aria-expanded", String(mrOpen.has(name)));
+        syncMenuRecipeRows();
+    });
     renderMenuRecipes();
+}
+
+// 메뉴 행 아래 원료 행의 보이기를 펼침 상태에 맞춥니다.
+function syncMenuRecipeRows() {
+    $("t-menu-recipes").querySelectorAll("tbody tr").forEach((tr) => {
+        const marker = tr.querySelector(".mr-chind");
+        if (!marker) return;
+        tr.classList.add("alerts-chrow");
+        tr.hidden = !mrOpen.has(marker.dataset.parent);
+    });
 }
 
 function renderMenuRecipes() {
@@ -128,17 +167,71 @@ function renderMenuRecipes() {
     }
     const menu = $("mr-menu").value;
     const status = $("mr-status").value;
-    let rows = menuRecipeRows;
-    if (menu) rows = rows.filter((r) => r.menu === menu);
-    if (status) rows = rows.filter((r) => r.status === status);
-    table($("t-menu-recipes"),
-        ["시트", "상태", "메뉴", "재료", "소요량(원문)", "g", "부피"],
-        rows.map((r) => [
-            r.sheet, r.status, r.menu, r.ingredient, r.qty_text,
+    const query = $("mr-q").value.trim();
+
+    // 메뉴 단위로 묶습니다(원본 순서 유지). 필터도 메뉴 단위 — 상태·검색이
+    // 걸린 메뉴는 원료 상세를 통째로 보여 줍니다(원료 행을 잘라내면 펼쳤을
+    // 때 레시피가 불완전하게 보입니다).
+    const groups = new Map();
+    for (const r of menuRecipeRows) {
+        if (!groups.has(r.menu)) groups.set(r.menu, []);
+        groups.get(r.menu).push(r);
+    }
+    const shown = [...groups.entries()].filter(([name, list]) =>
+        (!menu || name === menu)
+        && (!status || list.some((r) => r.status === status))
+        && (!query || name.includes(query)
+            || list.some((r) => (r.ingredient || "").includes(query))));
+
+    $("mr-shown").textContent = shown.length === groups.size
+        ? `메뉴 ${int(groups.size)}개 · 행을 누르면 원료가 펼쳐집니다`
+        : `메뉴 ${int(shown.length)} / ${int(groups.size)}개`;
+
+    // 74 — 레들은 oz, 계량컵은 ml. 원본이 적은 단위 그대로입니다.
+    const volText = (r) =>
+        (r.volume_value == null ? "—" : `${r.volume_value}${r.volume_unit}`);
+
+    const rows = shown.flatMap(([name, list]) => {
+        const open = mrOpen.has(name);
+        const statuses = [...new Set(list.map((r) => r.status))];
+        const openLines = list
+            .filter((r) => r.grams == null && r.volume_value == null).length;
+        const menuRow = [
+            `<button type="button" class="alerts-exp mr-exp${open ? " open" : ""}"`
+                + ` data-exp="${escape(name)}" aria-expanded="${open}"`
+                + ` aria-label="원료 펼치기"></button>${escape(name)}`,
+            escape(statuses.join(" · ")),
+            `원료 ${int(list.length)}`
+                + (openLines ? ` · g·부피 미확정 ${int(openLines)}` : ""),
+            "", "", "",
+        ];
+        const detailRows = list.map((r) => [
+            `<span class="mr-chind" data-parent="${escape(name)}"></span>`,
+            `<span class="meta">${escape(r.sheet)}</span>`,
+            escape(r.ingredient),
+            escape(r.qty_text ?? ""),
             r.grams == null ? "—" : int(r.grams),
-            // 74 — 레들은 oz, 계량컵은 ml. 원본이 적은 단위 그대로입니다.
-            r.volume_value == null ? "—" : `${r.volume_value}${r.volume_unit}`,
-        ]));
+            escape(volText(r)),
+        ]);
+        return [menuRow, ...detailRows];
+    });
+
+    table($("t-menu-recipes"),
+        ["메뉴", "상태", "재료", "소요량(원문)", "g", "부피"],
+        rows, {
+            html: true,
+            // 엑셀은 종전 그대로 평탄한 메뉴×원료 행 — 필터는 화면과 같이 먹고,
+            // 펼침 여부와 무관하게 걸린 메뉴의 전 행이 나갑니다.
+            export: {
+                headers: ["시트", "상태", "메뉴", "재료", "소요량(원문)", "g", "부피"],
+                rows: shown.flatMap(([, list]) => list.map((r) => [
+                    r.sheet, r.status, r.menu, r.ingredient, r.qty_text,
+                    r.grams == null ? "—" : int(r.grams),
+                    volText(r),
+                ])),
+            },
+        });
+    syncMenuRecipeRows();
 }
 
 // ---- 발주 상품 마스터 (58_menu_recipes supply_products) — 큐 #102 [A] ----

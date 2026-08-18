@@ -48,13 +48,18 @@ function numericColumn(rows, index) {
 // options.html      셀 값을 이미 만들어진 HTML 로 넣습니다 (경고 배지 등).
 //                   이 경우 값을 만드는 쪽에서 escape 책임을 집니다.
 // options.sortable  헤더를 눌러 정렬할 수 있게 표시합니다.
+// options.export    {headers, rows} — 엑셀 내보내기에 화면 표와 다른 모양을
+//                   등록할 때. 묶음 보기(조리 레시피)가 씁니다: 화면에는 메뉴
+//                   묶음·펼침 행, 엑셀에는 평탄한 메뉴×원료 행(거기선 반복이 정상).
 export function table(container, headers, rows, options = {}) {
+    const exp = options.export || { headers, rows };
     if (!rows.length) {
         container.innerHTML = '<p class="hint">데이터가 없습니다.</p>';
-        registerExport(container, headers, null);
+        registerExport(container, exp.headers, null);
         return;
     }
-    registerExport(container, headers, rows);
+    registerExport(container, exp.headers,
+        exp.rows && exp.rows.length ? exp.rows : null);
     const cell = options.html ? (v) => String(v ?? "") : escape;
     const sort = options.sortState;
 

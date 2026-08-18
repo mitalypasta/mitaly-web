@@ -353,23 +353,33 @@ header.top h1::before {
 }
 .dmap-popup .dmap-popup-close:hover { color: var(--text-primary); }
 
-/* 지도 아래 매장 상세 블록 (3라운드) — 팝업은 요약, 여기가 상세입니다.
-   마커 클릭 또는 매장 고르개로 열리고, SDK 없이도 그려집니다(map.js 판단 [4]). */
+/* 지도 아래 매장 상세 블록 — 팝업은 요약, 여기가 상세입니다.
+   마커 클릭 또는 매장 고르개로 열리고, SDK 없이도 그려집니다(map.js 판단 [4]).
+   4라운드에서 위계를 다시 짰습니다: 머리(이름 크게) → 큰 KPI 타일 →
+   판정 태그 → 부가 한 줄 → 추이·메뉴 2단. 표 나열 금지. */
 #dmap-detail {
     margin-top: 12px;
     border: 1px solid var(--baseline);
     border-radius: 8px;
-    padding: 12px 14px;
+    padding: 14px 16px;
     background: var(--surface-1);
 }
 .dmap-detail-head {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 8px;
 }
-.dmap-detail-head strong { font-size: 15px; color: var(--text-primary); }
-.dmap-detail-open { color: var(--text-muted); font-size: 12px; }
+.dmap-detail-head strong {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.dmap-detail-sub {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin: 2px 0 12px;
+    font-variant-numeric: tabular-nums;
+}
 .dmap-detail-close {
     margin-left: auto;
     border: 0;
@@ -384,33 +394,149 @@ header.top h1::before {
 .dmap-badge {
     font-size: 12px;
     padding: 2px 8px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--baseline);
     color: var(--text-secondary);
 }
 .dmap-badge-down { color: var(--critical); border-color: currentColor; }
-.dmap-detail-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 18px;
+
+/* 핵심 숫자 타일 — 총매출·홀·배달. 홀/배달에는 시리즈 색점 + 비중 %. */
+.dmap-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
     margin-bottom: 10px;
 }
-.dmap-stat span { color: var(--text-muted); font-size: 12px; margin-right: 6px; }
-.dmap-stat b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
-.dmap-detail-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 14px;
+.dmap-kpi {
+    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
 }
-.dmap-detail-grid h3 {
+.dmap-kpi span {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+.dmap-kpi span i {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    margin-right: 5px;
+    vertical-align: -1px;
+}
+.dmap-kpi b {
+    font-size: 19px;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+.dmap-kpi small {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-left: 6px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* 급증·급감 판정 태그 — 판정이 있을 때만 이 줄이 생깁니다. */
+.dmap-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+.dmap-tag {
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    font-variant-numeric: tabular-nums;
+}
+.dmap-tag-up { color: var(--good); background: var(--good-tint); }
+.dmap-tag-down { color: var(--critical); background: var(--urgent-tint); }
+
+/* 부가 정보 한 줄 — 평균 단가·리뷰. */
+.dmap-detail-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    font-variant-numeric: tabular-nums;
+}
+.dmap-meta-low { color: var(--critical); }
+
+/* 추이·상위 메뉴 2단 — 좁은 폭에서는 세로로 떨어집니다. */
+.dmap-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px 20px;
+    border-top: 1px solid var(--gridline);
+    padding-top: 12px;
+}
+@media (max-width: 960px) {
+    .dmap-cols { grid-template-columns: 1fr; }
+}
+.dmap-cols h3 {
     font-size: 13px;
     color: var(--text-secondary);
     margin: 0 0 6px;
 }
-.dmap-detail-lines p { margin: 2px 0; font-size: 13px; color: var(--text-secondary); }
-.dmap-line-up { color: var(--good); }
-.dmap-line-down { color: var(--critical); }
-.dmap-trend svg { width: 100%; max-width: 320px; height: auto; display: block; }
+
+/* 상위 메뉴 순위 목록 — 등 뒤 막대가 1위 대비 매출 비율입니다. */
+.dmap-menus {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.dmap-menu-row {
+    position: relative;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    overflow: hidden;
+}
+.dmap-menu-row > * { position: relative; }
+.dmap-menu-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: var(--primary-soft);
+    border-radius: 6px;
+}
+.dmap-menu-rank {
+    color: var(--text-muted);
+    font-size: 12px;
+    min-width: 14px;
+    font-variant-numeric: tabular-nums;
+}
+.dmap-menu-name {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-primary);
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.dmap-menu-cat {
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-left: 6px;
+}
+.dmap-menu-amt {
+    color: var(--text-primary);
+    font-size: 13px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.dmap-menu-qty {
+    color: var(--text-muted);
+    font-size: 11px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.dmap-trend svg { width: 100%; max-width: 360px; height: auto; display: block; }
 .dmap-trend-legend {
     display: flex;
     gap: 12px;
@@ -547,6 +673,11 @@ header.top h1::before {
    항상 함께 있습니다(미처리·부정 리뷰 등). 급함이 한눈에 읽힙니다. */
 .tile.t-urgent { border-left: 3px solid var(--critical); }
 .tile.t-urgent .value { color: var(--critical); }
+/* 정산 미수 타일 — 빨간 숫자가 46px 면 경보가 아니라 소음이라는 담당자
+   피드백(2026-08-16). 강조 색은 남기고 크기만 한 단계 내립니다. */
+#st-outstanding-tile .value { font-size: 32px; }
+/* 월별 로열티 청구 표 — 기본 320px 이 94매장 표에는 너무 얕습니다(같은 피드백). */
+#t-settlement { max-height: 560px; }
 .tile.t-attn   { border-left: 3px solid var(--attn); }
 .tile.t-attn   .value { color: var(--attn); }
 .tile.t-good   { border-left: 3px solid var(--good); }

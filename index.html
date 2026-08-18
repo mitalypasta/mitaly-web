@@ -1345,9 +1345,11 @@
         <div class="tableview" id="t-supply-products"></div>
     </section>
 
-    <!-- 조리 레시피 — 58_menu_recipes.sql 의 menu_recipes (98메뉴 · 617행,
+    <!-- 조리 레시피 — 58_menu_recipes.sql 의 menu_recipes (98메뉴 · 833행,
          이미지레시피 원본). 원가분석(32, 40메뉴)과 별개 표입니다 — 없는 것은
-         레시피가 아니라 원가분석이라는 가공물 (CLAUDE.md 10번 정정, 큐 #102 [A]). -->
+         레시피가 아니라 원가분석이라는 가공물 (CLAUDE.md 10번 정정, 큐 #102 [A]).
+         4라운드: 행 나열(메뉴명이 원료 수만큼 반복)이 보기 불편하다는 담당자
+         피드백으로 메뉴 단위 묶음 보기 — 메뉴 행 ▸ 로 원료 상세를 펼칩니다. -->
     <section data-area="ingredients" class="card full" id="menu-recipe-card">
         <header>
             <h2>조리 레시피</h2>
@@ -1355,8 +1357,12 @@
         </header>
         <div class="reqform">
             <div class="field">
+                <label for="mr-q">검색</label>
+                <input id="mr-q" type="text" placeholder="메뉴 · 재료">
+            </div>
+            <div class="field">
                 <label for="mr-menu">메뉴</label>
-                <select id="mr-menu"><option value="">메뉴를 고르세요</option></select>
+                <select id="mr-menu"><option value="">전체</option></select>
             </div>
             <div class="field">
                 <label for="mr-status">상태</label>
@@ -1364,6 +1370,7 @@
             </div>
         </div>
         <p class="hint" id="mr-coverage"></p>
+        <p class="hint" id="mr-shown"></p>
         <div class="tableview" id="t-menu-recipes"></div>
     </section>
 
