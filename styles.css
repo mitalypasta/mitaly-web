@@ -1721,6 +1721,28 @@ tr.alerts-chrow td:first-child { padding-left: 34px; }
 .pct-up   { color: var(--good); }
 .pct-down { color: var(--critical); }
 
+/* 주차별 전사 카드(#114) 전용 증감 색 — KPI 시트 관례(상승 빨강·하락 파랑,
+   docs/kpi-sheet-adoption.md). 위 pct-up/down(좋음 초록·나쁨 빨강)과 뜻이
+   달라 섞으면 시트를 보던 사람이 반대로 읽습니다. 여기도 +/- 부호를 같이 씁니다. */
+.wk-up   { color: var(--critical); }
+.wk-down { color: var(--primary-strong); }
+
+/* 주차별 카드의 최신 주 요약 줄 — 표 위에서 이번 주만 한 줄로 크게. */
+.wk-latest { margin: 2px 0 10px; font-size: 15px; }
+
+/* 매장 대시보드(#112) — 폐점 배지(시트 07: 폐점 매장도 선택 가능)와
+   일간 28일 표의 주말 열. 증감 색은 위 wk-up/wk-down 을 같이 씁니다. */
+.sd-close-badge {
+    color: var(--critical);
+    border: 1px solid currentColor;
+    border-radius: 4px;
+    padding: 0 6px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+#t-sd-daily td.sd-weekend { color: var(--critical); }
+
 /* ---------------------------------------------------------------- 툴팁 */
 
 .tooltip {

@@ -107,6 +107,7 @@ export function initHomeTiles() {
         "home-tile-approvals": "task-list-card",
         "home-tile-inquiry": "inquiry-card",
         "home-tile-drafts": "review-card",
+        "home-tile-diagnosis": "diagnosis-card",
     };
 
     // '승인 대기 업무' 타일은 업무 화면 타일(tk-waiting)을 거울로 비춥니다 —
@@ -161,6 +162,11 @@ export function initHomeTiles() {
             if (tileId === "home-tile-inquiry") {
                 $("iq-filter").value = "draft";
                 $("iq-filter").dispatchEvent(new Event("change"));
+            }
+            if (tileId === "home-tile-diagnosis") {
+                // 진단 카드는 매출의 '요약' 서브탭에 있습니다 — 다른 서브탭을
+                // 보다 온 경우 스크롤 대상이 숨어 있으므로 서브탭부터 맞춥니다.
+                showSalesSub("요약");
             }
             requestAnimationFrame(() => {
                 document.getElementById(cardId)?.scrollIntoView({ behavior: "smooth", block: "start" });

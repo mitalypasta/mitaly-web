@@ -840,6 +840,12 @@ let storeProfiles = STORES.slice(0, -2).map((s, i) => ({
     order_method: DEMO_ORDER[i % DEMO_ORDER.length],
     pos: DEMO_POS[i % DEMO_POS.length],
     business_start_date: `20${19 + (i % 7)}-${String(1 + (i % 12)).padStart(2, "0")}-15`,
+    // KPI 엑셀 02 반입분(87 · 큐 #109). 근무인원은 실데이터처럼 소수(2.5·3.5)
+    // 를 섞고, 좌석수·임차료는 몇 곳 비워 '—' 표시가 보이게 둡니다.
+    staff_count: i % 11 === 4 ? null : [2, 2.5, 3, 3.5, 4][i % 5],
+    seat_count: i % 7 === 5 ? null : 12 + (i % 9) * 6,
+    monthly_rent: i % 7 === 5 ? null : (15 + (i % 12) * 5) * 100000,
+    special_note: i % 9 === 0 ? "자활" : (i % 17 === 3 ? "테크노마트 내 입점" : null),
     imported_at: null, updated_at: null,
 }));
 
@@ -1380,6 +1386,25 @@ function demoInquiryRows({ p_status, p_routing, p_limit }) {
 
 const DEMO_SETTLEMENT = { rate_pct: 3.3, due_day: 1, late_pct: 20 };  // settlement_settings 미러
 
+// KPI 기준 설정(88_kpi_settings.sql 미러) — 초기값은 88 시드와 같습니다
+// (kpi-sheet-adoption.md 4절). set_kpi_setting 데모가 이 배열을 고칩니다.
+const DEMO_KPI_SETTINGS = [
+    { metric: "week_start_dow",           value: 4,        min_value: 1, max_value: 7,    note: "주 시작 요일 (ISO: 월=1…일=7, 4=목) — 주차 집계·주간 추이 공용" },
+    { metric: "food_cost_rate",           value: 0.36,     min_value: 0, max_value: 1,    note: "식자재 원가율" },
+    { metric: "labor_cost_per_person",    value: 2800000,  min_value: 0, max_value: null, note: "1인 월평균 인건비(원) — 근무인원이 있을 때 인원 × 이 값" },
+    { metric: "labor_rate_fallback",      value: 0.23,     min_value: 0, max_value: 1,    note: "인건비율 — 근무인원이 없을 때 매출 × 이 비율로 대체" },
+    { metric: "delivery_fee_rate",        value: 0.25,     min_value: 0, max_value: 1,    note: "배달 수수료율 — 배달매출 대비" },
+    { metric: "royalty_ad_rate_fallback", value: 0.03,     min_value: 0, max_value: 1,    note: "로열티·광고분담률 — 폴백. 매장별 실요율이 있으면 그게 우선" },
+    { metric: "utility_expense_rate",     value: 0.03,     min_value: 0, max_value: 1,    note: "공과금·기타 경비율" },
+    { metric: "rent_rate_fallback",       value: 0.08,     min_value: 0, max_value: 1,    note: "임차료율 — 매장 임차료 미입력 시 매출 × 이 비율" },
+    { metric: "target_growth_existing",   value: 0.3,      min_value: 0, max_value: 10,   note: "기존점 성장률 — 2025 같은 달 × (1 + 이 값)" },
+    { metric: "target_new_store_month",   value: 20000000, min_value: 0, max_value: null, note: "신규점 월 목표(원) — 2025 실적이 전무한 매장" },
+    { metric: "kpi_min_achievement",      value: 1.0,      min_value: 0, max_value: 10,   note: "달성률 하한 — 목표 대비 1.0(=100%) 미만이면 미달" },
+    { metric: "kpi_min_sales_per_person", value: 10000000, min_value: 0, max_value: null, note: "인당 생산성 하한(원) — 매출 ÷ 근무인원" },
+    { metric: "kpi_max_delivery_share",   value: 0.3,      min_value: 0, max_value: 1,    note: "배달비중 상한 — 0.3(=30%) 초과면 배달 의존 신호" },
+    { metric: "kpi_min_profit_rate",      value: 0.1,      min_value: 0, max_value: 1,    note: "영업이익률 하한 — 추정손익 기준 0.1(=10%) 미만이면 점검" },
+].map((row) => ({ ...row, updated_at: null }));
+
 // 매장별 요율 예외(84_royalty_store_rates 미러) — store_id → {rate_pct, note,
 // updated_at}. 샘플03점을 개별 요율로 미리 넣어 '개별' 표기·다른 요율의 청구
 // 계산이 화면에서 바로 보이게 합니다.
@@ -1411,6 +1436,60 @@ function demoStoreSales(ym, store) {
     const delivery = demoAmountAt(ym, store, "배달");
     if (hall == null && delivery == null) return null;
     return (hall || 0) + (delivery || 0);
+}
+
+// 목표매출(89_store_targets.sql 미러) — 산정 규칙은 89 와 같습니다:
+// ① 전년 같은 달 ×(1+성장률) → ② 전년 영업월 평균 ×(1+성장률) → ③ 신규점
+// 월 목표, 만원 반올림. manual 덮어쓰기는 이 Map 에 담고 자동 산정이 못
+// 덮습니다(④). 실물은 recalc_store_targets(service_role)가 표에 채워 두지만,
+// 데모는 그때그때 계산해도 같은 값이라 재계산 미러는 안 둡니다.
+const demoTargetOverrides = new Map();   // `${store_id}|${ym}` → 금액(원)
+
+// 88 데모 미러(DEMO_KPI_SETTINGS)가 함께 실려 있으면 그 값(설정 카드에서
+// 바꾼 값)을 따라가고, 없으면 89 와 같은 기본값 폴백입니다.
+function demoTargetSetting(metric, fallback) {
+    if (typeof DEMO_KPI_SETTINGS !== "undefined") {
+        const row = DEMO_KPI_SETTINGS.find((r) => r.metric === metric);
+        if (row) return Number(row.value);
+    }
+    return fallback;
+}
+
+function demoAutoTarget(store, ym) {
+    const growth = demoTargetSetting("target_growth_existing", 0.3);
+    const same = demoStoreSales(ym - 100, store);               // 전년 같은 달
+    if (same != null && same > 0) {
+        return { target: Math.round(same * (1 + growth) / 10000) * 10000,
+                 basis: "same_month" };
+    }
+    const baseYear = Math.floor(ym / 100) - 1;
+    const months = MONTHS.filter((m) => Math.floor(m / 100) === baseYear)
+        .map((m) => demoStoreSales(m, store))
+        .filter((v) => v != null && v > 0);
+    if (months.length) {
+        const avg = months.reduce((a, v) => a + v, 0) / months.length;
+        return { target: Math.round(avg * (1 + growth) / 10000) * 10000,
+                 basis: "year_avg" };
+    }
+    return { target: demoTargetSetting("target_new_store_month", 20000000),
+             basis: "new_store" };
+}
+
+// 일 단위 매출 데모 — (매장, 날짜)로 결정되는 순수 함수(demoAmountAt 과 같은
+// 이유). 13일에 한 번쯤 미영업(null), 드물게 0원 기록. ⚠️ #112 매장 대시보드
+// 미러(api_store_dashboard)의 dayAmount 와 같은 식이어야 전매장 표의 영업일수·
+// 일평균이 매장 대시보드와 맞습니다 — 그 브랜치와 합쳐지면 이 함수로 공용화.
+function demoDayAmount(store, isoDay) {
+    const h = hashSeed(`${store.name}|${isoDay}`);
+    const dym = Number(isoDay.slice(0, 4)) * 100 + Number(isoDay.slice(5, 7));
+    const monthly = demoStoreSales(dym, store);
+    if (monthly == null) return null;                 // 데이터 범위 밖
+    if (h % 13 === 0) return null;                    // 미영업
+    if (h % 89 === 0) return 0;                       // 0원 기록
+    const dow = new Date(isoDay + "T00:00:00").getDay();
+    const shape = WEEKDAY_SHAPE[["일", "월", "화", "수", "목", "금", "토"][dow]] || 1;
+    const noise = seeded(h)();
+    return Math.max(0, Math.round(monthly / 30 * shape * (0.7 + noise * 0.6)));
 }
 
 function demoPaidTotal(invoiceId) {
@@ -1593,6 +1672,129 @@ function computeReceivables() {
         },
     };
 }
+
+// KPI 진단 데모 (92_kpi_diagnosis.sql · 카드 #115) — 시트 05_안내 r51~56 의
+// 여섯 증상이 전부 보이는 표본입니다. 숫자는 판정 규칙(mitaly_kpi_symptoms)과
+// 어긋나지 않게 짰습니다 — dev 검증의 픽스처 단위 재현이 같은 값을 씁니다.
+const DEMO_DIAG_RULES = [
+    { code: "decline_2m", severity: 1, symptom: "2개월 연속 하락",
+      indicators: "월 매출 추이(전월·전전월)", cause: "구조적 문제(상권·경쟁·품질)",
+      action: "방문 진단 우선순위" },
+    { code: "ach_low_daily_down", severity: 2, symptom: "달성률 미달 · 일평균 하락",
+      indicators: "일평균 매출 추이", cause: "객수·객단가 하락",
+      action: "상권·메뉴·프로모션 점검" },
+    { code: "ach_low_days", severity: 2, symptom: "달성률 미달 · 일평균 유지",
+      indicators: "영업일수(휴무·입력누락)", cause: "영업일 감소 — 휴무 또는 입력 누락",
+      action: "영업일 확보 · 입력 누락 확인" },
+    { code: "food_cost_up", severity: 3, symptom: "원가율 상승",
+      indicators: "아워홈 발주액 ÷ 매출", cause: "발주 과다·폐기·레시피 미준수",
+      action: "발주량·폐기 점검 · 레시피 교육" },
+    { code: "productivity_low", severity: 3, symptom: "인당 생산성 낮음",
+      indicators: "근무인원·매출", cause: "인력 과다 또는 매출 부진",
+      action: "피크타임 인력 재배치" },
+    { code: "profit_down_delivery", severity: 3, symptom: "매출 유지 · 이익률 하락",
+      indicators: "배달비중·배달 수수료", cause: "배달 확대에 따른 수수료 부담",
+      action: "배달 메뉴 마진 재설계" },
+];
+
+const DEMO_DIAG_STORES = [
+    // r56 + r52 — 두 증상이 한 매장에 겹치는 표본(배지 여러 개 확인용)
+    { store_id: 1, store: "샘플01점", symptoms: ["decline_2m", "ach_low_daily_down"],
+      severity: 1,
+      evidence: { target: 45000000, actual: 28000000, achievement: 0.6222,
+                  sales_prev: 31500000, sales_mom_pct: -11.1,
+                  days_cur: 26, days_prev: 26,
+                  daily_avg_cur: 1076923, daily_avg_prev: 1211538,
+                  daily_mom_pct: -11.1, daily_source: "daily",
+                  delivery_share: 0.28, delivery_share_prev: 0.27,
+                  staff_count: 5, sales_per_person: 5600000,
+                  profit_rate: 0.048, profit_rate_prev: 0.092,
+                  food_rate: 0.34, food_rate_prev: 0.33,
+                  ourhome_cur: 9520000, decline_months: 2 } },
+    // r52 — 달성률 미달 + 일평균 하락 단독
+    { store_id: 3, store: "샘플03점", symptoms: ["ach_low_daily_down"], severity: 2,
+      evidence: { target: 40000000, actual: 30000000, achievement: 0.75,
+                  sales_prev: 34960000, sales_mom_pct: -14.2,
+                  days_cur: 26, days_prev: 26,
+                  daily_avg_cur: 1153846, daily_avg_prev: 1344615,
+                  daily_mom_pct: -14.2, daily_source: "daily",
+                  delivery_share: 0.24, delivery_share_prev: 0.25,
+                  staff_count: null, sales_per_person: null,
+                  profit_rate: 0.108, profit_rate_prev: 0.121,
+                  food_rate: 0.35, food_rate_prev: 0.35,
+                  ourhome_cur: 10500000, decline_months: 1 } },
+    // r51 — 달성률 미달 + 일평균 유지 → 영업일 감소(휴무·입력누락)
+    { store_id: 2, store: "샘플02점", symptoms: ["ach_low_days"], severity: 2,
+      evidence: { target: 36000000, actual: 30600000, achievement: 0.85,
+                  sales_prev: 33600000, sales_mom_pct: -8.9,
+                  days_cur: 24, days_prev: 27,
+                  daily_avg_cur: 1275000, daily_avg_prev: 1244444,
+                  daily_mom_pct: 2.5, daily_source: "daily",
+                  delivery_share: 0.22, delivery_share_prev: 0.23,
+                  staff_count: 4, sales_per_person: 7650000,
+                  profit_rate: 0.132, profit_rate_prev: 0.139,
+                  food_rate: 0.33, food_rate_prev: 0.34,
+                  ourhome_cur: 10100000, decline_months: 1 } },
+    // r53 — 매출 유지 + 이익률 하락(하한 미만) → 배달 확대 수수료
+    { store_id: 4, store: "샘플04점", symptoms: ["profit_down_delivery"], severity: 3,
+      evidence: { target: 32000000, actual: 32600000, achievement: 1.0188,
+                  sales_prev: 32000000, sales_mom_pct: 1.9,
+                  days_cur: 27, days_prev: 27,
+                  daily_avg_cur: 1207407, daily_avg_prev: 1185185,
+                  daily_mom_pct: 1.9, daily_source: "daily",
+                  delivery_share: 0.46, delivery_share_prev: 0.31,
+                  staff_count: 4, sales_per_person: 8150000,
+                  profit_rate: 0.062, profit_rate_prev: 0.118,
+                  food_rate: 0.35, food_rate_prev: 0.35,
+                  ourhome_cur: 11400000, decline_months: 0 } },
+    // r54 — 인당 생산성 하한(1,000만) 미만
+    { store_id: 5, store: "샘플05점", symptoms: ["productivity_low"], severity: 3,
+      evidence: { target: 36000000, actual: 38000000, achievement: 1.0556,
+                  sales_prev: 37200000, sales_mom_pct: 2.2,
+                  days_cur: 27, days_prev: 26,
+                  daily_avg_cur: 1407407, daily_avg_prev: 1430769,
+                  daily_mom_pct: -1.6, daily_source: "daily",
+                  delivery_share: 0.26, delivery_share_prev: 0.26,
+                  staff_count: 4.5, sales_per_person: 8444444,
+                  profit_rate: 0.128, profit_rate_prev: 0.125,
+                  food_rate: 0.34, food_rate_prev: 0.34,
+                  ourhome_cur: 12920000, decline_months: 0 } },
+    // r55 — 원가율 상승(전월보다 오르고 가정 원가율 0.36 초과)
+    { store_id: 6, store: "샘플06점", symptoms: ["food_cost_up"], severity: 3,
+      evidence: { target: 34000000, actual: 34700000, achievement: 1.0206,
+                  sales_prev: 34420000, sales_mom_pct: 0.8,
+                  days_cur: 26, days_prev: 26,
+                  daily_avg_cur: 1334615, daily_avg_prev: 1323846,
+                  daily_mom_pct: 0.8, daily_source: "daily",
+                  delivery_share: 0.29, delivery_share_prev: 0.29,
+                  staff_count: 4, sales_per_person: 8675000,
+                  profit_rate: 0.118, profit_rate_prev: 0.116,
+                  food_rate: 0.41, food_rate_prev: 0.35,
+                  ourhome_cur: 14227000, decline_months: 0 } },
+    // 증상 없는 매장 — '증상 있는 매장만' 해제 시에만 보입니다
+    { store_id: 7, store: "샘플07점", symptoms: [], severity: null,
+      evidence: { target: 30000000, actual: 33600000, achievement: 1.12,
+                  sales_prev: 32800000, sales_mom_pct: 2.4,
+                  days_cur: 27, days_prev: 27,
+                  daily_avg_cur: 1244444, daily_avg_prev: 1214815,
+                  daily_mom_pct: 2.4, daily_source: "daily",
+                  delivery_share: 0.25, delivery_share_prev: 0.24,
+                  staff_count: 3, sales_per_person: 11200000,
+                  profit_rate: 0.156, profit_rate_prev: 0.151,
+                  food_rate: 0.33, food_rate_prev: 0.33,
+                  ourhome_cur: 11088000, decline_months: 0 } },
+    { store_id: 8, store: "샘플08점", symptoms: [], severity: null,
+      evidence: { target: 31000000, actual: 32550000, achievement: 1.05,
+                  sales_prev: 31900000, sales_mom_pct: 2.0,
+                  days_cur: 26, days_prev: 26,
+                  daily_avg_cur: 1251923, daily_avg_prev: 1226923,
+                  daily_mom_pct: 2.0, daily_source: "daily",
+                  delivery_share: 0.27, delivery_share_prev: 0.27,
+                  staff_count: 3, sales_per_person: 10850000,
+                  profit_rate: 0.149, profit_rate_prev: 0.147,
+                  food_rate: 0.34, food_rate_prev: 0.34,
+                  ourhome_cur: 11067000, decline_months: 0 } },
+];
 
 const HANDLERS = {
     // 매장 좌표 (63_store_points). 마커가 폴리곤 위에 뜨는지와, **좌표가 없는
@@ -2169,6 +2371,25 @@ const HANDLERS = {
         }));
     },
 
+    // KPI 진단 — 92_kpi_diagnosis.sql(api_kpi_diagnosis)과 같은 모양(jsonb
+    // 스칼라 객체). 표본은 여섯 증상이 전부 보이게 고정(DEMO_DIAG_STORES) —
+    // 정렬(심각순 → 달성률 낮은 순)도 실제 함수와 같게 여기서 맞춥니다.
+    api_kpi_diagnosis: ({ p_ym }) => ({
+        ym: p_ym,
+        thresholds: {
+            min_achievement: 1.0, min_sales_per_person: 10000000,
+            max_delivery_share: 0.3, min_profit_rate: 0.1,
+            food_cost_rate: 0.36, mom_threshold_pct: 10,
+        },
+        rules: [...DEMO_DIAG_RULES].sort((a, b) =>
+            (a.severity - b.severity) || a.code.localeCompare(b.code)),
+        flagged: DEMO_DIAG_STORES.filter((s) => s.symptoms.length).length,
+        stores: [...DEMO_DIAG_STORES].sort((a, b) =>
+            ((a.severity ?? 99) - (b.severity ?? 99))
+            || ((a.evidence.achievement ?? 99) - (b.evidence.achievement ?? 99))
+            || a.store.localeCompare(b.store)),
+    }),
+
     // 급증·급감 판정 — 18_alerts.sql(api_sales_alerts)과 같은 모양(jsonb 한 줄:
     // {alerts: [...]}). 매장 두 곳(샘플03·07점)만 DEMO_ALERT_BUMPS로 튀게
     // 만들어서 화면에 급증·급감 배지가 실제로 보이게 합니다.
@@ -2247,6 +2468,51 @@ const HANDLERS = {
             ym: p_ym, prev_mom_ym: prevMomYm, prev_yoy_ym: prevYoyYm,
             company, by_channel: byChannel, stores,
         } }];
+    },
+
+    // 주차별 전사 매출 — 90_weekly_sales.sql(api_weekly_company)과 같은 모양
+    // (jsonb 스칼라 — api_notice_stage_status 처럼 감싸지 않고 객체 그대로).
+    // 주 시작 요일은 기본값 4(목) 그대로 두고, 최근 목요일을 닻으로 13주를
+    // 만들어 상승·하락·매장수 변화가 화면에 실제로 보이게 흔듭니다.
+    api_weekly_company: ({ p_weeks } = {}) => {
+        const n = Math.min(Math.max(Number(p_weeks) || 13, 1), 104);
+        const anchor = new Date();
+        // isodow: 일=0 → 7. 목(4)까지 며칠 되돌아가는지.
+        const isodow = anchor.getDay() === 0 ? 7 : anchor.getDay();
+        anchor.setDate(anchor.getDate() - ((isodow - 4 + 7) % 7));
+        // toISOString 은 UTC 라 오전(KST)에는 하루 밀립니다 — 로컬 날짜로 씁니다.
+        const iso = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+        const weeks = [];
+        let prevAmount = null;
+        const rows = [];
+        for (let i = n - 1; i >= 0; i--) {
+            const start = new Date(anchor);
+            start.setDate(start.getDate() - 7 * i);
+            const end = new Date(start);
+            end.setDate(end.getDate() + 6);
+            // 결정적 파형(사인) + 주차별 굴곡 — 새로고침해도 같은 모양.
+            const wave = Math.sin(i * 1.7) * 0.12 + Math.sin(i * 0.6) * 0.06;
+            const amount = Math.round(440_000_000 * (1 + wave) / 1000) * 1000;
+            const storeCount = 90 + ((i * 3) % 5);
+            rows.push({ start, end, amount, storeCount });
+        }
+        for (const r of rows) {
+            weeks.push({
+                week_start: iso(r.start),
+                week_end: iso(r.end),
+                amount: r.amount,
+                orders: Math.round(r.amount / 27_000),
+                store_count: r.storeCount,
+                per_store: Math.round(r.amount / r.storeCount),
+                prev_amount: prevAmount,
+                wow_pct: prevAmount
+                    ? Math.round((r.amount - prevAmount) / prevAmount * 1000) / 10
+                    : null,
+            });
+            prevAmount = r.amount;
+        }
+        weeks.reverse();  // 실제 함수처럼 최신 주 먼저.
+        return { week_start_dow: 4, weeks };
     },
 
     // 22_notices.sql — `returns table (rules jsonb)` 라 다른 table(x jsonb)
@@ -2378,8 +2644,9 @@ const HANDLERS = {
     // SV 필터도 같은 데이터를 씁니다.
     api_store_profiles: () => storeProfiles.map((p) => ({ ...p })),
 
-    // 44_store_admin.sql — 인라인 수정 저장. 실제 함수처럼 upsert 입니다
-    // (프로필 없는 매장의 저장이 곧 생성).
+    // 44_store_admin.sql(87 재정의) — 인라인 수정 저장. 실제 함수처럼 upsert
+    // 입니다(프로필 없는 매장의 저장이 곧 생성). 숫자 3열은 0 이 실값일 수
+    // 있어 || null 대신 ?? null 로 접습니다.
     save_store_profile: (args) => {
         const store = STORES.find((s) => s.id === Number(args.p_store_id));
         if (!store) return { ok: false, reason: "그런 매장이 없습니다" };
@@ -2390,6 +2657,10 @@ const HANDLERS = {
             order_method: args.p_order_method || null,
             pos: args.p_pos || null,
             business_start_date: args.p_business_start_date || null,
+            staff_count: args.p_staff_count ?? null,
+            seat_count: args.p_seat_count ?? null,
+            monthly_rent: args.p_monthly_rent ?? null,
+            special_note: args.p_special_note || null,
         };
         const row = storeProfiles.find((p) => p.store_id === store.id);
         if (row) Object.assign(row, values, { updated_at: new Date().toISOString() });
@@ -2417,6 +2688,8 @@ const HANDLERS = {
             order_method: args.p_order_method || null,
             pos: args.p_pos || null,
             business_start_date: args.p_business_start_date || null,
+            staff_count: null, seat_count: null, monthly_rent: null,
+            special_note: null,
             imported_at: null, updated_at: new Date().toISOString(),
         });
         // 실제 함수(79)처럼 영업시작일이 있으면 오픈 이벤트도 같이 남깁니다
@@ -2619,6 +2892,30 @@ const HANDLERS = {
         return { ok: true, store_id: store.id, store: store.name, rate_pct: rate };
     },
 
+    // ---- KPI 기준 설정 (88_kpi_settings.sql) — 함수 규칙 그대로 ----
+    api_kpi_settings: () => DEMO_KPI_SETTINGS.map((row) => ({ ...row })),
+
+    set_kpi_setting: ({ p_metric, p_value }) => {
+        const row = DEMO_KPI_SETTINGS.find((r) => r.metric === p_metric);
+        if (!row) return { ok: false, reason: `없는 항목입니다: ${p_metric || "(빈 값)"}` };
+        const value = Number(p_value);
+        if (p_value == null || !Number.isFinite(value)) {
+            return { ok: false, reason: "값을 입력하세요" };
+        }
+        if ((row.min_value != null && value < row.min_value)
+            || (row.max_value != null && value > row.max_value)) {
+            return { ok: false,
+                     reason: `${row.min_value ?? "(제한 없음)"} ~ ${
+                         row.max_value ?? "(제한 없음)"} 사이여야 합니다` };
+        }
+        if (p_metric === "week_start_dow" && !Number.isInteger(value)) {
+            return { ok: false, reason: "요일 번호는 정수여야 합니다 (월=1 … 일=7)" };
+        }
+        row.value = value;
+        row.updated_at = new Date().toISOString();
+        return { ok: true, metric: p_metric, value };
+    },
+
     generate_royalty_invoices: ({ p_ym }) => {
         const ym = Number(p_ym);
         if (!ym || ym < 200001 || ym > 209912 || ym % 100 < 1 || ym % 100 > 12) {
@@ -2716,6 +3013,367 @@ const HANDLERS = {
         demoSettleNoticeTasks.push({ task_id: taskId, invoice_id: invoice.id,
                                      created_at: new Date().toISOString() });
         return { ok: true, task_id: taskId, outstanding };
+    },
+
+    // ---- 전매장 현황 (93_all_stores_kpi.sql) — 함수 반환 모양 그대로 ----
+    // 월 금액은 demoAmountAt(급증급감·목표 미러와 같은 원천), 목표는
+    // demoAutoTarget/demoTargetOverrides(89 미러 그대로), 가정값은
+    // DEMO_KPI_SETTINGS(88 미러 — 설정 카드에서 바꾼 값이 여기도 반영),
+    // 로열티 요율은 demoRateFor(84 미러), 영업일수는 demoDayAmount —
+    // 실물과 같은 의존 사슬입니다. 손익 규칙은 mitaly_kpi_pnl 그대로
+    // (실측 우선 → 가정값 — 아워홈 '실측' 은 #112 미러와 같은 60곳·0.33).
+    api_all_stores_kpi: ({ p_ym }) => {
+        const ym = Number(p_ym);
+        if (!ym || ym < 202001 || ym > 209912 || ym % 100 < 1 || ym % 100 > 12) {
+            return { ok: false, reason: `기준월(YYYYMM)이 올바르지 않습니다: ${p_ym ?? "(빈 값)"}` };
+        }
+        const conf = (m, f) => demoTargetSetting(m, f);
+        const monthDays = new Date(Math.floor(ym / 100), ym % 100, 0).getDate();
+
+        const latestLife = (name) => [...storeLifecycleEvents]
+            .filter((e) => e.store === name)
+            .sort((a, b) => b.event_date.localeCompare(a.event_date) || (b.id - a.id))[0];
+
+        const rows = STORES.map((store) => {
+            const hall = demoAmountAt(ym, store, "홀") || 0;
+            const delivery = demoAmountAt(ym, store, "배달") || 0;
+            const sales = hall + delivery;
+            const prev = demoStoreSales(shiftYm(ym, -1), store) || 0;
+
+            let bizDays = 0;
+            for (let day = 1; day <= monthDays; day++) {
+                const iso = `${Math.floor(ym / 100)}-${String(ym % 100).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                const v = demoDayAmount(store, iso);
+                if (v != null && v > 0) bizDays += 1;
+            }
+
+            const profile = storeProfiles.find((p) => p.store_id === store.id) || null;
+            const manual = demoTargetOverrides.get(`${store.id}|${ym}`);
+            const auto = demoAutoTarget(store, ym);
+            const target = manual != null ? manual : auto.target;
+
+            const hasOurhome = store.id <= 60 && sales > 0;
+            const food = hasOurhome
+                ? Math.round(sales * 0.33)
+                : Math.round(sales * conf("food_cost_rate", 0.36));
+            const labor = profile && profile.staff_count != null
+                ? Math.round(profile.staff_count * conf("labor_cost_per_person", 2800000))
+                : Math.round(sales * conf("labor_rate_fallback", 0.23));
+            const rent = profile && profile.monthly_rent != null
+                ? profile.monthly_rent
+                : Math.round(sales * conf("rent_rate_fallback", 0.08));
+            const deliveryFee = Math.round(delivery * conf("delivery_fee_rate", 0.25));
+            const ratePct = demoRateFor(store);          // 84 미러 — 항상 실요율
+            const royalty = Math.round(sales * ratePct / 100);
+            const utility = Math.round(sales * conf("utility_expense_rate", 0.03));
+            const totalCost = food + labor + rent + deliveryFee + royalty + utility;
+
+            const life = latestLife(store.name);
+            return {
+                store_id: store.id, name: store.name,
+                sv_name: profile ? profile.sv_name : null,
+                staff_count: profile ? profile.staff_count : null,
+                status: life ? life.event_type : null,
+                status_since: life ? life.event_date : null,
+                sales,
+                target,
+                target_source: manual != null ? "manual" : "auto",
+                achievement: target > 0
+                    ? Math.round(sales / target * 10000) / 10000 : null,
+                prev_sales: prev,
+                mom_pct: prev > 0
+                    ? Math.round((sales - prev) / prev * 1000) / 10 : null,
+                business_days: bizDays,
+                daily_avg: bizDays > 0 ? Math.round(sales / bizDays) : null,
+                per_person: profile && profile.staff_count
+                    ? Math.round(sales / profile.staff_count) : null,
+                hall_sales: hall, delivery_sales: delivery,
+                delivery_share: sales > 0
+                    ? Math.round(delivery / sales * 10000) / 10000 : null,
+                pnl: {
+                    ym, sales, hall_sales: hall, delivery_sales: delivery,
+                    food: { amount: food, basis: hasOurhome ? "ourhome" : "assumed" },
+                    labor: { amount: labor,
+                             basis: profile && profile.staff_count != null ? "staff" : "assumed",
+                             staff_count: profile ? profile.staff_count : null },
+                    rent: { amount: rent,
+                            basis: profile && profile.monthly_rent != null ? "actual" : "assumed" },
+                    delivery_fee: { amount: deliveryFee, basis: "assumed" },
+                    royalty: { amount: royalty, basis: "rate", rate_pct: ratePct },
+                    utility: { amount: utility, basis: "assumed" },
+                    total_cost: totalCost,
+                    profit: sales - totalCost,
+                    profit_rate: sales > 0
+                        ? Math.round((sales - totalCost) / sales * 10000) / 10000 : null,
+                    food_cost_rate: sales > 0
+                        ? Math.round(food / sales * 10000) / 10000 : null,
+                    assumed_any: true,
+                },
+            };
+        });
+
+        // 실물과 같은 기본 정렬 — 달성률 내림차순 · null 은 뒤 · 다음 매출.
+        rows.sort((a, b) => {
+            if (a.achievement == null && b.achievement == null) return b.sales - a.sales;
+            if (a.achievement == null) return 1;
+            if (b.achievement == null) return -1;
+            return (b.achievement - a.achievement) || (b.sales - a.sales)
+                || a.name.localeCompare(b.name);
+        });
+        return { ok: true, ym, store_count: rows.length, stores: rows };
+    },
+
+    // ---- 목표매출 (89_store_targets.sql) — 함수 반환 모양 그대로 ----
+    api_store_targets: ({ p_ym }) => {
+        const ym = Number(p_ym);
+        const rows = STORES.map((store) => {
+            const manual = demoTargetOverrides.get(`${store.id}|${ym}`);
+            const auto = demoAutoTarget(store, ym);
+            const target = manual != null ? manual : auto.target;
+            const actual = demoStoreSales(ym, store) || 0;
+            return {
+                store_id: store.id, store: store.name, trade_area: store.trade_area,
+                target,
+                source: manual != null ? "manual" : "auto",
+                basis: manual != null ? null : auto.basis,
+                actual,
+                achievement: target > 0
+                    ? Math.round((actual / target) * 10000) / 10000 : null,
+                updated_at: null,
+            };
+        }).filter((r) => r.target != null || r.actual > 0);
+        return { ym, rows };
+    },
+
+    set_store_target: ({ p_store_id, p_ym, p_amount }) => {
+        const store = STORES.find((s) => s.id === Number(p_store_id));
+        if (!store) return { ok: false, reason: "매장을 찾지 못했습니다" };
+        const ym = Number(p_ym);
+        if (!ym || ym < 202001 || ym > 209912 || ym % 100 < 1 || ym % 100 > 12) {
+            return { ok: false, reason: `달(YYYYMM)이 올바르지 않습니다: ${p_ym ?? "(빈 값)"}` };
+        }
+        const key = `${store.id}|${ym}`;
+        if (p_amount == null) {          // 수동 해제 → 자동 산정으로 복원
+            demoTargetOverrides.delete(key);
+            const auto = demoAutoTarget(store, ym);
+            return { ok: true, store_id: store.id, store: store.name, ym,
+                     source: "auto", target: auto.target, basis: auto.basis };
+        }
+        const amount = Math.round(Number(p_amount));
+        if (!Number.isFinite(amount) || amount < 0) {
+            return { ok: false, reason: "금액은 0 이상이어야 합니다" };
+        }
+        demoTargetOverrides.set(key, amount);
+        return { ok: true, store_id: store.id, store: store.name, ym,
+                 source: "manual", target: amount, basis: null };
+    },
+
+    // ---- 매장 대시보드 (91_store_dashboard.sql) — 함수 반환 모양 그대로 ----
+    // 월 금액은 demoStoreSales/demoAmountAt(급증급감·목표 미러와 같은 원천),
+    // 목표는 demoAutoTarget/demoTargetOverrides(89 미러 그대로), 가정값은
+    // DEMO_KPI_SETTINGS(88 미러 — 설정 카드에서 바꾼 값이 여기도 반영),
+    // 로열티 요율은 demoRateFor(84 미러)를 씁니다 — 실물과 같은 의존 사슬.
+    api_store_dashboard: ({ p_store_id, p_ym, p_anchor_day, p_year }) => {
+        const store = STORES.find((s) => s.id === Number(p_store_id));
+        if (!store) return { ok: false, reason: "매장을 찾지 못했습니다" };
+        const ym = Number(p_ym);
+        if (!ym || ym < 202001 || ym > 209912 || ym % 100 < 1 || ym % 100 > 12) {
+            return { ok: false, reason: `기준월(YYYYMM)이 올바르지 않습니다: ${p_ym ?? "(빈 값)"}` };
+        }
+
+        const iso = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+        const monthEnd = (y) => new Date(Math.floor(y / 100), y % 100, 0); // 말일
+        const DOW_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
+
+        // 일 단위 매출 — (매장, 날짜)로 결정되는 순수 함수(demoAmountAt 과 같은
+        // 이유). 13일에 한 번쯤 미영업(null), 드물게 0원 기록 — 화면의
+        // '빈칸 = 미영업 · 0 = 0원' 구분이 데모에서도 보이게 섞습니다.
+        const dayAmount = (isoDay) => {
+            const h = hashSeed(`${store.name}|${isoDay}`);
+            const dym = Number(isoDay.slice(0, 4)) * 100 + Number(isoDay.slice(5, 7));
+            const monthly = demoStoreSales(dym, store);
+            if (monthly == null) return null;                 // 데이터 범위 밖
+            if (h % 13 === 0) return null;                    // 미영업
+            if (h % 89 === 0) return 0;                       // 0원 기록
+            const dow = new Date(isoDay + "T00:00:00").getDay();
+            const shape = WEEKDAY_SHAPE[DOW_NAMES[dow]] || 1;
+            const noise = seeded(h)();
+            return Math.max(0, Math.round(monthly / 30 * shape * (0.7 + noise * 0.6)));
+        };
+
+        // 실물의 fact_daily 마지막 날 = 데모 데이터 범위(MONTHS)의 마지막 달 말일.
+        const lastDataDay = iso(monthEnd(MONTHS[MONTHS.length - 1]));
+        let anchor = p_anchor_day
+            ? new Date(p_anchor_day + "T00:00:00")
+            : new Date(Math.min(monthEnd(ym).getTime(),
+                                new Date(lastDataDay + "T00:00:00").getTime()));
+        if (!p_anchor_day && iso(anchor) < iso(new Date(Math.floor(ym / 100), ym % 100 - 1, 1))) {
+            anchor = monthEnd(ym);
+        }
+
+        // ⓑ 기준월 KPI
+        const hall = demoAmountAt(ym, store, "홀") || 0;
+        const delivery = demoAmountAt(ym, store, "배달") || 0;
+        const sales = hall + delivery;
+        const prev = demoStoreSales(shiftYm(ym, -1), store) || 0;
+        const monthStat = (y) => {   // {bizDays} — 그 달 일 단위 훑기
+            const end = monthEnd(y).getDate();
+            let biz = 0;
+            for (let day = 1; day <= end; day++) {
+                const v = dayAmount(iso(new Date(Math.floor(y / 100), y % 100 - 1, day)));
+                if (v != null && v > 0) biz += 1;
+            }
+            return biz;
+        };
+        const bizDays = monthStat(ym);
+        const manual = demoTargetOverrides.get(`${store.id}|${ym}`);
+        const auto = demoAutoTarget(store, ym);
+        const target = manual != null ? manual : auto.target;
+        const ordersHall = Math.round(hall / 23_000);
+        const ordersDelivery = Math.round(delivery / 27_000);
+        const profile = storeProfiles.find((p) => p.store_id === store.id) || null;
+
+        const kpi = {
+            sales, target,
+            target_source: manual != null ? "manual" : "auto",
+            target_basis: manual != null ? null : auto.basis,
+            achievement: target > 0 ? Math.round(sales / target * 10000) / 10000 : null,
+            prev_sales: prev,
+            mom_pct: prev > 0 ? Math.round((sales - prev) / prev * 1000) / 10 : null,
+            business_days: bizDays,
+            daily_avg: bizDays > 0 ? Math.round(sales / bizDays) : null,
+            per_person: profile && profile.staff_count
+                ? Math.round(sales / profile.staff_count) : null,
+            delivery_share: sales > 0 ? Math.round(delivery / sales * 10000) / 10000 : null,
+            delivery_sales: delivery, hall_sales: hall,
+            orders_hall: ordersHall, orders_delivery: ordersDelivery,
+            orders_total: ordersHall + ordersDelivery,
+        };
+
+        // ⓒ 추정 손익 — mitaly_kpi_pnl 의 규칙 그대로(실측 우선 → 가정값).
+        // 아워홈 발주는 api_ourhome_orders 데모와 같은 60곳까지만 '실측'.
+        const pnl = (() => {
+            const conf = (m, f) => demoTargetSetting(m, f);
+            const hasOurhome = store.id <= 60 && sales > 0;
+            const food = hasOurhome
+                ? Math.round(sales * 0.33)
+                : Math.round(sales * conf("food_cost_rate", 0.36));
+            const labor = profile && profile.staff_count != null
+                ? Math.round(profile.staff_count * conf("labor_cost_per_person", 2800000))
+                : Math.round(sales * conf("labor_rate_fallback", 0.23));
+            const rent = profile && profile.monthly_rent != null
+                ? profile.monthly_rent
+                : Math.round(sales * conf("rent_rate_fallback", 0.08));
+            const deliveryFee = Math.round(delivery * conf("delivery_fee_rate", 0.25));
+            const ratePct = demoRateFor(store);          // 84 미러 — 항상 실요율
+            const royalty = Math.round(sales * ratePct / 100);
+            const utility = Math.round(sales * conf("utility_expense_rate", 0.03));
+            const totalCost = food + labor + rent + deliveryFee + royalty + utility;
+            return {
+                ym, sales, hall_sales: hall, delivery_sales: delivery,
+                food: { amount: food, basis: hasOurhome ? "ourhome" : "assumed" },
+                labor: { amount: labor,
+                         basis: profile && profile.staff_count != null ? "staff" : "assumed",
+                         staff_count: profile ? profile.staff_count : null },
+                rent: { amount: rent,
+                        basis: profile && profile.monthly_rent != null ? "actual" : "assumed" },
+                delivery_fee: { amount: deliveryFee, basis: "assumed" },
+                royalty: { amount: royalty, basis: "rate", rate_pct: ratePct },
+                utility: { amount: utility, basis: "assumed" },
+                total_cost: totalCost,
+                profit: sales - totalCost,
+                profit_rate: sales > 0
+                    ? Math.round((sales - totalCost) / sales * 10000) / 10000 : null,
+                food_cost_rate: sales > 0
+                    ? Math.round(food / sales * 10000) / 10000 : null,
+                assumed_any: true,
+            };
+        })();
+
+        // ⓓ 연도별 월간 추이
+        const year = Number(p_year) || Math.floor(ym / 100);
+        const yearly = Array.from({ length: 12 }, (_, i) => {
+            const m = year * 100 + i + 1;
+            const mh = demoAmountAt(m, store, "홀") || 0;
+            const md_ = demoAmountAt(m, store, "배달") || 0;
+            const total = mh + md_;
+            const ourhome = store.id <= 60 && total > 0 ? Math.round(total * 0.33) : null;
+            const biz = total > 0 ? monthStat(m) : 0;
+            return {
+                ym: m, sales: total, hall: mh, delivery: md_,
+                ourhome,
+                food_rate: ourhome != null && total > 0
+                    ? Math.round(ourhome / total * 10000) / 10000 : null,
+                business_days: biz,
+                daily_avg: biz > 0 ? Math.round(total / biz) : null,
+            };
+        });
+        const years = [...new Set(MONTHS.map((m) => Math.floor(m / 100)))];
+
+        // ⓔ 주간 13주 — 닻이 속한 주(주 시작 요일 = 88 미러 설정값)부터.
+        const dowStart = demoTargetSetting("week_start_dow", 4);
+        const isodow = (dt) => (dt.getDay() === 0 ? 7 : dt.getDay());
+        const anchorWeek = new Date(anchor);
+        anchorWeek.setDate(anchorWeek.getDate() - ((isodow(anchorWeek) - dowStart + 7) % 7));
+        const weekSum = (start) => {
+            let amt = 0;
+            for (let i = 0; i < 7; i++) {
+                const dt = new Date(start);
+                dt.setDate(dt.getDate() + i);
+                amt += dayAmount(iso(dt)) || 0;
+            }
+            return amt;
+        };
+        const weekly = [];
+        for (let g = 0; g < 13; g++) {
+            const ws = new Date(anchorWeek);
+            ws.setDate(ws.getDate() - 7 * g);
+            const we = new Date(ws);
+            we.setDate(we.getDate() + 6);
+            const amount = weekSum(ws);
+            const prevWs = new Date(ws);
+            prevWs.setDate(prevWs.getDate() - 7);
+            const prevAmt = weekSum(prevWs);
+            weekly.push({
+                week_start: iso(ws), week_end: iso(we), amount,
+                orders: Math.round(amount / 25_000),
+                wow_pct: prevAmt > 0
+                    ? Math.round((amount - prevAmt) / prevAmt * 1000) / 10 : null,
+            });
+        }
+
+        // ⓕ 일간 28일 — null = 미영업 · 0 = 0원 기록.
+        const daily = Array.from({ length: 28 }, (_, i) => {
+            const dt = new Date(anchor);
+            dt.setDate(dt.getDate() - 27 + i);
+            const v = dayAmount(iso(dt));
+            return { day: iso(dt), dow: isodow(dt), amount: v,
+                     orders: v ? Math.round(v / 25_000) : v };
+        });
+
+        // 생애주기 — 27 미러(storeLifecycleEvents)의 최근 이벤트.
+        const life = [...storeLifecycleEvents]
+            .filter((e) => e.store === store.name)
+            .sort((a, b) => b.event_date.localeCompare(a.event_date) || (b.id - a.id))[0];
+
+        return {
+            ok: true,
+            store: {
+                store_id: store.id, name: store.name, trade_area: store.trade_area,
+                profile: profile ? {
+                    category: profile.category, sv_name: profile.sv_name,
+                    region: profile.region, order_method: profile.order_method,
+                    pos: profile.pos, business_start_date: profile.business_start_date,
+                    staff_count: profile.staff_count, seat_count: profile.seat_count,
+                    monthly_rent: profile.monthly_rent, special_note: profile.special_note,
+                } : null,
+                status: life ? life.event_type : null,
+                status_since: life ? life.event_date : null,
+            },
+            ym, anchor_day: iso(anchor), last_data_day: lastDataDay,
+            week_start_dow: dowStart, year, years,
+            kpi, pnl, yearly, weekly, daily,
+        };
     },
 
     // 44_store_contacts.sql — 게이트 암호는 배달앱 계정과 같은 demo1234.

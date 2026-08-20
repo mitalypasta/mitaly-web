@@ -39,6 +39,11 @@ import { initNotifications } from "./notifications.js";
 import { initRecipients } from "./recipients.js";
 import { initConsents } from "./consents.js";
 import { initReport, drawReport } from "./report.js";
+import { initKpiSettings } from "./kpi.js";
+import { initWeekly } from "./weekly.js";
+import { initStoreDash } from "./store_dash.js";
+import { initDiagnosis } from "./diagnosis.js";
+import { initAllStores } from "./allstores.js";
 
 const gate = $("gate");
 const app = $("app");
@@ -327,11 +332,18 @@ async function initDashboard() {
     // 원래 순서를 지킵니다. (수집 요청·계정 상태·내보내기 화면의 init 3개는
     // 3라운드 2차에서 화면과 함께 빠졌습니다 — 엑셀은 위 필터 줄 버튼이 대신.)
     await load(() => runAfterPaint([
+        // 주차별 전사 카드(#114)는 매출 영역이지만 필터와 무관한 단발 조회라
+        // load() 묶음이 아니라 여기서 한 번만 붑니다(필터 변경에 재조회 없음).
+        // 매장 진단(#115)도 같은 이유 — 기준월 고르개는 카드가 직접 갖습니다.
+        initWeekly, initDiagnosis,
+        // 매장 대시보드(#112)·전매장 현황(#113)도 자체 고르개를 갖는 단발
+        // 조회라 load() 묶음 밖입니다 — 필터 변경에 재조회하지 않습니다.
+        initStoreDash, initAllStores,
         initTasks, initInquiries, initDrafts,
         initNotices, initVisits, initStoreDb, initAccountPresence,
         initLifecycle, initKakaoStats, initNotifications, initRecipients,
         initConsents, initSettlement, initAds, initIngredients,
-        initOurhome, initPosMenu, initComms,
+        initOurhome, initPosMenu, initComms, initKpiSettings,
     ]));
     loadLastUpdated();
 }

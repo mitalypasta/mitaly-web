@@ -2,7 +2,8 @@
 // app.js 에서 뽑은 영역 모듈(docs/web-split-plan.md). db + foundation 만 import.
 //
 // 수정은 행 단위 인라인. RLS update 를 열지 않고 전용 함수(save_store_profile,
-// 44 — updated_by 기록)로만 저장합니다.
+// 44 → 87 재정의 — updated_by 기록)로만 저장합니다. 근무인원·좌석수·
+// 월임차료·특이사항은 KPI 엑셀 02 반입분(87 · 큐 #109)입니다.
 //
 // 분류·SV·지역·주문방식·포스는 자유 텍스트 대신 datalist(기존 값 후보 +
 // 직접 입력 허용)입니다 — SV·지역 필터가 실값 distinct 로 만들어지므로
@@ -22,9 +23,18 @@ const SDB_COLS = [
     ["order_method", "주문방식"],
     ["pos", "포스"],
     ["business_start_date", "영업시작일"],
+    // KPI 엑셀 02 반입분(87) — 근무인원은 3.5 같은 소수가 실값이라 number
+    // 입력에 step 을 좁히지 않습니다. 월임차료는 VAT 별도 금액입니다.
+    ["staff_count", "근무인원"],
+    ["seat_count", "좌석수"],
+    ["monthly_rent", "월임차료"],
+    ["special_note", "특이사항"],
 ];
-// datalist 후보를 채우는 텍스트 열(영업시작일 제외 — date 입력).
+// datalist 후보를 채우는 텍스트 열(영업시작일·숫자 3열·특이사항 제외 —
+// 특이사항은 자유 서술이라 후보 목록이 도움이 안 됩니다).
 const SDB_TEXT_KEYS = ["category", "sv_name", "region", "order_method", "pos"];
+// number 입력으로 편집하고 화면에는 천 단위로 그리는 열.
+const SDB_NUM_KEYS = ["staff_count", "seat_count", "monthly_rent"];
 let sdbRows = [];          // [{store_id, store_name, category, ... , has_profile}]
 let sdbEditingId = null;   // 지금 편집 중인 store_id (한 번에 한 행만)
 let sdbStatus = new Map(); // store_name → 'open' | 'close' (27 최근 이벤트)
@@ -69,6 +79,8 @@ async function loadStoreDbData() {
                 store_id: Number(s.id), store_name: s.name, has_profile: false,
                 category: null, sv_name: null, region: null,
                 order_method: null, pos: null, business_start_date: null,
+                staff_count: null, seat_count: null, monthly_rent: null,
+                special_note: null,
             });
         }
     }
@@ -162,8 +174,16 @@ function sdbEditRow(r) {
             return `<td><input type="date" data-key="${key}"
                 value="${escape(r[key] || "")}"></td>`;
         }
-        return `<td><input type="text" data-key="${key}" autocomplete="off"
-            list="sdb-dl-${key}" value="${escape(r[key] || "")}"></td>`;
+        if (SDB_NUM_KEYS.includes(key)) {
+            // 근무인원은 소수 실값(3.5)이 있어 step="any"(step 기본 1이면
+            // 브라우저가 소수 입력을 유효성 오류로 막습니다).
+            const val = r[key] === null || r[key] === undefined ? "" : r[key];
+            return `<td><input type="number" data-key="${key}" step="any"
+                min="0" value="${escape(String(val))}"></td>`;
+        }
+        const list = SDB_TEXT_KEYS.includes(key) ? ` list="sdb-dl-${key}"` : "";
+        return `<td><input type="text" data-key="${key}" autocomplete="off"${list}
+            value="${escape(r[key] || "")}"></td>`;
     }).join("");
     return `<tr data-id="${r.store_id}" class="sdb-editing">`
         + `<td>${escape(r.store_name)}</td>${inputs}`
@@ -190,8 +210,13 @@ function sdbRender() {
         .map((h) => `<th>${escape(h)}</th>`).join("");
     const body = list.map((r) => {
         if (r.store_id === sdbEditingId) return sdbEditRow(r);
-        const cells = SDB_COLS.map(([key]) =>
-            `<td>${escape(r[key] || "—")}</td>`).join("");
+        const cells = SDB_COLS.map(([key]) => {
+            const v = r[key];
+            if (v === null || v === undefined || v === "") return "<td>—</td>";
+            // 숫자 열은 천 단위로(월임차료). toLocaleString 은 3.5 같은
+            // 근무인원 소수도 그대로 살립니다.
+            return `<td>${SDB_NUM_KEYS.includes(key) ? int(v) : escape(v)}</td>`;
+        }).join("");
         return `<tr data-id="${r.store_id}"><td>${escape(r.store_name)}`
             + (sdbClosed(r) ? ' <span class="tag down">폐점</span>' : "")
             + (r.has_profile ? "" : ' <span class="tag">프로필 없음</span>')
@@ -222,7 +247,14 @@ async function sdbSave(storeId) {
     const row = $("sdb-table").querySelector(`tr[data-id="${storeId}"]`);
     const values = {};
     for (const input of row.querySelectorAll("input")) {
-        values[input.dataset.key] = input.value.trim() || null;
+        const key = input.dataset.key;
+        const text = input.value.trim();
+        // 숫자 열은 숫자로 접어 보냅니다 — 못 읽는 값(브라우저가 대부분
+        // 걸러 주지만)은 null 로. 빈 칸 = 지움(null)은 텍스트 열과 같습니다.
+        values[key] = !text ? null
+            : (SDB_NUM_KEYS.includes(key)
+                ? (Number.isFinite(Number(text)) ? Number(text) : null)
+                : text);
     }
 
     $("sdb-save").disabled = true;
@@ -234,6 +266,10 @@ async function sdbSave(storeId) {
         p_order_method: values.order_method,
         p_pos: values.pos,
         p_business_start_date: values.business_start_date,
+        p_staff_count: values.staff_count,
+        p_seat_count: values.seat_count,
+        p_monthly_rent: values.monthly_rent,
+        p_special_note: values.special_note,
     });
 
     if (error || !data?.ok) {

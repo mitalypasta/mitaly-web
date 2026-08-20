@@ -142,6 +142,7 @@
          전환은 즉시입니다. -->
     <nav class="subnav" data-area="sales" id="salesnav" aria-label="매출 보기">
         <button class="subitem is-on" data-sub-go="요약" type="button">요약</button>
+        <button class="subitem" data-sub-go="매장 대시보드" type="button">매장 대시보드</button>
         <button class="subitem" data-sub-go="품목" type="button">품목</button>
         <button class="subitem" data-sub-go="시간·요일" type="button">시간·요일</button>
         <button class="subitem" data-sub-go="매장" type="button">매장</button>
@@ -170,6 +171,21 @@
             </header>
             <div class="legend" id="legend-monthly-ch"></div>
             <svg class="plot" id="c-monthly-ch" role="img" aria-label="월별 홀/배달 매출 막대"></svg>
+        </section>
+
+        <!-- 주차별 전사 매출 (카드 #114 — KPI 엑셀 06 시트 상단 이식,
+             90_weekly_sales.sql). 주는 월~일이 아니라 설정된 시작 요일
+             (kpi_settings, 기본 목~수)이고, 위 필터와 무관하게 항상
+             전 매장·최근 13주입니다. 증감 색은 KPI 시트 관례(상승 빨강·
+             하락 파랑)라 기존 pct-up/down 을 안 씁니다 — wk-up/wk-down. -->
+        <section data-area="sales" data-sub="요약" class="card full" id="weekly-card">
+            <header>
+                <h2>주차별 전사 매출</h2>
+                <span class="meta" id="wk-meta"></span>
+            </header>
+            <p class="wk-latest" id="wk-latest"></p>
+            <div class="tableview" id="t-weekly"></div>
+            <p class="hint" id="wk-note"></p>
         </section>
 
         <section data-area="sales" data-sub="요약" class="card full" id="alerts-card">
@@ -203,6 +219,29 @@
             <div class="tableview tall" id="t-alerts"></div>
         </section>
 
+        <!-- 매장 진단 (카드 #115 — KPI 엑셀 05_안내 진단 표 이식,
+             92_kpi_diagnosis.sql). 기준월 하나를 전 매장으로 진단해 증상 있는
+             매장을 심각순(연속하락 > 달성률 미달 > 기준선 위반)으로 올립니다.
+             증상·원인·조치 문구는 서버 규칙 표(kpi_diagnosis_rules)가 원본
+             (web/diagnosis.js). 위 필터(기간·매장)와 무관합니다. -->
+        <section data-area="sales" data-sub="요약" class="card full" id="diagnosis-card">
+            <header>
+                <h2>매장 진단</h2>
+                <span class="meta" id="diag-meta"></span>
+            </header>
+            <div class="cardsearch">
+                <select id="diag-ym" aria-label="기준월"></select>
+                <label class="recheck">
+                    <input type="checkbox" id="diag-only" checked>
+                    <span>증상 있는 매장만</span>
+                </label>
+            </div>
+            <div class="tableview tall" id="t-diag"></div>
+            <p class="hint">이익률은 가정값(KPI 기준 설정) 기반 추정 ·
+                원가율 = 아워홈 발주액(VAT 포함) ÷ 매출 ·
+                일평균은 일 단위 집계 기준(없는 매장은 월 증감률 대용)</p>
+        </section>
+
         <!-- 요약 서브탭에서 반쪽(half) 카드는 이것 하나라 짝이 없어 오른쪽
              열이 통째로 비었습니다(SALES-DIAGNOSIS M5) — full 로 올립니다.
              상위 15 제한은 3라운드 2차에서 풀었습니다(담당자 피드백 3-3) —
@@ -216,6 +255,104 @@
                 <svg class="plot" id="c-store" role="img" aria-label="매장별 매출"></svg>
             </div>
             <div class="tableview" id="t-store" hidden></div>
+        </section>
+
+        <!-- KPI 기준 설정 (88_kpi_settings.sql, 큐 #110) — 가맹점 KPI관리 엑셀
+             05_안내의 가정값·목표·기준선. DB(kpi_settings)가 원본이고 여기서
+             바꿉니다(D38) — 대시보드(#112)·목표 산정(#111)·주차 집계(#114)·
+             진단(#115)이 이 값을 읽습니다. 항목 표기는 kpi-sheet-adoption.md
+             4절 그대로(web/kpi.js). -->
+        <section data-area="sales" data-sub="요약" class="card full" id="kpi-settings-card">
+            <header>
+                <h2>KPI 기준 설정</h2>
+                <span class="meta" id="kpi-set-meta"></span>
+            </header>
+            <p class="hint">비율은 0~1로 넣습니다 — 예: 식자재 원가율 36% → 0.36.
+                로열티·광고분담률은 매장별 실요율이 있으면 그 값이 우선이고,
+                여기 값은 실요율이 없을 때 쓰입니다.</p>
+            <div class="tableview" id="t-kpi-settings"></div>
+            <div class="reqform">
+                <div class="field">
+                    <button type="button" id="kpi-set-save">바뀐 값 저장</button>
+                </div>
+            </div>
+            <p class="notice" id="kpi-set-notice"></p>
+        </section>
+
+        <!-- ============================================================
+             매장 대시보드 (카드 #112 — KPI 엑셀 01_대시보드 이식,
+             91_store_dashboard.sql · web/store_dash.js). 매장 1곳을 골라
+             KPI·추정손익·연/주/일 추이를 봅니다. 위 전역 필터와 무관하게
+             카드가 자체 고르개(매장·기준월·기준일)를 갖습니다(지도 카드와
+             같은 방식). 폐점 매장도 고를 수 있고 배지가 붙습니다(시트 07).
+             ============================================================ -->
+        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-card">
+            <header>
+                <h2>매장 대시보드</h2>
+                <span class="meta" id="sd-meta"></span>
+            </header>
+            <div class="reqform">
+                <div class="field grow">
+                    <label for="sd-store">매장</label>
+                    <select id="sd-store"><option value="">매장을 고르세요</option></select>
+                </div>
+                <div class="field">
+                    <label for="sd-ym">기준월</label>
+                    <input type="month" id="sd-ym">
+                </div>
+                <!-- 기준일 = 일간 28일·주간 13주의 닻. 비우면 기준월 말일 또는
+                     데이터 있는 마지막 날(서버 기본값)로 잡히고, 응답의 실제
+                     닻이 이 칸에 다시 채워집니다. -->
+                <div class="field">
+                    <label for="sd-day">기준일</label>
+                    <input type="date" id="sd-day">
+                </div>
+            </div>
+            <p class="hint" id="sd-info"></p>
+            <div class="kpis" id="sd-kpis"></div>
+            <!-- 금액 기준 각주(kpi-sheet-adoption.md 6절) — 시트와 숫자가 1:1로
+                 안 맞는 것이 정상임을 화면이 말합니다. -->
+            <p class="hint" id="sd-note"></p>
+        </section>
+
+        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-pnl-card">
+            <header>
+                <h2>기준월 추정 손익</h2>
+                <span class="meta" id="sd-pnl-meta"></span>
+            </header>
+            <div class="tableview" id="t-sd-pnl"></div>
+            <p class="hint" id="sd-pnl-note"></p>
+        </section>
+
+        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-year-card">
+            <header>
+                <h2>연도별 월간 추이</h2>
+                <select id="sd-year"></select>
+            </header>
+            <div class="tableview" id="t-sd-yearly"></div>
+            <div class="legend" id="legend-sd-year"></div>
+            <svg class="plot" id="c-sd-year" role="img" aria-label="월간 매출 막대"></svg>
+            <div class="legend" id="legend-sd-year-ch"></div>
+            <svg class="plot" id="c-sd-year-ch" role="img" aria-label="월간 홀/배달 스택 막대"></svg>
+            <p class="hint" id="sd-year-note"></p>
+        </section>
+
+        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-weekly-card">
+            <header>
+                <h2>주간 매출 추이</h2>
+                <span class="meta" id="sd-wk-meta"></span>
+            </header>
+            <div class="tableview" id="t-sd-weekly"></div>
+        </section>
+
+        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-daily-card">
+            <header>
+                <h2>일간 매출 — 최근 28일</h2>
+                <span class="meta" id="sd-daily-meta"></span>
+            </header>
+            <!-- 빈칸 = 미영업(그 날 자료 없음) · 0 = 0원 기록 — 같게 그리지
+                 않습니다(kpi-sheet-adoption.md 6절). -->
+            <div class="tableview" id="t-sd-daily"></div>
         </section>
 
         <!-- 품목 서브탭도 half 가 이것 하나뿐 — 위 '상위 15곳'과 같은 이유로
@@ -271,6 +408,31 @@
             </header>
             <div id="c-coverage"></div>
             <div class="tableview" id="t-coverage" hidden></div>
+        </section>
+
+        <!-- 전매장 현황 (카드 #113 — KPI 엑셀 04_전매장_현황 이식,
+             93_all_stores_kpi.sql · web/allstores.js). 전 매장 KPI+추정손익
+             한 표 — 달성률 내림차순이 기본(시트 04 그대로), 헤더 클릭으로
+             재정렬. 기준월·SV 는 카드 자체 고르개라 위 전역 필터와 무관합니다
+             (주차별 카드와 같은 방식). 열이 23개라 표는 카드 안(.tableview)
+             에서만 가로 스크롤됩니다. 폐점 매장도 행에 있고 배지가 붙습니다. -->
+        <section data-area="sales" data-sub="매장" class="card full" id="allstores-card">
+            <header>
+                <h2>전매장 현황</h2>
+                <span class="meta" id="as-meta"></span>
+            </header>
+            <div class="reqform">
+                <div class="field">
+                    <label for="as-ym">기준월</label>
+                    <input type="month" id="as-ym">
+                </div>
+                <div class="field">
+                    <label for="as-sv">담당 SV</label>
+                    <select id="as-sv"><option value="">전체</option></select>
+                </div>
+            </div>
+            <div class="tableview tall" id="t-allstores"></div>
+            <p class="hint" id="as-note"></p>
         </section>
 
         <section data-area="sales" data-sub="매장" class="card full">
@@ -482,6 +644,13 @@
                 <div class="value" id="home-drafts">—</div>
                 <div class="sub">AI 리뷰 답글 초안 중 아직 검토하지 않은 건</div>
             </button>
+            <!-- 진단 대상 (카드 #115) — 값은 매장 진단 카드(diagnosis.js)가
+                 기준월 조회 결과(flagged)로 채웁니다. 홈이 따로 조회하지 않음. -->
+            <button type="button" class="tile hometile t-attn" id="home-tile-diagnosis" data-go-target="sales">
+                <div class="label">진단 대상</div>
+                <div class="value" id="home-diag">—</div>
+                <div class="sub">KPI 기준선·진단 규칙에 걸린 매장 수 (최근 완성월)</div>
+            </button>
         </div>
 
         <!-- 매출 한 줄 — 최근 완성월 전 매장 합계와 전월 대비. 자세한 것은
@@ -510,7 +679,8 @@
     <!-- 수집 요청 — 이 PC(수집용)에서 에이전트가 돌고 있어야 실행됩니다. -->
 
     <!-- 가맹점 DB 관리 — 9번(방문·점검)의 기반. docs/store-db-design.md 4절
-         조립: 표는 api_store_profiles(35), 저장은 save_store_profile(44),
+         조립: 표는 api_store_profiles(35→87), 저장은 save_store_profile(44→87
+         — 근무인원·좌석수·월임차료·특이사항은 KPI 엑셀 02 반입분, 큐 #109),
          필터는 SV·지역. stores 에는 있는데 프로필이 없는 매장(반입 때 못
          찾음·업로더 신규)도 빈 행으로 보여 바로 채울 수 있게 합니다. -->
     <section data-area="stores" class="card full" id="store-db-card">
