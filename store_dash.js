@@ -50,7 +50,11 @@ function currentArgs() {
 async function refresh() {
     const args = currentArgs();
     if (!args) {
-        $("sd-info").textContent = "매장을 고르면 그 매장의 KPI·추정 손익·추이가 나옵니다.";
+        // 아무것도 안 골랐을 때 빈칸이 아니라 다음 행동이 보이게(담당자 지시).
+        $("sd-meta").textContent = "";
+        $("sd-info").textContent = "";
+        $("sd-kpis").innerHTML =
+            '<div class="sd-empty">매장을 선택하세요 — 위 매장 칸에 이름을 치면 검색됩니다.</div>';
         return;
     }
     // 매장을 바꿨으면 연도 선택은 기준월의 연도로 되돌립니다 — 옛 매장에서
@@ -86,6 +90,7 @@ function render(d) {
     renderPnl(d.pnl);
     renderYearSelect(d);
     renderYearly(d);
+    renderQuarterly((d.store || {}).name);
     renderWeekly(d);
     renderDaily(d);
 
@@ -138,31 +143,35 @@ const TARGET_BASIS_KO = {
     new_store: "신규점 기준",
 };
 
+// 금액은 전부 원 단위 그대로 보입니다 — "~~만" 축약만으로 끝내지 않기
+// (2026-08-21 담당자 지시: "정확한 숫자가 필요해").
 function renderKpis(k, store) {
     const tiles = [];
-    tiles.push(tile("총매출", escape(won(k.sales)), escape(wonFull(k.sales)), true));
+    // hero(34px) 크기면 원 단위 전체 숫자가 타일 폭을 넘습니다 — 표준 크기로
+    // 두고 타일 최소 폭을 넓힙니다(#sd-kpis, styles.css).
+    tiles.push(tile("총매출", escape(wonFull(k.sales)), ""));
 
     if (k.target != null) {
         const basis = k.target_source === "manual"
             ? "직접 입력 목표" : (TARGET_BASIS_KO[k.target_basis] || "");
         tiles.push(tile("목표 · 달성률",
             escape(pctText(k.achievement, 1)),
-            `목표 ${escape(won(k.target))}${basis ? " · " + escape(basis) : ""}`));
+            `목표 ${escape(wonFull(k.target))}${basis ? " · " + escape(basis) : ""}`));
     } else {
         tiles.push(tile("목표 · 달성률", "—", "목표 없음"));
     }
 
     tiles.push(tile("전월 대비", diffCell(k.mom_pct),
-        `전월 ${escape(won(k.prev_sales))}`));
+        `전월 ${escape(wonFull(k.prev_sales))}`));
     tiles.push(tile("영업일수", escape(int(k.business_days)) + "일",
         "매출이 있는 날 수"));
     tiles.push(tile("일평균 매출",
-        k.daily_avg != null ? escape(won(k.daily_avg)) : "—", ""));
+        k.daily_avg != null ? escape(wonFull(k.daily_avg)) : "—", ""));
     tiles.push(tile("인당 생산성",
-        k.per_person != null ? escape(won(k.per_person)) : "—",
+        k.per_person != null ? escape(wonFull(k.per_person)) : "—",
         k.per_person == null ? "근무인원 미입력" : ""));
     tiles.push(tile("배달 비중", escape(pctText(k.delivery_share, 1)),
-        `홀 ${escape(won(k.hall_sales))} · 배달 ${escape(won(k.delivery_sales))}`));
+        `홀 ${escape(wonFull(k.hall_sales))} · 배달 ${escape(wonFull(k.delivery_sales))}`));
     tiles.push(tile("주문 건수", escape(int(k.orders_total)) + "건",
         `홀 ${escape(int(k.orders_hall))} · 배달 ${escape(int(k.orders_delivery))}`));
 
@@ -247,9 +256,17 @@ function renderYearly(d) {
     const ourhomeSum = rows.reduce((a, r) => a + (r.ourhome != null ? Number(r.ourhome) : 0), 0);
     const hasOurhome = rows.some((r) => r.ourhome != null);
 
-    const body = rows.map((r) => `<tr>
+    // 전월비 — 표시 연도 안에서만 잇습니다(1월은 전년 12월이 이 응답에 없어
+    // "—"). 증감 색은 주간·일간·분기와 같은 시트 관례(diffCell).
+    const momOf = (r, i) => {
+        const prev = i > 0 ? Number(rows[i - 1].sales) || 0 : 0;
+        return i > 0 && prev > 0 && r.sales
+            ? Math.round((Number(r.sales) - prev) / prev * 1000) / 10 : null;
+    };
+    const body = rows.map((r, i) => `<tr>
         <td class="tl">${escape(String(r.ym % 100))}월</td>
         <td>${r.sales ? escape(wonFull(r.sales)) : "—"}</td>
+        <td>${diffCell(momOf(r, i))}</td>
         <td>${r.hall ? escape(wonFull(r.hall)) : "—"}</td>
         <td>${r.delivery ? escape(wonFull(r.delivery)) : "—"}</td>
         <td>${r.ourhome != null ? escape(wonFull(Math.round(r.ourhome))) : "—"}</td>
@@ -260,6 +277,7 @@ function renderYearly(d) {
     const foot = `<tr>
         <td class="tl"><b>합계</b></td>
         <td><b>${escape(wonFull(salesSum))}</b></td>
+        <td>—</td>
         <td><b>${escape(wonFull(sum("hall")))}</b></td>
         <td><b>${escape(wonFull(sum("delivery")))}</b></td>
         <td><b>${hasOurhome ? escape(wonFull(Math.round(ourhomeSum))) : "—"}</b></td>
@@ -268,7 +286,7 @@ function renderYearly(d) {
         <td><b>${bizSum > 0 ? escape(wonFull(Math.round(salesSum / bizSum))) : "—"}</b></td>
     </tr>`;
     $("t-sd-yearly").innerHTML =
-        `<table><thead><tr><th class="tl">월</th><th>총매출</th><th>홀</th>`
+        `<table><thead><tr><th class="tl">월</th><th>총매출</th><th>전월비</th><th>홀</th>`
         + `<th>배달</th><th>아워홈 발주액</th><th>식자재율</th>`
         + `<th>영업일수</th><th>일평균</th></tr></thead>`
         + `<tbody>${body}${foot}</tbody></table>`;
@@ -376,7 +394,83 @@ function drawStackedBars(svg, c, bars) {
     });
 }
 
-// ---- ⓔ 주간 13주 --------------------------------------------------------
+// ---- ⓔ 분기별 매출 (2026-08-21 담당자 지시) ------------------------------
+//
+// 이 매장의 전체 기간(api_monthly, 매장 필터)을 분기로 접습니다 — 새 SQL 없음.
+// 표기는 1분기~4분기(담당자 지시 — Q1 금지), 증감 색은 주간·월간과 같은
+// 시트 관례(diffCell). 매장이 바뀔 때만 다시 받습니다(캐시).
+
+let quarterCacheName = null;
+let quarterRows = null;
+
+async function renderQuarterly(storeName) {
+    const box = $("t-sd-quarter");
+    if (!storeName) { box.innerHTML = ""; return; }
+    if (quarterCacheName !== storeName) {
+        const range = S.filterRange || {};
+        if (!range.max) return;
+        $("sd-q-meta").textContent = "불러오는 중…";
+        const { data, error } = await db.rpc("api_monthly", {
+            p_ym_from: range.min, p_ym_to: range.max,
+            p_store: storeName, p_channel: null,
+        });
+        if (error) {
+            $("sd-q-meta").textContent = "";
+            box.innerHTML = '<p class="hint">불러오지 못했습니다: '
+                + escape(error.message) + "</p>";
+            return;
+        }
+        quarterCacheName = storeName;
+        quarterRows = data || [];
+    }
+
+    const sums = new Map();   // "2025|1" → { hall, delivery }
+    for (const r of quarterRows) {
+        const key = `${Math.floor(r.ym / 100)}|${Math.ceil((r.ym % 100) / 3)}`;
+        const slot = sums.get(key) || { hall: 0, delivery: 0 };
+        if (r.channel === "홀") slot.hall += Number(r.amount) || 0;
+        else slot.delivery += Number(r.amount) || 0;
+        sums.set(key, slot);
+    }
+    const list = [...sums.keys()]
+        .sort((a, b) => {
+            const [ya, qa] = a.split("|").map(Number);
+            const [yb, qb] = b.split("|").map(Number);
+            return ya - yb || qa - qb;
+        })
+        .map((k) => {
+            const [y, q] = k.split("|").map(Number);
+            const v = sums.get(k);
+            return { label: `${y}년 ${q}분기`, total: v.hall + v.delivery, ...v };
+        });
+    list.forEach((r, i) => {
+        const prev = i > 0 ? list[i - 1].total : 0;
+        r.qoq = i > 0 && prev > 0
+            ? Math.round((r.total - prev) / prev * 1000) / 10 : null;
+    });
+
+    $("sd-q-meta").textContent = list.length
+        ? `전체 기간 · ${list[0].label} ~ ${list[list.length - 1].label} (마지막 분기는 진행 중일 수 있음)`
+        : "";
+    const body = [...list].reverse().map((r) => `<tr>
+        <td class="tl">${escape(r.label)}</td>
+        <td>${escape(wonFull(r.hall))}</td>
+        <td>${escape(wonFull(r.delivery))}</td>
+        <td>${escape(wonFull(r.total))}</td>
+        <td>${diffCell(r.qoq)}</td>
+    </tr>`).join("");
+    box.innerHTML = list.length
+        ? `<table><thead><tr><th class="tl">분기</th><th>홀</th><th>배달</th>`
+          + `<th>합계</th><th>전분기비</th></tr></thead><tbody>${body}</tbody></table>`
+        : '<p class="hint">데이터가 없습니다.</p>';
+}
+
+// ---- ⓕ 주간 13주 --------------------------------------------------------
+
+// "n월 n주차" — 주 시작일(목요일)이 그 달에서 몇 번째 주인지(담당자 지시.
+// 주 기준은 설정된 시작 요일, 기본 목~수).
+const weekLabel = (iso) =>
+    `${Number(iso.slice(5, 7))}월 ${Math.ceil(Number(iso.slice(8, 10)) / 7)}주차`;
 
 function renderWeekly(d) {
     const weeks = Array.isArray(d.weekly) ? d.weekly : [];
@@ -386,13 +480,14 @@ function renderWeekly(d) {
         `주: ${dowStart}~${dowEnd} · 기준일부터 최근 ${weeks.length}주`;
 
     const body = weeks.map((w) => `<tr>
-        <td class="tl">${escape(w.week_start)} ~ ${escape(md(w.week_end))}</td>
+        <td class="tl">${escape(weekLabel(w.week_start))}
+            <span class="sd-range">(${escape(md(w.week_start))}~${escape(md(w.week_end))})</span></td>
         <td>${escape(wonFull(w.amount))}</td>
         <td>${diffCell(w.wow_pct)}</td>
         <td>${escape(int(w.orders))}</td>
     </tr>`).join("");
     $("t-sd-weekly").innerHTML = weeks.length
-        ? `<table><thead><tr><th class="tl">주 시작일</th><th>매출</th>`
+        ? `<table><thead><tr><th class="tl">주차</th><th>매출</th>`
           + `<th>전주비</th><th>주문수</th></tr></thead><tbody>${body}</tbody></table>`
         : '<p class="hint">아직 일 단위 집계가 없습니다.</p>';
 }
@@ -413,10 +508,19 @@ function renderDaily(d) {
         `<td class="${x.dow >= 6 ? "sd-weekend" : ""}">${DOW_KO[x.dow] || ""}</td>`).join("");
     const amounts = days.map((x) =>
         `<td>${x.amount == null ? "" : escape(int(x.amount))}</td>`).join("");
+    // 전일비 — 증감 색(시트 관례, 담당자 지시로 월간·주간·분기와 통일).
+    // 미영업일(빈칸)이 끼면 그 칸과 다음 칸은 비교하지 않습니다.
+    const diffs = days.map((x, i) => {
+        const prev = i > 0 ? days[i - 1].amount : null;
+        if (x.amount == null || prev == null || Number(prev) === 0) return "<td></td>";
+        const pct = Math.round((Number(x.amount) - Number(prev)) / Number(prev) * 1000) / 10;
+        return `<td>${diffCell(pct)}</td>`;
+    }).join("");
     $("t-sd-daily").innerHTML =
         `<table><thead><tr><th class="tl">날짜</th>${head}</tr></thead><tbody>`
         + `<tr><td class="tl">요일</td>${dows}</tr>`
         + `<tr><td class="tl">매출</td>${amounts}</tr>`
+        + `<tr><td class="tl">전일비</td>${diffs}</tr>`
         + `</tbody></table>`;
 }
 
@@ -474,5 +578,5 @@ export async function initStoreDash() {
         }
     });
 
-    $("sd-info").textContent = "매장을 고르면 그 매장의 KPI·추정 손익·추이가 나옵니다.";
+    refresh();   // 매장 미선택이면 '매장을 선택하세요' 안내가 자리를 잡습니다.
 }

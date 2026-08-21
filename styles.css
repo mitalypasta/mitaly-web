@@ -1979,6 +1979,30 @@ tr.alerts-chrow td:first-child { padding-left: 34px; }
 }
 #t-sd-daily td.sd-weekend { color: var(--critical); }
 
+/* 원 단위 전체 숫자(예: 34,229,100원)가 안 접히게 타일 최소 폭을 넓힙니다. */
+#sd-kpis { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+
+/* 매장 미선택 안내 — 빈칸 대신 다음 행동이 보이게(2026-08-21 담당자 지시). */
+.sd-empty {
+    grid-column: 1 / -1;
+    padding: 36px 20px;
+    text-align: center;
+    font-size: var(--fs-title);
+    font-weight: 600;
+    color: var(--text-muted);
+    background: var(--surface-2);
+    border-radius: var(--radius);
+}
+
+/* 주차 라벨 옆 실제 날짜 범위 — 목~수 경계 확인용 보조 표기. */
+.sd-range {
+    font-size: var(--fs-meta);
+    color: var(--text-muted);
+}
+
+/* 기준월 추정 손익은 9행 고정이라 스크롤 없이 전부 보입니다(담당자 지시). */
+#t-sd-pnl { max-height: none; }
+
 /* ---------------------------------------------------------------- 툴팁 */
 
 .tooltip {

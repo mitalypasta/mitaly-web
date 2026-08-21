@@ -19,7 +19,8 @@ import { ctLock } from "./contacts.js";
 const AREA_KEY = "mitaly.area";
 
 // 매출 안의 두 번째 단. 같은 방식으로 보이기만 바꿉니다.
-let salesSub = "요약";
+// 첫 화면은 매장 대시보드입니다(2026-08-21 담당자 지시 — 요약 서브탭 폐지).
+let salesSub = "매장 대시보드";
 
 export function showSalesSub(sub) {
     salesSub = sub;
@@ -30,6 +31,16 @@ export function showSalesSub(sub) {
         b.classList.toggle("is-on", b.dataset.subGo === sub);
         b.setAttribute("aria-current", b.dataset.subGo === sub ? "true" : "false");
     }
+    // 맨 위 필터 블록(기간·매장·채널·엑셀·기간 타일)은 매장 대시보드에서
+    // 숨깁니다(담당자 지시 — 대시보드가 자체 고르개를 가져 중복). 품목·
+    // 시간·요일·매장·보고서·수집은 이 필터로 기간을 정하므로 그대로 보입니다.
+    const wantFilters = sub !== "매장 대시보드";
+    const filters = document.querySelector(".filters");
+    const tiles = $("sales-kpis");
+    const exportField = $("sales-export-field");
+    if (filters) filters.hidden = !wantFilters;
+    if (tiles) tiles.hidden = !wantFilters;
+    if (exportField) exportField.hidden = !wantFilters;
     // 숨김 해제는 재렌더가 아니라서, 숨긴 채(clientWidth=0) fallback 폭으로
     // 그려진 SVG 차트가 그대로 굳습니다. 방금 보이게 된 것을 알리기만 하고,
     // 다시 그릴지는 데이터를 가진 쪽(app.js entry)이 판단합니다 — nav 는
@@ -57,10 +68,6 @@ export function showArea(area) {
         b.classList.toggle("is-on", b.dataset.go === area);
         b.setAttribute("aria-current", b.dataset.go === area ? "page" : "false");
     }
-    if (area === "sales") showSalesSub(salesSub);
-    else document.dispatchEvent(new CustomEvent("mitaly:area-shown",
-        { detail: { area } }));
-
     const salesOnly = area === "sales";
     // 필터 줄(기간·매장)은 매출·리뷰에서만 보입니다. 홈은 3라운드 피드백
     // 1번으로 필터와 무관해졌습니다(전체 기간·전 매장 고정 — app.js loadHome)
@@ -77,6 +84,13 @@ export function showArea(area) {
     // 같이 쓰므로 버튼 칸만 따로 숨깁니다.
     const exportField = $("sales-export-field");
     if (exportField) exportField.hidden = !salesOnly;
+
+    // 매출이면 서브탭 규칙이 위 필터 표시를 다시 다듬으므로(매장 대시보드는
+    // 숨김) 필터 처리 **뒤에** 부릅니다 — 앞에 부르면 여기서 도로 켜집니다.
+    if (area === "sales") showSalesSub(salesSub);
+    else document.dispatchEvent(new CustomEvent("mitaly:area-shown",
+        { detail: { area } }));
+
     try { localStorage.setItem(AREA_KEY, area); } catch (e) { /* 사생활 모드 */ }
     window.scrollTo({ top: 0, behavior: "instant" });
 }
@@ -164,9 +178,9 @@ export function initHomeTiles() {
                 $("iq-filter").dispatchEvent(new Event("change"));
             }
             if (tileId === "home-tile-diagnosis") {
-                // 진단 카드는 매출의 '요약' 서브탭에 있습니다 — 다른 서브탭을
-                // 보다 온 경우 스크롤 대상이 숨어 있으므로 서브탭부터 맞춥니다.
-                showSalesSub("요약");
+                // 진단 카드는 매출의 '매장' 서브탭에 있습니다(요약 폐지로
+                // 이동) — 스크롤 대상이 숨어 있지 않게 서브탭부터 맞춥니다.
+                showSalesSub("매장");
             }
             requestAnimationFrame(() => {
                 document.getElementById(cardId)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -191,6 +205,8 @@ export function initHomeTiles() {
                 $("rv-rating").value = "low";
             }
             if (row.dataset.kind === "alert") {
+                // 급증·급감 카드도 '매장' 서브탭으로 옮겨졌습니다(요약 폐지).
+                showSalesSub("매장");
                 $("alerts-only").checked = true;
                 $("alerts-only").dispatchEvent(new Event("change"));
             }

@@ -141,9 +141,12 @@
     <!-- 매출 안의 두 번째 단. 카드가 15개라 한 줄로 늘어놓으면 못 읽습니다.
          data-sub 이 같은 카드만 보입니다. 데이터는 이미 받아 둔 것을 쓰므로
          전환은 즉시입니다. -->
+    <!-- 요약 서브탭은 2026-08-21 담당자 지시로 없앴습니다 — 매장 대시보드가
+         매출 탭의 첫 화면입니다("매장 대시보드가 있으면 맨 위에 매장·기간을
+         고르는 이유가 없다"). 요약의 진단·급증급감·KPI 설정은 '매장' 으로
+         이동, 전사 요약류(추이·주차별·매장별 전수)는 담당자 확정으로 삭제. -->
     <nav class="subnav" data-area="sales" id="salesnav" aria-label="매출 보기">
-        <button class="subitem is-on" data-sub-go="요약" type="button">요약</button>
-        <button class="subitem" data-sub-go="매장 대시보드" type="button">매장 대시보드</button>
+        <button class="subitem is-on" data-sub-go="매장 대시보드" type="button">매장 대시보드</button>
         <button class="subitem" data-sub-go="품목" type="button">품목</button>
         <button class="subitem" data-sub-go="시간·요일" type="button">시간·요일</button>
         <button class="subitem" data-sub-go="매장" type="button">매장</button>
@@ -152,186 +155,6 @@
     </nav>
 
     <div class="grid">
-
-        <!-- 매출 요약 hero — 화면의 질문 "이번 달 괜찮나?" 의 답 (카드 #118,
-             docs/web-hierarchy.md). 홈 '최근 매출' 줄과 같은 기준(최근 완성월 ·
-             전 매장 · 위 필터와 무관)이고, 달성률은 89_store_targets 의
-             api_store_targets 를 그대로 씁니다(app.js initSalesHero — 새 SQL 없음).
-             아래 추이·주차별·급증급감 카드들이 이 답의 근거층입니다. -->
-        <section data-area="sales" data-sub="요약" class="card hero-card" id="sales-hero">
-            <header class="hero-head">
-                <div class="hero-q">이번 달 괜찮나?
-                    <span class="meta" id="sh-meta"></span></div>
-                <span class="hero-badge" id="sh-badge" hidden></span>
-            </header>
-            <div class="hero-stats">
-                <div class="hero-stat">
-                    <div class="hs-label">기준월 매출</div>
-                    <div class="hero-num" id="sh-amount">—</div>
-                    <div class="hs-sub" id="sh-amount-sub"></div>
-                </div>
-                <div class="hero-stat">
-                    <div class="hs-label">목표 달성률</div>
-                    <div class="hero-num" id="sh-achieve">—</div>
-                    <div class="hs-sub" id="sh-achieve-sub"></div>
-                </div>
-                <div class="hero-stat">
-                    <div class="hs-label">전월 대비</div>
-                    <div class="hero-num" id="sh-mom">—</div>
-                    <div class="hs-sub" id="sh-mom-sub"></div>
-                </div>
-            </div>
-        </section>
-
-        <!-- 매출 추이 — 단위를 골라 그 단위만 봅니다(검수 반영 2026-08-21,
-             담당자 지시). 월(기본)은 기존 '월별 매출 추이' 그대로이고 연도·
-             분기는 api_monthly 전체 기간을 접어서, 주간은 90 api_weekly_company,
-             일별은 95 api_daily_company, 시간대·요일은 이미 받아 둔 필터
-             데이터를 재사용합니다(app.js drawTrend). -->
-        <section data-area="sales" data-sub="요약" class="card full" id="trend-card">
-            <header>
-                <h2>매출 추이</h2>
-                <div class="unitbar" id="trend-units" role="group" aria-label="추이 단위">
-                    <button type="button" class="unitbtn" data-unit="연도">연도</button>
-                    <button type="button" class="unitbtn" data-unit="분기">분기</button>
-                    <button type="button" class="unitbtn is-on" data-unit="월">월별</button>
-                    <button type="button" class="unitbtn" data-unit="주">주간</button>
-                    <button type="button" class="unitbtn" data-unit="일">일별</button>
-                    <button type="button" class="unitbtn" data-unit="시간대">시간대</button>
-                    <button type="button" class="unitbtn" data-unit="요일">요일</button>
-                </div>
-                <button class="linkish" data-toggle="t-monthly">표로 보기</button>
-            </header>
-            <p class="hint" id="trend-note" hidden></p>
-            <div class="legend" id="legend-monthly"></div>
-            <svg class="plot" id="c-monthly" role="img" aria-label="매출 추이"></svg>
-            <div class="tableview" id="t-monthly" hidden></div>
-        </section>
-
-        <!-- 월별 홀/배달 막대 — 담당자 피드백 3-1. 위 선 그래프와 같은
-             api_monthly 결과를 달×채널 짝 막대로 다시 그립니다(추가 조회 없음).
-             표는 위 카드의 '표로 보기'(t-monthly)와 같아 여기엔 안 둡니다. -->
-        <section data-area="sales" data-sub="요약" class="card full">
-            <header>
-                <h2>월별 홀/배달 매출</h2>
-            </header>
-            <div class="legend" id="legend-monthly-ch"></div>
-            <svg class="plot" id="c-monthly-ch" role="img" aria-label="월별 홀/배달 매출 막대"></svg>
-        </section>
-
-        <!-- 주차별 전사 매출 (카드 #114 — KPI 엑셀 06 시트 상단 이식,
-             90_weekly_sales.sql). 주는 월~일이 아니라 설정된 시작 요일
-             (kpi_settings, 기본 목~수)이고, 위 필터와 무관하게 항상
-             전 매장·최근 13주입니다. 증감 색은 KPI 시트 관례(상승 빨강·
-             하락 파랑)라 기존 pct-up/down 을 안 씁니다 — wk-up/wk-down. -->
-        <section data-area="sales" data-sub="요약" class="card full" id="weekly-card">
-            <header>
-                <h2>주차별 전사 매출</h2>
-                <span class="meta" id="wk-meta"></span>
-            </header>
-            <p class="wk-latest" id="wk-latest"></p>
-            <div class="tableview" id="t-weekly"></div>
-            <p class="hint" id="wk-note"></p>
-        </section>
-
-        <section data-area="sales" data-sub="요약" class="card full" id="alerts-card">
-            <header>
-                <h2>급증·급감 매장 · 기간 대비</h2>
-                <span class="meta" id="alerts-summary"></span>
-            </header>
-
-            <div class="kpis" id="compare-kpis"></div>
-
-            <div class="cardsearch">
-                <!-- 기본 ON: 해제하면 전 매장(정상 포함) 표가 되는데,
-                     prod 규모(94매장)면 요약 화면이 통째로 밀립니다
-                     (SALES-DIAGNOSIS M4). 판정만 먼저 보여줍니다. -->
-                <label class="recheck">
-                    <input type="checkbox" id="alerts-only" checked>
-                    <span>급증·급감 매장만</span>
-                </label>
-                <!-- 매장 검색(담당자 피드백 3-2) — 표를 그 매장으로 좁힙니다.
-                     datalist 로 매장명이 자동완성됩니다(공통 콤보와 같은 방식). -->
-                <input type="search" id="alerts-q" list="alerts-store-list"
-                       placeholder="매장 검색">
-                <datalist id="alerts-store-list"></datalist>
-                <span class="meta" id="alerts-shown"></span>
-            </div>
-            <!-- 매장 단위로 묶은 표(담당자 피드백 3-2) — 매장 행의 ▸ 를 누르면
-                 홀/배달 채널 행이 펼쳐집니다. 홀 = 이지포스·아임유,
-                 배달 = 배민·쿠팡이츠·요기요·땡겨요·먹깨비. 팩트가 홀/배달
-                 채널 단위라(18_alerts.sql) 펼침도 그 단위입니다. -->
-            <p class="hint">홀 = 이지포스·아임유 매출 · 배달 = 배민·쿠팡이츠·요기요 등 배달앱 매출</p>
-            <div class="tableview tall" id="t-alerts"></div>
-        </section>
-
-        <!-- 매장 진단 (카드 #115 — KPI 엑셀 05_안내 진단 표 이식,
-             92_kpi_diagnosis.sql). 기준월 하나를 전 매장으로 진단해 증상 있는
-             매장을 심각순(연속하락 > 달성률 미달 > 기준선 위반)으로 올립니다.
-             증상·원인·조치 문구는 서버 규칙 표(kpi_diagnosis_rules)가 원본
-             (web/diagnosis.js). 위 필터(기간·매장)와 무관합니다. -->
-        <section data-area="sales" data-sub="요약" class="card full" id="diagnosis-card">
-            <header>
-                <h2>매장 진단</h2>
-                <span class="meta" id="diag-meta"></span>
-            </header>
-            <div class="cardsearch">
-                <select id="diag-ym" aria-label="기준월"></select>
-                <label class="recheck">
-                    <input type="checkbox" id="diag-only" checked>
-                    <span>증상 있는 매장만</span>
-                </label>
-            </div>
-            <div class="tableview tall" id="t-diag"></div>
-            <p class="hint">이익률은 가정값(KPI 기준 설정) 기반 추정 ·
-                원가율 = 아워홈 발주액(VAT 포함) ÷ 매출 ·
-                일평균은 일 단위 집계 기준(없는 매장은 월 증감률 대용)</p>
-        </section>
-
-        <!-- 매장별 매출 (전체) — 원장 계급(카드 #118, docs/web-hierarchy.md).
-             전 매장 전수라 기본 접힘이고, 펼치면 표가 먼저입니다(원장 = 전수 표).
-             차트는 '차트로 보기' 로 그대로 꺼낼 수 있습니다 — 내용 삭제 0.
-             (full 승격·전 매장 스크롤 이력은 SALES-DIAGNOSIS M5 · 담당자 피드백 3-3) -->
-        <details data-area="sales" data-sub="요약" class="card ledger" id="store-ledger">
-            <summary>
-                <h2>매장별 매출 (전체)</h2>
-                <span class="meta">전 매장 전수 — 펼쳐서 보기</span>
-            </summary>
-            <div class="ledger-body">
-                <div class="tableview" id="t-store"></div>
-                <button class="linkish" data-toggle="c-store-wrap"
-                        data-label-shown="차트 접기" data-label-hidden="차트로 보기">차트로 보기</button>
-                <div class="plotscroll" id="c-store-wrap" hidden>
-                    <svg class="plot" id="c-store" role="img" aria-label="매장별 매출"></svg>
-                </div>
-            </div>
-        </details>
-
-        <!-- KPI 기준 설정 (88_kpi_settings.sql, 큐 #110) — 가맹점 KPI관리 엑셀
-             05_안내의 가정값·목표·기준선. DB(kpi_settings)가 원본이고 여기서
-             바꿉니다(D38) — 대시보드(#112)·목표 산정(#111)·주차 집계(#114)·
-             진단(#115)이 이 값을 읽습니다. 항목 표기는 kpi-sheet-adoption.md
-             4절 그대로(web/kpi.js). -->
-        <!-- 원장 계급(카드 #118) — 매일 보는 값이 아니라 기준표라 기본 접힘.
-             내용·기능은 그대로입니다(내용 삭제 0). -->
-        <details data-area="sales" data-sub="요약" class="card ledger" id="kpi-settings-card">
-            <summary>
-                <h2>KPI 기준 설정</h2>
-                <span class="meta" id="kpi-set-meta"></span>
-            </summary>
-            <div class="ledger-body">
-                <p class="hint">비율은 0~1로 넣습니다 — 예: 식자재 원가율 36% → 0.36.
-                    로열티·광고분담률은 매장별 실요율이 있으면 그 값이 우선이고,
-                    여기 값은 실요율이 없을 때 쓰입니다.</p>
-                <div class="tableview" id="t-kpi-settings"></div>
-                <div class="reqform">
-                    <div class="field">
-                        <button type="button" id="kpi-set-save">바뀐 값 저장</button>
-                    </div>
-                </div>
-                <p class="notice" id="kpi-set-notice"></p>
-            </div>
-        </details>
 
         <!-- ============================================================
              매장 대시보드 (카드 #112 — KPI 엑셀 01_대시보드 이식,
@@ -389,6 +212,17 @@
             <div class="legend" id="legend-sd-year-ch"></div>
             <svg class="plot" id="c-sd-year-ch" role="img" aria-label="월간 홀/배달 스택 막대"></svg>
             <p class="hint" id="sd-year-note"></p>
+        </section>
+
+        <!-- 분기별 매출 (2026-08-21 담당자 지시) — 이 매장의 전체 기간을
+             분기로 접습니다. 원천은 api_monthly(매장 필터)라 새 SQL 없음
+             (store_dash.js renderQuarterly). 표기는 1분기~4분기(담당자 지시). -->
+        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-quarter-card">
+            <header>
+                <h2>분기별 매출</h2>
+                <span class="meta" id="sd-q-meta"></span>
+            </header>
+            <div class="tableview" id="t-sd-quarter"></div>
         </section>
 
         <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-weekly-card">
@@ -505,6 +339,86 @@
             </header>
             <div class="tableview tall" id="t-stores"></div>
         </section>
+
+        <section data-area="sales" data-sub="매장" class="card full" id="alerts-card">
+            <header>
+                <h2>급증·급감 매장 · 기간 대비</h2>
+                <span class="meta" id="alerts-summary"></span>
+            </header>
+
+            <div class="kpis" id="compare-kpis"></div>
+
+            <div class="cardsearch">
+                <!-- 기본 ON: 해제하면 전 매장(정상 포함) 표가 되는데,
+                     prod 규모(94매장)면 요약 화면이 통째로 밀립니다
+                     (SALES-DIAGNOSIS M4). 판정만 먼저 보여줍니다. -->
+                <label class="recheck">
+                    <input type="checkbox" id="alerts-only" checked>
+                    <span>급증·급감 매장만</span>
+                </label>
+                <!-- 매장 검색(담당자 피드백 3-2) — 표를 그 매장으로 좁힙니다.
+                     datalist 로 매장명이 자동완성됩니다(공통 콤보와 같은 방식). -->
+                <input type="search" id="alerts-q" list="alerts-store-list"
+                       placeholder="매장 검색">
+                <datalist id="alerts-store-list"></datalist>
+                <span class="meta" id="alerts-shown"></span>
+            </div>
+            <!-- 매장 단위로 묶은 표(담당자 피드백 3-2) — 매장 행의 ▸ 를 누르면
+                 홀/배달 채널 행이 펼쳐집니다. 홀 = 이지포스·아임유,
+                 배달 = 배민·쿠팡이츠·요기요·땡겨요·먹깨비. 팩트가 홀/배달
+                 채널 단위라(18_alerts.sql) 펼침도 그 단위입니다. -->
+            <p class="hint">홀 = 이지포스·아임유 매출 · 배달 = 배민·쿠팡이츠·요기요 등 배달앱 매출</p>
+            <div class="tableview tall" id="t-alerts"></div>
+        </section>
+
+        <!-- 매장 진단 (카드 #115 — KPI 엑셀 05_안내 진단 표 이식,
+             92_kpi_diagnosis.sql). 기준월 하나를 전 매장으로 진단해 증상 있는
+             매장을 심각순(연속하락 > 달성률 미달 > 기준선 위반)으로 올립니다.
+             증상·원인·조치 문구는 서버 규칙 표(kpi_diagnosis_rules)가 원본
+             (web/diagnosis.js). 위 필터(기간·매장)와 무관합니다. -->
+        <section data-area="sales" data-sub="매장" class="card full" id="diagnosis-card">
+            <header>
+                <h2>매장 진단</h2>
+                <span class="meta" id="diag-meta"></span>
+            </header>
+            <div class="cardsearch">
+                <select id="diag-ym" aria-label="기준월"></select>
+                <label class="recheck">
+                    <input type="checkbox" id="diag-only" checked>
+                    <span>증상 있는 매장만</span>
+                </label>
+            </div>
+            <div class="tableview tall" id="t-diag"></div>
+            <p class="hint">이익률은 가정값(KPI 기준 설정) 기반 추정 ·
+                원가율 = 아워홈 발주액(VAT 포함) ÷ 매출 ·
+                일평균은 일 단위 집계 기준(없는 매장은 월 증감률 대용)</p>
+        </section>
+
+        <!-- KPI 기준 설정 (88_kpi_settings.sql, 큐 #110) — 가맹점 KPI관리 엑셀
+             05_안내의 가정값·목표·기준선. DB(kpi_settings)가 원본이고 여기서
+             바꿉니다(D38) — 대시보드(#112)·목표 산정(#111)·주차 집계(#114)·
+             진단(#115)이 이 값을 읽습니다. 항목 표기는 kpi-sheet-adoption.md
+             4절 그대로(web/kpi.js). -->
+        <!-- 원장 계급(카드 #118) — 매일 보는 값이 아니라 기준표라 기본 접힘.
+             내용·기능은 그대로입니다(내용 삭제 0). -->
+        <details data-area="sales" data-sub="매장" class="card ledger" id="kpi-settings-card">
+            <summary>
+                <h2>KPI 기준 설정</h2>
+                <span class="meta" id="kpi-set-meta"></span>
+            </summary>
+            <div class="ledger-body">
+                <p class="hint">비율은 0~1로 넣습니다 — 예: 식자재 원가율 36% → 0.36.
+                    로열티·광고분담률은 매장별 실요율이 있으면 그 값이 우선이고,
+                    여기 값은 실요율이 없을 때 쓰입니다.</p>
+                <div class="tableview" id="t-kpi-settings"></div>
+                <div class="reqform">
+                    <div class="field">
+                        <button type="button" id="kpi-set-save">바뀐 값 저장</button>
+                    </div>
+                </div>
+                <p class="notice" id="kpi-set-notice"></p>
+            </div>
+        </details>
 
         <section data-area="sales" data-sub="매장" class="card full">
             <header>

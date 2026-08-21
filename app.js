@@ -40,7 +40,6 @@ import { initRecipients } from "./recipients.js";
 import { initConsents } from "./consents.js";
 import { initReport, drawReport } from "./report.js";
 import { initKpiSettings } from "./kpi.js";
-import { initWeekly } from "./weekly.js";
 import { initStoreDash } from "./store_dash.js";
 import { initDiagnosis } from "./diagnosis.js";
 import { initAllStores } from "./allstores.js";
@@ -340,7 +339,6 @@ async function initDashboard() {
     initHomeTiles();
     initHome();
     initHomeHero();
-    initTrend();
     initBigtable();
     initDeliveryMap();
 
@@ -355,13 +353,10 @@ async function initDashboard() {
     // 원래 순서를 지킵니다. (수집 요청·계정 상태·내보내기 화면의 init 3개는
     // 3라운드 2차에서 화면과 함께 빠졌습니다 — 엑셀은 위 필터 줄 버튼이 대신.)
     await load(() => runAfterPaint([
-        // 매출 요약 hero(#118)가 이 묶음의 맨 앞입니다 — 화면의 답이라 보이는
-        // 4칸 직후 가장 먼저 채웁니다(필터와 무관한 단발 조회).
-        initSalesHero,
         // 주차별 전사 카드(#114)는 매출 영역이지만 필터와 무관한 단발 조회라
         // load() 묶음이 아니라 여기서 한 번만 붑니다(필터 변경에 재조회 없음).
         // 매장 진단(#115)도 같은 이유 — 기준월 고르개는 카드가 직접 갖습니다.
-        initWeekly, initDiagnosis,
+        initDiagnosis,
         // 매장 대시보드(#112)·전매장 현황(#113)도 자체 고르개를 갖는 단발
         // 조회라 load() 묶음 밖입니다 — 필터 변경에 재조회하지 않습니다.
         initStoreDash, initAllStores,
@@ -597,19 +592,8 @@ function draw(d) {
     $("kpi-stores").textContent = int(d.summary.store_count);
     $("kpi-menus").textContent = int(d.summary.menu_count);
 
-    drawTrend(d, c);
-    drawMonthlyChannels(d.monthly, c);
     drawAlerts(d);
     drawReport(d);
-
-    // 상위 15 제한 없이 전 매장(3라운드 2차, 담당자 피드백 3-3) —
-    // 카드가 끝없이 길어지지 않게 .plotscroll 이 카드 안에서 스크롤합니다.
-    drawBars($("c-store"), {
-        rows: d.stores.map((r) => ({ label: r.store, value: Number(r.amount) })),
-        color: c.s1, horizontal: true, colors: c,
-    });
-    table($("t-store"), ["매장", "상권", "매출", "수량"],
-        d.stores.map((r) => [r.store, r.trade_area || "—", wonFull(r.amount), int(r.qty)]));
 
     drawBars($("c-menu"), {
         rows: d.menus.slice(0, 15).map((r) => ({ label: r.menu, value: Number(r.amount) })),
@@ -722,64 +706,6 @@ function initHomeHero() {
         childList: true, characterData: true, subtree: true,
     });
     updateHomeHero();
-}
-
-// ---- 매출 요약 hero — "이번 달 괜찮나?" (카드 #118) ----------------------
-//
-// 기준은 홈 '최근 매출' 줄과 같습니다: 최근 완성월(H3) · 전 매장 · 아래
-// 필터와 무관. 달성률은 89_store_targets 의 api_store_targets(전 매장
-// 목표+실적)를 전사로 합쳐 만듭니다 — 새 SQL 없음(#118). 전월비는 급증·급감
-// 카드와 같은 원천(api_sales_compare)입니다.
-
-async function initSalesHero() {
-    const range = S.filterRange || {};
-    if (!range.max) return;
-    const t = new Date();
-    const nowYm = t.getFullYear() * 100 + (t.getMonth() + 1);
-    const baseYm = (range.max >= nowYm && range.max > range.min)
-        ? shiftYm(range.max, -1) : range.max;
-    $("sh-meta").textContent =
-        `${ymLabel(baseYm)} 마감분 · 전 매장 — 아래 필터와 무관`;
-
-    const [tgtRes, cmpRes] = await Promise.all([
-        db.rpc("api_store_targets", { p_ym: baseYm }),
-        db.rpc("api_sales_compare", { p_ym: baseYm, p_store: null }),
-    ]);
-
-    if (!cmpRes.error) {
-        const cd = cmpRes.data;
-        const cmp = ((Array.isArray(cd) ? cd[0] : cd) || {}).compare || {};
-        const co = cmp.company || {};
-        $("sh-amount").textContent = won(co.amount);
-        $("sh-amount-sub").textContent =
-            co.prev_mom_amount != null ? `전월 ${won(co.prev_mom_amount)}` : "";
-        $("sh-mom").innerHTML =
-            `<span class="${pctClass(co.mom_pct_change)}">${pctText(co.mom_pct_change)}</span>`;
-        $("sh-mom-sub").textContent =
-            co.yoy_pct_change != null ? `전년동월 ${pctText(co.yoy_pct_change)}` : "";
-    }
-
-    // 전사 달성률 = Σ실적 ÷ Σ목표 (목표 있는 매장만 — 89 설계 그대로).
-    const td = tgtRes.error ? null : tgtRes.data;
-    const tObj = (Array.isArray(td) ? td[0] : td) || {};
-    const rows = (tObj.rows || []).filter((r) => Number(r.target) > 0);
-    const sumTarget = rows.reduce((a, r) => a + Number(r.target), 0);
-    const sumActual = rows.reduce((a, r) => a + (Number(r.actual) || 0), 0);
-    const badge = $("sh-badge");
-    if (sumTarget > 0) {
-        const ach = sumActual / sumTarget;
-        $("sh-achieve").textContent = `${(ach * 100).toFixed(1)}%`;
-        $("sh-achieve-sub").textContent =
-            `목표 ${won(sumTarget)} · 실적 ${won(sumActual)} · ${int(rows.length)}곳`;
-        badge.hidden = false;
-        badge.className = "hero-badge " + (ach >= 1 ? "hb-good" : "hb-attn");
-        badge.textContent = ach >= 1 ? "목표 달성" : "목표 미달";
-    } else {
-        $("sh-achieve").textContent = "—";
-        $("sh-achieve-sub").textContent = tgtRes.error
-            ? `불러오지 못했습니다: ${tgtRes.error.message || tgtRes.error}`
-            : "목표가 아직 없습니다";
-    }
 }
 
 function initHome() {
@@ -1775,256 +1701,6 @@ function drawUnmapped(d) {
         d.unmapped.map((r) => [r.name, r.source, int(r.count)]));
 }
 
-// ---- 월별 추이 (선 그래프) --------------------------------------------
-
-function drawMonthly(rows, c) {
-    const months = [...new Set(rows.map((r) => r.ym))].sort((a, b) => a - b);
-    const channels = [...new Set(rows.map((r) => r.channel))]
-        .sort((a, b) => (a === "홀" ? -1 : b === "홀" ? 1 : 0));
-
-    const series = channels.map((name) => ({
-        name,
-        color: c[CHANNEL_COLORS[name] || "s1"],
-        values: months.map((ym) => {
-            const found = rows.find((r) => r.ym === ym && r.channel === name);
-            return found ? Number(found.amount) : 0;
-        }),
-    }));
-
-    // 범례는 시리즈가 2개 이상일 때만. 1개면 제목이 이미 설명합니다.
-    const legend = $("legend-monthly");
-    legend.innerHTML = "";
-    if (series.length >= 2) {
-        for (const s of series) {
-            const span = document.createElement("span");
-            span.innerHTML = `<i style="background:${s.color}"></i>${s.name}`;
-            legend.append(span);
-        }
-    }
-
-    table($("t-monthly"), ["연월", ...channels, "합계"],
-        months.map((ym) => {
-            const cells = channels.map((ch) => {
-                const found = rows.find((r) => r.ym === ym && r.channel === ch);
-                return found ? Number(found.amount) : 0;
-            });
-            return [ymLabel(ym), ...cells.map(wonFull),
-                wonFull(cells.reduce((a, b) => a + b, 0))];
-        }));
-
-    drawLine($("c-monthly"), { xLabels: months.map(ymLabel), series, colors: c });
-}
-
-// ---- 매출 추이 단위 선택 (검수 반영 2026-08-21, 담당자 지시) -------------
-//
-// "연도면 연도만, 월별이면 월별만" — 추이 카드가 단위 하나를 골라 그 단위만
-// 그립니다. 월(기본)은 기존 월별 추이 그대로(필터 기간), 연도·분기는
-// api_monthly 를 전체 기간으로 받아 접고(매장·채널 필터는 적용), 주간은
-// 90 api_weekly_company(전 매장 고정), 시간대·요일은 load() 가 이미 받아 둔
-// 필터 데이터를 재사용합니다. 새 SQL 없음 — 일별만 전사 일별 rpc 가 없어
-// 빠져 있습니다(rpc 가 생기면 버튼을 더합니다).
-
-let trendUnit = "월";
-// 연도·분기용 전체 기간 월 데이터와 주간·일별 응답 캐시 — 단위를 오갈
-// 때마다 다시 받지 않기 위해서입니다. 매장·채널 필터가 바뀌면 전체 기간
-// 캐시를 버립니다(key). 주간·일별은 필터와 무관해 한 번이면 됩니다.
-const trendCache = { key: null, monthlyAll: null, weekly: null, daily: null };
-
-const TREND_DOW = { 1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토", 7: "일" };
-
-function initTrend() {
-    for (const b of document.querySelectorAll("#trend-units .unitbtn")) {
-        b.addEventListener("click", () => {
-            trendUnit = b.dataset.unit;
-            for (const x of document.querySelectorAll("#trend-units .unitbtn")) {
-                x.classList.toggle("is-on", x === b);
-            }
-            if (S.lastData) drawTrend(S.lastData, palette());
-        });
-    }
-}
-
-function trendNote(text) {
-    const note = $("trend-note");
-    note.hidden = !text;
-    note.textContent = text || "";
-}
-
-function drawTrend(d, c) {
-    if (trendUnit === "월") {
-        trendNote("");
-        drawMonthly(d.monthly, c);
-        return;
-    }
-    if (trendUnit === "시간대") {
-        trendNote("");
-        $("legend-monthly").innerHTML = "";
-        const hours = Array.from({ length: 24 }, (_, h) => {
-            const found = d.hours.find((r) => Number(r.hour) === h);
-            return { label: `${h}`, value: found ? Number(found.amount) : 0 };
-        });
-        drawBars($("c-monthly"), { rows: hours, color: c.s1, horizontal: false, colors: c, unit: "시" });
-        table($("t-monthly"), ["시간대", "매출", "수량"],
-            d.hours.map((r) => [`${r.hour}시`, wonFull(r.amount), int(r.qty)]));
-        return;
-    }
-    if (trendUnit === "요일") {
-        trendNote("");
-        $("legend-monthly").innerHTML = "";
-        const weekdays = WEEKDAY_ORDER.map((w) => {
-            const found = d.weekdays.find((r) => r.weekday === w);
-            return { label: w, value: found ? Number(found.amount) : 0 };
-        });
-        drawBars($("c-monthly"), { rows: weekdays, color: c.s1, horizontal: false, colors: c });
-        table($("t-monthly"), ["요일", "매출", "수량"],
-            WEEKDAY_ORDER.map((w) => {
-                const found = d.weekdays.find((r) => r.weekday === w) || {};
-                return [w, wonFull(found.amount || 0), int(found.qty || 0)];
-            }));
-        return;
-    }
-    if (trendUnit === "주") { drawTrendWeekly(c); return; }
-    if (trendUnit === "일") { drawTrendDaily(c); return; }
-    drawTrendRollup(trendUnit, d, c);   // 연도 · 분기
-}
-
-// 연도·분기 — 전체 기간 api_monthly 를 단위로 접습니다. 채널 갈래(홀 먼저)와
-// 범례·표 문법은 월별 카드와 같습니다.
-async function drawTrendRollup(unit, d, c) {
-    const range = S.filterRange || {};
-    if (!range.max) return;
-    const key = `${d.args.p_store || ""}|${d.args.p_channel || ""}`;
-    if (trendCache.key !== key || !trendCache.monthlyAll) {
-        trendNote("전체 기간을 불러오는 중…");
-        const { data, error } = await db.rpc("api_monthly", {
-            p_ym_from: range.min, p_ym_to: range.max,
-            p_store: d.args.p_store, p_channel: d.args.p_channel,
-        });
-        if (error) {
-            trendNote("불러오지 못했습니다: " + (error.message || error));
-            return;
-        }
-        trendCache.key = key;
-        trendCache.monthlyAll = data || [];
-    }
-    if (trendUnit !== unit) return;   // 받는 사이 단위가 바뀌면 그쪽이 그립니다
-
-    const rows = trendCache.monthlyAll;
-    const keyOf = unit === "연도"
-        ? (ym) => `${Math.floor(ym / 100)}년`
-        : (ym) => `${Math.floor(ym / 100)} ${Math.ceil((ym % 100) / 3)}분기`;
-    const periods = [...new Set(rows.map((r) => keyOf(r.ym)))].sort();
-    const channels = [...new Set(rows.map((r) => r.channel))]
-        .sort((a, b) => (a === "홀" ? -1 : b === "홀" ? 1 : 0));
-    const sums = new Map();
-    for (const r of rows) {
-        const k = `${keyOf(r.ym)}|${r.channel}`;
-        sums.set(k, (sums.get(k) || 0) + Number(r.amount));
-    }
-    const series = channels.map((name) => ({
-        name,
-        color: c[CHANNEL_COLORS[name] || "s1"],
-        values: periods.map((p) => sums.get(`${p}|${name}`) || 0),
-    }));
-
-    const legend = $("legend-monthly");
-    legend.innerHTML = "";
-    if (series.length >= 2) {
-        for (const s of series) {
-            const span = document.createElement("span");
-            span.innerHTML = `<i style="background:${s.color}"></i>${s.name}`;
-            legend.append(span);
-        }
-    }
-    table($("t-monthly"), [unit, ...channels, "합계"],
-        periods.map((p) => {
-            const cells = channels.map((ch) => sums.get(`${p}|${ch}`) || 0);
-            return [p, ...cells.map(wonFull),
-                wonFull(cells.reduce((a, b) => a + b, 0))];
-        }));
-    drawLine($("c-monthly"), { xLabels: periods, series, colors: c });
-    trendNote(`전체 기간(${ymLabel(range.min)}~${ymLabel(range.max)}) 기준 — `
-        + "위 기간 필터와 무관 · 매장·채널 필터는 적용");
-}
-
-// 주간 — 90 api_weekly_company. 일 단위 집계(fact_daily) 원천이라 전 매장
-// 고정이고 위 필터와 무관합니다(주차별 카드와 같은 기준 · 여기는 26주).
-async function drawTrendWeekly(c) {
-    if (!trendCache.weekly) {
-        trendNote("주간 집계를 불러오는 중…");
-        const { data, error } = await db.rpc("api_weekly_company", { p_weeks: 26 });
-        if (error) {
-            trendNote("불러오지 못했습니다: " + (error.message || error));
-            return;
-        }
-        trendCache.weekly = data || {};
-    }
-    if (trendUnit !== "주") return;
-
-    const w = trendCache.weekly;
-    const weeks = [...(w.weeks || [])].reverse();   // 과거 → 최신
-    if (!weeks.length) { trendNote("아직 일 단위 집계가 없습니다."); return; }
-
-    $("legend-monthly").innerHTML = "";
-    drawLine($("c-monthly"), {
-        xLabels: weeks.map((r) => r.week_start.slice(5)),
-        series: [{ name: "전사", color: c.s1, values: weeks.map((r) => Number(r.amount)) }],
-        colors: c,
-    });
-    table($("t-monthly"), ["주 시작일", "매출", "주문수", "운영 매장수"],
-        [...weeks].reverse().map((r) => [r.week_start, wonFull(r.amount),
-            int(r.orders), int(r.store_count)]));
-    const d0 = TREND_DOW[w.week_start_dow] || "?";
-    const d1 = TREND_DOW[(((w.week_start_dow || 4) + 5) % 7) + 1] || "?";
-    trendNote(`전 매장 · 최근 ${int(weeks.length)}주 · 주: ${d0}~${d1}(설정값) — 위 필터와 무관`);
-}
-
-// 일별 — 95 api_daily_company. 일 단위 집계(fact_daily) 원천이라 전 매장
-// 고정이고 위 필터와 무관합니다. 홀/배달 갈래는 서버(91 소스 기준)가 내려주는
-// 것을 그대로 그립니다 — 채널별 매출 기준(배달 할인 전·홀 할인 후)도 그대로.
-async function drawTrendDaily(c) {
-    if (!trendCache.daily) {
-        trendNote("일별 집계를 불러오는 중…");
-        const { data, error } = await db.rpc("api_daily_company", { p_days: 60 });
-        if (error) {
-            trendNote("불러오지 못했습니다: " + (error.message || error));
-            return;
-        }
-        trendCache.daily = data || {};
-    }
-    if (trendUnit !== "일") return;
-
-    const rows = trendCache.daily.rows || [];
-    if (!rows.length) { trendNote("아직 일 단위 집계가 없습니다."); return; }
-
-    const channels = [
-        { name: "홀", color: c.s1, key: "hall_amount" },
-        { name: "배달", color: c.s2, key: "delivery_amount" },
-    ];
-    const legend = $("legend-monthly");
-    legend.innerHTML = "";
-    for (const s of channels) {
-        const span = document.createElement("span");
-        span.innerHTML = `<i style="background:${s.color}"></i>${s.name}`;
-        legend.append(span);
-    }
-    drawLine($("c-monthly"), {
-        xLabels: rows.map((r) => r.day.slice(5)),
-        series: channels.map((s) => ({
-            name: s.name, color: s.color,
-            values: rows.map((r) => Number(r[s.key]) || 0),
-        })),
-        colors: c,
-    });
-    table($("t-monthly"),
-        ["일자", "요일", "홀", "배달", "합계", "주문수", "운영 매장수"],
-        [...rows].reverse().map((r) => [r.day, TREND_DOW[r.dow] || "—",
-            wonFull(r.hall_amount), wonFull(r.delivery_amount), wonFull(r.amount),
-            int(r.orders), int(r.store_count)]));
-    trendNote(`일 단위 집계 기준 · 전 매장 · 최근 ${int(rows.length)}일`
-        + `(마지막 ${trendCache.daily.last_day || "—"}) — 위 필터와 무관`);
-}
-
 // ---- 표 전면 보기 (검수 반영 2026-08-21, 담당자 지시) --------------------
 //
 // "표가 될 수 있는 것 하나당 큰 화면" — 매출 탭의 표 있는 카드마다 '크게
@@ -2084,111 +1760,6 @@ function initBigtable() {
         if (e.key === "Escape" && !$("bigtable").hidden) closeBigtable();
     });
 }
-
-// ---- 월별 홀/배달 막대 (3라운드 2차, 담당자 피드백 3-1) -----------------
-//
-// 위 선 그래프와 같은 api_monthly 결과를 달마다 홀·배달 짝 막대로 그립니다.
-// charts.js 의 drawBars 는 단일 시리즈 전용이라, 같은 시각 문법(니스 눈금·
-// 시리즈 색·툴팁)을 재사용해 두 시리즈 짝 막대만 여기서 조립합니다 —
-// 색·눈금·툴팁은 charts.js/dom.js 공통 것(palette·niceTicks·showTip)입니다.
-function drawMonthlyChannels(rows, c) {
-    const svg = $("c-monthly-ch");
-    if (!svg) return;
-
-    const months = [...new Set(rows.map((r) => r.ym))].sort((a, b) => a - b);
-    const channels = [...new Set(rows.map((r) => r.channel))]
-        .sort((a, b) => (a === "홀" ? -1 : b === "홀" ? 1 : 0));
-    const series = channels.map((name) => ({
-        name,
-        color: c[CHANNEL_COLORS[name] || "s1"],
-        values: months.map((ym) => {
-            const found = rows.find((r) => r.ym === ym && r.channel === name);
-            return found ? Number(found.amount) : 0;
-        }),
-    }));
-
-    // 범례 — 선 그래프 카드와 같은 규칙(시리즈 2개 이상일 때만).
-    const legend = $("legend-monthly-ch");
-    legend.innerHTML = "";
-    if (series.length >= 2) {
-        for (const s of series) {
-            const span = document.createElement("span");
-            span.innerHTML = `<i style="background:${s.color}"></i>${s.name}`;
-            legend.append(span);
-        }
-    }
-
-    const width = svg.clientWidth || 720;
-    const height = 260;
-    const pad = { top: 18, right: 8, bottom: 28, left: 56 };
-    const plotW = Math.max(10, width - pad.left - pad.right);
-    const plotH = height - pad.top - pad.bottom;
-
-    const max = Math.max(1, ...series.flatMap((s) => s.values));
-    const ticks = niceTicks(max, 4);
-    const top = ticks[ticks.length - 1];
-    const y = (v) => pad.top + plotH - (plotH * v) / top;
-
-    const slot = plotW / Math.max(1, months.length);       // 달 하나의 자리
-    const gap = 2;                                          // 짝 막대 사이
-    const barW = Math.min(20, Math.max(3,
-        (slot - 8 - gap * (series.length - 1)) / Math.max(1, series.length)));
-
-    const parts = [];
-    for (const t of ticks) {
-        parts.push(
-            `<line x1="${pad.left}" y1="${y(t)}" x2="${pad.left + plotW}" y2="${y(t)}"` +
-            ` stroke="${c.grid}" stroke-width="1"/>`,
-            `<text x="${pad.left - 8}" y="${y(t) + 4}" text-anchor="end" font-size="11"` +
-            ` fill="${c.muted}" style="font-variant-numeric:tabular-nums">${won(t)}</text>`
-        );
-    }
-
-    const labels = months.map(ymLabel);
-    const labelStep = Math.ceil(months.length / Math.max(2, Math.floor(plotW / 64)));
-    months.forEach((_, i) => {
-        const cx = pad.left + slot * i + slot / 2;
-        const groupW = barW * series.length + gap * (series.length - 1);
-        series.forEach((s, k) => {
-            const v = s.values[i];
-            const h = Math.max(2, plotH * (v / top));
-            const x = cx - groupW / 2 + k * (barW + gap);
-            // 막대 위쪽만 살짝 둥글게(차트 공통 문법) — 경로 대신 rx 로 충분합니다.
-            parts.push(
-                `<rect x="${x}" y="${y(v)}" width="${barW}" height="${h}" rx="3"` +
-                ` fill="${s.color}" data-tip="${escape(labels[i])} ${escape(s.name)}|${v}"/>`
-            );
-        });
-        if (i % labelStep === 0 || i === months.length - 1) {
-            parts.push(
-                `<text x="${cx}" y="${height - 8}" text-anchor="middle" font-size="11"` +
-                ` fill="${c.muted}">${escape(labels[i])}</text>`
-            );
-        }
-    });
-
-    parts.push(
-        `<line x1="${pad.left}" y1="${pad.top + plotH}" x2="${pad.left + plotW}"` +
-        ` y2="${pad.top + plotH}" stroke="${c.base}" stroke-width="1"/>`
-    );
-
-    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-    svg.setAttribute("height", String(height));
-    svg.innerHTML = parts.join("");
-
-    // 툴팁 — charts.js hookBarHover 와 같은 data-tip 규약을 그대로 씁니다.
-    svg.querySelectorAll("[data-tip]").forEach((mark) => {
-        mark.addEventListener("mousemove", (event) => {
-            const [label, value] = mark.dataset.tip.split("|");
-            showTip(event, `<strong>${label}</strong><div>${wonFull(value)}</div>`);
-        });
-        mark.addEventListener("mouseleave", hideTip);
-    });
-}
-
-// fmt/fmtFull: 축·끝점과 툴팁의 값 표기. 기본은 원화 — 건수 차트는 바꿔 씁니다.
-// (drawLine·hookLineHover·drawBars·hookBarHover·roundedRight·roundedTop 는
-//  charts.js 로 이동 — 위 import)
 
 // ---------------------------------------------------------------- 표·유틸
 
