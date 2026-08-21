@@ -36,10 +36,8 @@ export function showSalesSub(sub) {
     // 시간·요일·매장·보고서·수집은 이 필터로 기간을 정하므로 그대로 보입니다.
     const wantFilters = sub !== "매장 대시보드";
     const filters = document.querySelector(".filters");
-    const tiles = $("sales-kpis");
     const exportField = $("sales-export-field");
     if (filters) filters.hidden = !wantFilters;
-    if (tiles) tiles.hidden = !wantFilters;
     if (exportField) exportField.hidden = !wantFilters;
     // 숨김 해제는 재렌더가 아니라서, 숨긴 채(clientWidth=0) fallback 폭으로
     // 그려진 SVG 차트가 그대로 굳습니다. 방금 보이게 된 것을 알리기만 하고,
@@ -76,9 +74,7 @@ export function showArea(area) {
     // 쓰므로 리뷰 영역에서는 필터 줄이 필요합니다.
     // 맨 위 매출 4칸(총매출 등)은 매출 화면에서만 뜻이 있어 그대로 숨깁니다.
     const filters = document.querySelector(".filters");
-    const tiles = $("sales-kpis");
     if (filters) filters.hidden = !(salesOnly || area === "reviews");
-    if (tiles) tiles.hidden = !salesOnly;
     // 엑셀 내보내기 버튼(3라운드 2차 — 옛 수집·내보내기 화면의 후신)은 매출
     // 자료를 뽑는 것이라 매출 영역에서만 보입니다. 필터 줄 자체는 홈·리뷰도
     // 같이 쓰므로 버튼 칸만 따로 숨깁니다.

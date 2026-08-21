@@ -229,6 +229,17 @@ export function searchify(target) {
     };
     input.addEventListener("change", commit);
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); });
+
+    // 눌러서 고르는 드롭다운으로도 동작합니다(2026-08-21 담당자 지시).
+    // datalist 는 입력값으로 거르기 때문에 값이 차 있으면 그 매장 하나만 보여
+    // 목록을 못 훑습니다 — 포커스 때 표시만 비워 전체 목록이 열리게 하고,
+    // 고르지 않고 나가면 원래 값 표시로 되돌립니다. 값 자체는 안 바뀝니다
+    // (바꾸는 것은 change→commit 뿐 — 프로그램으로 비운 것은 change 를 안
+    // 일으켜 '전체' 로 오인 확정되지 않습니다).
+    input.addEventListener("focus", () => { input.value = ""; });
+    input.addEventListener("blur", () => {
+        if (input.value.trim() === "") showSelected();
+    });
     return select;
 }
 

@@ -583,15 +583,6 @@ function fail(error) {
 function draw(d) {
     const c = palette();
 
-    $("kpi-amount").textContent = won(d.summary.amount);
-    $("kpi-range").textContent =
-        `${ymLabel(d.args.p_ym_from)} – ${ymLabel(d.args.p_ym_to)}` +
-        (d.args.p_store ? ` · ${d.args.p_store}` : "") +
-        (d.args.p_channel ? ` · ${d.args.p_channel}` : "");
-    $("kpi-qty").textContent = int(d.summary.qty);
-    $("kpi-stores").textContent = int(d.summary.store_count);
-    $("kpi-menus").textContent = int(d.summary.menu_count);
-
     drawAlerts(d);
     drawReport(d);
 

@@ -311,7 +311,16 @@ header.top h1::before {
     border-radius: 6px;
 }
 
-.field .combo { min-width: 160px; }
+/* 드롭다운임이 보이게 화살표를 답니다(2026-08-21 담당자 지시 — 누르면 전체
+   목록이 열립니다). 색 #9096a2 = --text-muted 라이트 값, 다크에서도 무난. */
+.field .combo {
+    min-width: 160px;
+    padding-right: 28px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239096a2' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    cursor: pointer;
+}
 
 .field input[type="month"]:focus-visible,
 .field .combo:focus-visible {
