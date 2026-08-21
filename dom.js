@@ -184,6 +184,8 @@ export function searchify(target) {
     input.name = `store-search-${id}`;
     input.className = "combo";
     input.autocomplete = "off";
+    input.setAttribute("data-lpignore", "true");     // LastPass 류 무시 표식
+    input.setAttribute("data-form-type", "other");   // Dashlane 류
     input.setAttribute("role", "combobox");
     input.setAttribute("aria-autocomplete", "list");
     input.setAttribute("aria-expanded", "false");

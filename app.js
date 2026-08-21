@@ -44,6 +44,14 @@ import { initStoreDash } from "./store_dash.js";
 import { initDiagnosis } from "./diagnosis.js";
 import { initAllStores } from "./allstores.js";
 
+// 폼 밖 비밀번호 칸(매장 정보 탭 암호 게이트·계정 편집)을 제 폼에 가둔 대신,
+// 그 폼은 제출(새로고침)하지 않습니다 — Enter 는 각 모듈의 keydown 이 처리.
+// 왜 폼에 가두나: 크롬은 폼 없는 입력을 한 묶음으로 보고 비밀번호 칸이 섞이면
+// 같은 묶음의 글자 칸(매장 콤보)에 저장 계정을 띄웁니다(2026-08-21 실측).
+document.addEventListener("submit", (e) => {
+    if (e.target && e.target.matches && e.target.matches("form[data-noop]")) e.preventDefault();
+});
+
 const gate = $("gate");
 const app = $("app");
 

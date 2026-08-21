@@ -784,14 +784,18 @@
         </header>
 
         <div id="cred-gate">
-            <div class="filters">
+            <!-- 비밀번호 칸은 제 폼 안에 둡니다(data-noop — 제출 없음). 폼 밖에 두면
+                 크롬이 페이지의 폼 없는 입력 전부를 한 묶음으로 보고, 같은 묶음의
+                 글자 칸(매장 콤보 등)에 저장된 로그인 계정을 띄웁니다(2026-08-21
+                 담당자 실화면 재현). -->
+            <form class="filters" data-noop>
                 <div class="field">
                     <label for="cred-pass">접근 암호</label>
                     <input type="password" id="cred-pass" autocomplete="off"
                            placeholder="담당자에게 받은 암호">
                 </div>
                 <button class="primary" id="cred-open" type="button">열기</button>
-            </div>
+            </form>
             <p class="notice" id="cred-error" hidden></p>
         </div>
 
@@ -809,7 +813,7 @@
             <p class="note">
                 비밀번호 칸을 비우면 기존 비밀번호가 유지됩니다.
             </p>
-            <div class="filters">
+            <form class="filters" data-noop>
                 <div class="field">
                     <label for="cred-f-store">매장</label>
                     <select id="cred-f-store"></select>
@@ -836,7 +840,7 @@
                     <input type="text" id="cred-f-note" autocomplete="off">
                 </div>
                 <button class="primary" id="cred-save" type="button">저장</button>
-            </div>
+            </form>
             <p class="notice" id="cred-save-msg" hidden></p>
 
             <h3>최근 수정 이력</h3>
@@ -855,14 +859,14 @@
         </header>
 
         <div id="ct-gate">
-            <div class="filters">
+            <form class="filters" data-noop>
                 <div class="field">
                     <label for="ct-pass">접근 암호</label>
                     <input type="password" id="ct-pass" autocomplete="off"
                            placeholder="담당자에게 받은 암호">
                 </div>
                 <button class="primary" id="ct-open" type="button">열기</button>
-            </div>
+            </form>
             <p class="notice" id="ct-error" hidden></p>
         </div>
 
