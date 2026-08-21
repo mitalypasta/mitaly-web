@@ -34,13 +34,16 @@ function diffCell(pct) {
     return cls ? `<span class="${cls}">${text}</span>` : text;
 }
 
+// 기준일 하나가 기준월·연도까지 정합니다(2026-08-21 담당자 지시). 기준일이
+// 비어 있을 때(첫 진입·매장 변경 직후)만 숨긴 기준월 칸의 값(마지막 완성월)을
+// 쓰고, 서버가 잡아 준 닻이 기준일 칸에 채워지면 그 뒤로는 기준일이 원본입니다.
 function currentArgs() {
     const storeId = Number($("sd-store").value);
     if (!storeId) return null;
-    const ym = Number($("sd-ym").value);
+    const day = $("sd-day").value;
+    const ym = day ? Number(day.slice(0, 7).replace("-", "")) : Number($("sd-ym").value);
     if (!ym) return null;
     const args = { p_store_id: storeId, p_ym: ym };
-    const day = $("sd-day").value;
     if (day) args.p_anchor_day = day;
     const year = Number($("sd-year").value);
     if (year) args.p_year = year;
@@ -561,8 +564,17 @@ export async function initStoreDash() {
 
     for (const id of ["sd-store", "sd-ym", "sd-day", "sd-year"]) {
         $(id).addEventListener("change", () => {
-            // 매장·기준월을 바꾸면 닻은 새 기준월의 기본값으로 다시 잡습니다.
-            if (id === "sd-store" || id === "sd-ym") $("sd-day").value = "";
+            // 매장을 바꾸면 닻은 그 매장의 서버 기본값으로 다시 잡습니다.
+            if (id === "sd-store") $("sd-day").value = "";
+            // 기준일을 바꾸면 기준월·연도가 따라갑니다 — 연도 고르개는 그 해가
+            // 목록에 있으면 맞추고, 없으면 비워 서버 기본(기준월의 해)으로.
+            if (id === "sd-day" && $("sd-day").value) {
+                const day = $("sd-day").value;
+                $("sd-ym").value = day.slice(0, 7).replace("-", "");
+                const y = day.slice(0, 4);
+                const yearSel = $("sd-year");
+                yearSel.value = [...yearSel.options].some((o) => o.value === y) ? y : "";
+            }
             refresh();
         });
     }

@@ -155,7 +155,8 @@ export function monthPicker(target, range = {}) {
 
 // ---------------------------------------------------------------- 매장 검색 콤보
 //
-// 매장 select 를 검색 가능한 입력(datalist)으로 바꿉니다(3라운드 0-2).
+// 매장 select 를 검색+드롭다운 콤보로 바꿉니다(3라운드 0-2 → 2026-08-21
+// 직접 그린 목록으로 교체).
 // select 는 숨긴 채 값의 원본으로 남습니다 — 옵션을 채우는 코드(fillStoreSelect
 // ·각 영역의 append)와 값을 읽는 코드(.value·.options·selectedOptions)가
 // 전부 그대로 동작하고, 콤보는 select 를 비추기만 합니다.
@@ -170,14 +171,31 @@ export function searchify(target) {
     if (!select || select.tagName !== "SELECT" || select.dataset.combo) return select;
     select.dataset.combo = "1";
 
+    // 2026-08-21 담당자 지시("드롭다운도 되게") — 브라우저 datalist 를 버리고
+    // 목록을 직접 그립니다. datalist 는 ① 크롬에서 칸을 눌러도 안 열리고(오른쪽
+    // 작은 ▼ 만 연다) ② 크롬 비밀번호 자동완성이 목록을 가로챕니다(담당자
+    // 실화면 재현). 직접 그린 목록은 누르면 열리고, 치면 걸러지고, 키보드
+    // (↑↓·Enter·Esc)로도 고릅니다. select 는 그대로 값의 원본입니다.
+    const id = ++comboSeq;
+    const wrap = document.createElement("span");
+    wrap.className = "combo-wrap";
     const input = document.createElement("input");
-    input.type = "text";
+    input.type = "search";                 // 크롬이 아이디 칸으로 오인하지 않게
+    input.name = `store-search-${id}`;
     input.className = "combo";
     input.autocomplete = "off";
-    const list = document.createElement("datalist");
-    list.id = `combo-list-${++comboSeq}`;
-    input.setAttribute("list", list.id);
-    select.after(input, list);
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-expanded", "false");
+    const pop = document.createElement("div");
+    pop.className = "combo-pop";
+    pop.hidden = true;
+    const ul = document.createElement("ul");
+    ul.setAttribute("role", "listbox");
+    ul.id = `combo-list-${id}`;
+    pop.append(ul);
+    wrap.append(input, pop);
+    select.after(wrap);
     select.hidden = true;
     select.tabIndex = -1;
     select.setAttribute("aria-hidden", "true");
@@ -188,18 +206,15 @@ export function searchify(target) {
         const opt = options().find((o) => o.value === cur);
         input.value = opt && opt.value !== "" ? opt.textContent : "";
     };
-    const rebuild = () => {
-        list.innerHTML = options().filter((o) => o.value !== "")
-            .map((o) => `<option value="${escape(o.textContent)}"></option>`)
-            .join("");
+    const refreshPlaceholder = () => {
         const blank = options().find((o) => o.value === "");
         // '전체'류 항목이 있으면 빈 입력 = 그 항목. 자리 문구로 보여 줍니다.
         input.placeholder = blank ? blank.textContent : "매장 검색";
         showSelected();
     };
-    new MutationObserver(rebuild)
+    new MutationObserver(() => { refreshPlaceholder(); if (!pop.hidden) renderList(); })
         .observe(select, { childList: true, subtree: true, characterData: true });
-    rebuild();
+    refreshPlaceholder();
 
     // 코드가 select.value = ... 로 값을 바꿔도(홈 타일 이동·입금 채우기 등)
     // 콤보 표시가 따라오도록 접근자를 요소 단위로 가로챕니다.
@@ -208,37 +223,97 @@ export function searchify(target) {
         set(v) { SELECT_VALUE.set.call(this, v); showSelected(); },
     });
 
-    const commit = () => {
-        const typed = input.value.trim();
-        const opts = options();
-        let opt = typed === ""
-            ? opts.find((o) => o.value === "")
-            : opts.find((o) => o.textContent === typed);
-        if (!opt && typed) {
-            // 정확히 일치하는 항목이 없으면, 부분 일치가 하나뿐일 때만 그걸로.
-            const partial = opts.filter((o) => o.value !== "" &&
-                o.textContent.toLowerCase().includes(typed.toLowerCase()));
-            if (partial.length === 1) opt = partial[0];
-        }
-        if (!opt) { showSelected(); return; }   // 못 찾음 — 원래 값으로 되돌림
+    let active = -1;          // 목록에서 하이라이트된 줄
+    let shown = [];           // 지금 목록에 그려진 옵션들
+
+    const choose = (opt) => {
         input.value = opt.value === "" ? "" : opt.textContent;
+        close();
         if (SELECT_VALUE.get.call(select) !== opt.value) {
             SELECT_VALUE.set.call(select, opt.value);
             select.dispatchEvent(new Event("change", { bubbles: true }));
         }
     };
-    input.addEventListener("change", commit);
-    input.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); });
 
-    // 눌러서 고르는 드롭다운으로도 동작합니다(2026-08-21 담당자 지시).
-    // datalist 는 입력값으로 거르기 때문에 값이 차 있으면 그 매장 하나만 보여
-    // 목록을 못 훑습니다 — 포커스 때 표시만 비워 전체 목록이 열리게 하고,
-    // 고르지 않고 나가면 원래 값 표시로 되돌립니다. 값 자체는 안 바뀝니다
-    // (바꾸는 것은 change→commit 뿐 — 프로그램으로 비운 것은 change 를 안
-    // 일으켜 '전체' 로 오인 확정되지 않습니다).
-    input.addEventListener("focus", () => { input.value = ""; });
+    const renderList = () => {
+        const q = input.value.trim().toLowerCase();
+        const cur = SELECT_VALUE.get.call(select);
+        shown = options().filter((o) =>
+            q === "" || o.value === "" || o.textContent.toLowerCase().includes(q));
+        // 빈 값('전체'류)은 입력이 비어 있을 때만 — 검색 중엔 결과만 보입니다.
+        if (q !== "") shown = shown.filter((o) => o.value !== "");
+        ul.innerHTML = shown.length
+            ? shown.map((o, i) =>
+                `<li role="option" data-i="${i}" class="${o.value === cur ? "is-cur" : ""}`
+                + `${o.value === "" ? " is-blank" : ""}">${escape(o.textContent)}</li>`).join("")
+            : '<li class="is-empty">일치하는 매장이 없습니다</li>';
+        active = shown.length ? Math.max(0, shown.findIndex((o) => o.value === cur)) : -1;
+        if (q !== "" && shown.length) active = 0;
+        paintActive();
+    };
+    const paintActive = () => {
+        ul.querySelectorAll("li[role=option]").forEach((li, i) => {
+            li.classList.toggle("is-active", i === active);
+            if (i === active) li.scrollIntoView({ block: "nearest" });
+        });
+    };
+    const open = () => {
+        if (!pop.hidden) return;
+        pop.hidden = false;
+        input.setAttribute("aria-expanded", "true");
+        renderList();
+    };
+    const close = () => {
+        pop.hidden = true;
+        input.setAttribute("aria-expanded", "false");
+    };
+
+    // 마우스 — 항목은 mousedown 에서 고릅니다(blur 보다 먼저 잡아야 해서).
+    ul.addEventListener("mousedown", (e) => {
+        const li = e.target.closest("li[role=option]");
+        if (!li) { e.preventDefault(); return; }
+        e.preventDefault();
+        choose(shown[Number(li.dataset.i)]);
+    });
+    ul.addEventListener("mousemove", (e) => {
+        const li = e.target.closest("li[role=option]");
+        if (!li) return;
+        const i = Number(li.dataset.i);
+        if (i !== active) { active = i; paintActive(); }
+    });
+
+    // 누르면(포커스) 전체 목록 — 표시만 비워 두고, 고르지 않고 나가면 복귀.
+    input.addEventListener("focus", () => { input.value = ""; open(); });
+    input.addEventListener("click", open);
+    input.addEventListener("input", () => { open(); renderList(); });
     input.addEventListener("blur", () => {
+        close();
         if (input.value.trim() === "") showSelected();
+    });
+    input.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowDown") {
+            e.preventDefault(); open();
+            if (shown.length) { active = (active + 1) % shown.length; paintActive(); }
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault(); open();
+            if (shown.length) { active = (active - 1 + shown.length) % shown.length; paintActive(); }
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (!pop.hidden && active >= 0 && shown[active]) { choose(shown[active]); return; }
+            // 목록 없이 Enter — 친 글자로 확정(정확히 일치, 아니면 부분 일치 하나뿐일 때)
+            const typed = input.value.trim();
+            const opts = options();
+            let opt = typed === "" ? opts.find((o) => o.value === "")
+                                   : opts.find((o) => o.textContent === typed);
+            if (!opt && typed) {
+                const partial = opts.filter((o) => o.value !== "" &&
+                    o.textContent.toLowerCase().includes(typed.toLowerCase()));
+                if (partial.length === 1) opt = partial[0];
+            }
+            if (opt) choose(opt); else showSelected();
+        } else if (e.key === "Escape") {
+            close(); showSelected(); input.blur();
+        }
     });
     return select;
 }

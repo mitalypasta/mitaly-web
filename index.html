@@ -157,13 +157,16 @@
                     <label for="sd-store">매장</label>
                     <select id="sd-store"><option value="">매장을 고르세요</option></select>
                 </div>
-                <div class="field">
+                <!-- 기준월은 기준일에서 나옵니다(2026-08-21 담당자 지시 — "기준일
+                     정하면 연도·월·일 싹 반영"). 칸은 숨기고 값 보관용으로만 둡니다
+                     (store_dash.js currentArgs 가 기준일 → 기준월·연도로 풉니다). -->
+                <div class="field" hidden>
                     <label for="sd-ym">기준월</label>
                     <input type="month" id="sd-ym">
                 </div>
-                <!-- 기준일 = 일간 28일·주간 13주의 닻. 비우면 기준월 말일 또는
-                     데이터 있는 마지막 날(서버 기본값)로 잡히고, 응답의 실제
-                     닻이 이 칸에 다시 채워집니다. -->
+                <!-- 기준일 = 기준월·연도·일간 28일·주간 13주의 닻 한 개. 비우면
+                     마지막 완성월의 서버 기본 닻으로 잡히고, 응답의 실제 닻이
+                     이 칸에 다시 채워집니다. -->
                 <div class="field">
                     <label for="sd-day">기준일</label>
                     <input type="date" id="sd-day">

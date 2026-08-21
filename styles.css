@@ -298,6 +298,40 @@ header.top h1::before {
     outline-offset: 1px;
 }
 
+/* 콤보 드롭다운 목록(dom.js searchify — 2026-08-21 datalist 대체). 입력 아래
+   떠서 누르면 고르고, 치면 걸러집니다. 카드·모달 어디서든 같은 모양. */
+.combo-wrap { position: relative; display: block; }
+.combo-wrap .combo { width: 100%; box-sizing: border-box; }
+.combo::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+
+.combo-pop {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 60;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-raise);
+    max-height: 320px;
+    overflow: auto;
+    padding: 4px 0;
+}
+.combo-pop ul { list-style: none; margin: 0; padding: 0; }
+.combo-pop li {
+    padding: 7px 12px;
+    font-size: var(--fs-body);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.combo-pop li.is-active { background: var(--primary-soft); }
+.combo-pop li.is-cur    { font-weight: 600; }
+.combo-pop li.is-blank  { color: var(--text-muted); }
+.combo-pop li.is-empty  { color: var(--text-muted); cursor: default; }
+
 /* 3라운드 공통(0-1·0-2) — 월 달력 입력과 매장 검색 콤보는 select 와 같은 옷.
    콤보(.combo)는 dom.js searchify 가 숨긴 select 옆에 만들어 넣는 입력입니다. */
 .field input[type="month"],
