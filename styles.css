@@ -12,14 +12,17 @@
 :root {
     color-scheme: light;
 
-    --page:            #f4f6f8;
+    /* 바탕은 웜 뉴트럴(#f6f6f4 — Runway 실측 #f8f7f5 계열). 담당자 참고 3종
+       (docs/web-design-language.md)의 공통: 차가운 블루그레이 대신 따뜻한
+       무채 지면 + 흰 표면. 색조(인디고/그린·상태 3색)는 불변입니다. */
+    --page:            #f6f6f4;
     --surface-1:       #ffffff;
     --text-primary:    #212529;
     --text-secondary:  #495057;
     --text-muted:      #9096a2;
     --gridline:        #eef0f3;
     --baseline:        #d3d5d9;
-    --border:          rgba(18, 25, 38, 0.06);
+    --border:          rgba(18, 25, 38, 0.09);
 
     --series-1:        #686cff;   /* 홀 */
     --series-2:        #12bc7f;   /* 배달 */
@@ -41,17 +44,21 @@
     --radius:          14px;
     --radius-sm:       9px;       /* 버튼·입력 */
     --radius-pill:     999px;
-    --gap:             16px;
+    /* 카드 사이는 더 넉넉하게(16→20 — 참고 3종의 여백 리듬). 표 안은 촘촘
+       유지(밀도 이중 기준). */
+    --gap:             20px;
 
     /* 타입 스케일 4단 (docs/web-hierarchy.md 2절) — 이 밖의 font-size 신규 금지.
        테마와 무관해 여기 한 번만 둡니다(다크 블록은 색만 덮습니다). */
-    --fs-hero:         30px;      /* hero 답 숫자 */
+    --fs-hero:         34px;      /* hero 답 숫자 — 답은 더 크게(디자인 언어) */
     --fs-title:        15px;      /* 카드 제목 */
     --fs-body:         13px;      /* 본문·표 */
     --fs-meta:         11.5px;    /* 보조·각주·축 라벨 */
 
-    --shadow-card:     0 1px 2px rgba(18, 25, 38, 0.04),
-                       0 4px 16px rgba(18, 25, 38, 0.05);
+    /* 경계는 그림자보다 선 — 참고 3종 공통(그림자 거의 0, 헤어라인 1px).
+       그림자는 흔적만 남기고 카드가 --border 헤어라인을 두릅니다
+       (docs/web-design-language.md). */
+    --shadow-card:     0 1px 2px rgba(18, 25, 38, 0.03);
     --shadow-raise:    0 2px 4px rgba(18, 25, 38, 0.06),
                        0 10px 28px rgba(18, 25, 38, 0.10);
 }
@@ -86,8 +93,7 @@
         --attn-tint:       rgba(217, 138, 43, 0.16);
         --urgent-tint:     rgba(255, 99, 105, 0.16);
 
-        --shadow-card:     0 1px 2px rgba(0, 0, 0, 0.3),
-                           0 4px 16px rgba(0, 0, 0, 0.25);
+        --shadow-card:     0 1px 2px rgba(0, 0, 0, 0.3);
         --shadow-raise:    0 2px 4px rgba(0, 0, 0, 0.4),
                            0 10px 28px rgba(0, 0, 0, 0.4);
     }
@@ -122,8 +128,7 @@
     --attn-tint:       rgba(217, 138, 43, 0.16);
     --urgent-tint:     rgba(255, 99, 105, 0.16);
 
-    --shadow-card:     0 1px 2px rgba(0, 0, 0, 0.3),
-                       0 4px 16px rgba(0, 0, 0, 0.25);
+    --shadow-card:     0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-raise:    0 2px 4px rgba(0, 0, 0, 0.4),
                        0 10px 28px rgba(0, 0, 0, 0.4);
 }
@@ -609,7 +614,7 @@ header.top h1::before {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow-card);
-    padding: 16px 18px;
+    padding: 18px 20px;
 }
 
 .tile .label {
@@ -907,12 +912,14 @@ header.top h1::before {
     gap: var(--gap);
 }
 
+/* 경계는 헤어라인이 지고 그림자는 흔적만 — 참고 3종 공통 문법
+   (docs/web-design-language.md). 패딩도 한 단 넉넉하게(20→24). */
 .card {
     background: var(--surface-1);
-    border: none;
+    border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow-card);
-    padding: 20px;
+    padding: 24px;
     min-width: 0;
 }
 
@@ -926,9 +933,10 @@ header.top h1::before {
     margin-bottom: 4px;
 }
 
+/* 제목은 데이터보다 뒤 — 무게를 한 단 내립니다(참고 3종의 절제된 라벨). */
 .card h2 {
     font-size: var(--fs-title);
-    font-weight: 700;
+    font-weight: 600;
     letter-spacing: -0.01em;
     margin: 0;
 }
@@ -1082,6 +1090,13 @@ tbody tr:hover td { background: var(--page); }
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: var(--gap);
+}
+
+/* 답 숫자 묶음은 타일 상자 대신 헤어라인 세로 구분 — InOrder 의 stat row
+   문법(큰 숫자 · 가는 구분선 · 작은 설명). */
+.hero-stat + .hero-stat {
+    border-left: 1px solid var(--gridline);
+    padding-left: 18px;
 }
 
 .hero-stat .hs-label {
