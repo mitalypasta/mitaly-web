@@ -2515,6 +2515,32 @@ const HANDLERS = {
         return { week_start_dow: 4, weeks };
     },
 
+    // 전사 일별 — 95_daily_company.sql(api_daily_company)과 같은 모양(jsonb
+    // 한 줄). 위 주간과 같은 결정적 파형 + 주말(금·토) 융기, 홀/배달 갈래 포함.
+    api_daily_company: ({ p_days } = {}) => {
+        const n = Math.min(Math.max(Number(p_days) || 60, 1), 366);
+        const anchor = new Date();
+        const iso = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+        const rows = [];
+        for (let i = n - 1; i >= 0; i--) {
+            const d = new Date(anchor);
+            d.setDate(d.getDate() - i);
+            const isodow = d.getDay() === 0 ? 7 : d.getDay();
+            const weekendLift = isodow >= 5 ? 0.22 : 0;
+            const wave = Math.sin(i * 0.9) * 0.08 + weekendLift;
+            const amount = Math.round(63_000_000 * (1 + wave) / 1000) * 1000;
+            const hall = Math.round(amount * (0.64 + Math.sin(i * 0.35) * 0.03) / 1000) * 1000;
+            rows.push({
+                day: iso(d), dow: isodow, amount,
+                orders: Math.round(amount / 27_000),
+                hall_amount: hall, delivery_amount: amount - hall,
+                store_count: 90 + ((i * 3) % 5),
+            });
+        }
+        return { ok: true, days: n,
+                 last_day: rows.length ? rows[rows.length - 1].day : null, rows };
+    },
+
     // 22_notices.sql — `returns table (rules jsonb)` 라 다른 table(x jsonb)
     // 함수들과 같은 모양([{rules:[...]}])입니다.
     api_notice_stage_rules: () => [{ rules: NOTICE_RULES }],

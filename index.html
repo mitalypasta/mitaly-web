@@ -186,8 +186,8 @@
         <!-- 매출 추이 — 단위를 골라 그 단위만 봅니다(검수 반영 2026-08-21,
              담당자 지시). 월(기본)은 기존 '월별 매출 추이' 그대로이고 연도·
              분기는 api_monthly 전체 기간을 접어서, 주간은 90 api_weekly_company,
-             시간대·요일은 이미 받아 둔 필터 데이터를 재사용합니다(app.js
-             drawTrend — 새 SQL 없음). 일별은 전사 일별 rpc가 생기면 붙습니다. -->
+             일별은 95 api_daily_company, 시간대·요일은 이미 받아 둔 필터
+             데이터를 재사용합니다(app.js drawTrend). -->
         <section data-area="sales" data-sub="요약" class="card full" id="trend-card">
             <header>
                 <h2>매출 추이</h2>
@@ -196,6 +196,7 @@
                     <button type="button" class="unitbtn" data-unit="분기">분기</button>
                     <button type="button" class="unitbtn is-on" data-unit="월">월별</button>
                     <button type="button" class="unitbtn" data-unit="주">주간</button>
+                    <button type="button" class="unitbtn" data-unit="일">일별</button>
                     <button type="button" class="unitbtn" data-unit="시간대">시간대</button>
                     <button type="button" class="unitbtn" data-unit="요일">요일</button>
                 </div>

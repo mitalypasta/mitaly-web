@@ -1825,10 +1825,12 @@ function drawMonthly(rows, c) {
 // 빠져 있습니다(rpc 가 생기면 버튼을 더합니다).
 
 let trendUnit = "월";
-// 연도·분기용 전체 기간 월 데이터와 주간 응답 캐시 — 단위를 오갈 때마다
-// 다시 받지 않기 위해서입니다. 매장·채널 필터가 바뀌면 전체 기간 캐시를
-// 버립니다(key). 주간은 필터와 무관해 한 번이면 됩니다.
-const trendCache = { key: null, monthlyAll: null, weekly: null };
+// 연도·분기용 전체 기간 월 데이터와 주간·일별 응답 캐시 — 단위를 오갈
+// 때마다 다시 받지 않기 위해서입니다. 매장·채널 필터가 바뀌면 전체 기간
+// 캐시를 버립니다(key). 주간·일별은 필터와 무관해 한 번이면 됩니다.
+const trendCache = { key: null, monthlyAll: null, weekly: null, daily: null };
+
+const TREND_DOW = { 1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토", 7: "일" };
 
 function initTrend() {
     for (const b of document.querySelectorAll("#trend-units .unitbtn")) {
@@ -1882,6 +1884,7 @@ function drawTrend(d, c) {
         return;
     }
     if (trendUnit === "주") { drawTrendWeekly(c); return; }
+    if (trendUnit === "일") { drawTrendDaily(c); return; }
     drawTrendRollup(trendUnit, d, c);   // 연도 · 분기
 }
 
@@ -1971,10 +1974,55 @@ async function drawTrendWeekly(c) {
     table($("t-monthly"), ["주 시작일", "매출", "주문수", "운영 매장수"],
         [...weeks].reverse().map((r) => [r.week_start, wonFull(r.amount),
             int(r.orders), int(r.store_count)]));
-    const DOW = { 1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토", 7: "일" };
-    const d0 = DOW[w.week_start_dow] || "?";
-    const d1 = DOW[(((w.week_start_dow || 4) + 5) % 7) + 1] || "?";
+    const d0 = TREND_DOW[w.week_start_dow] || "?";
+    const d1 = TREND_DOW[(((w.week_start_dow || 4) + 5) % 7) + 1] || "?";
     trendNote(`전 매장 · 최근 ${int(weeks.length)}주 · 주: ${d0}~${d1}(설정값) — 위 필터와 무관`);
+}
+
+// 일별 — 95 api_daily_company. 일 단위 집계(fact_daily) 원천이라 전 매장
+// 고정이고 위 필터와 무관합니다. 홀/배달 갈래는 서버(91 소스 기준)가 내려주는
+// 것을 그대로 그립니다 — 채널별 매출 기준(배달 할인 전·홀 할인 후)도 그대로.
+async function drawTrendDaily(c) {
+    if (!trendCache.daily) {
+        trendNote("일별 집계를 불러오는 중…");
+        const { data, error } = await db.rpc("api_daily_company", { p_days: 60 });
+        if (error) {
+            trendNote("불러오지 못했습니다: " + (error.message || error));
+            return;
+        }
+        trendCache.daily = data || {};
+    }
+    if (trendUnit !== "일") return;
+
+    const rows = trendCache.daily.rows || [];
+    if (!rows.length) { trendNote("아직 일 단위 집계가 없습니다."); return; }
+
+    const channels = [
+        { name: "홀", color: c.s1, key: "hall_amount" },
+        { name: "배달", color: c.s2, key: "delivery_amount" },
+    ];
+    const legend = $("legend-monthly");
+    legend.innerHTML = "";
+    for (const s of channels) {
+        const span = document.createElement("span");
+        span.innerHTML = `<i style="background:${s.color}"></i>${s.name}`;
+        legend.append(span);
+    }
+    drawLine($("c-monthly"), {
+        xLabels: rows.map((r) => r.day.slice(5)),
+        series: channels.map((s) => ({
+            name: s.name, color: s.color,
+            values: rows.map((r) => Number(r[s.key]) || 0),
+        })),
+        colors: c,
+    });
+    table($("t-monthly"),
+        ["일자", "요일", "홀", "배달", "합계", "주문수", "운영 매장수"],
+        [...rows].reverse().map((r) => [r.day, TREND_DOW[r.dow] || "—",
+            wonFull(r.hall_amount), wonFull(r.delivery_amount), wonFull(r.amount),
+            int(r.orders), int(r.store_count)]));
+    trendNote(`일 단위 집계 기준 · 전 매장 · 최근 ${int(rows.length)}일`
+        + `(마지막 ${trendCache.daily.last_day || "—"}) — 위 필터와 무관`);
 }
 
 // ---- 표 전면 보기 (검수 반영 2026-08-21, 담당자 지시) --------------------
