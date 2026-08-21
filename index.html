@@ -229,31 +229,42 @@
 
         <!-- 품목 서브탭도 half 가 이것 하나뿐 — 위 '상위 15곳'과 같은 이유로
              full(M5). -->
+        <!-- 표가 기본입니다(2026-08-21 담당자 지시 — 탭 데이터 정리 라운드).
+             표는 전 메뉴 순위(순위·비중 열 포함), 차트는 상위 15 토글. -->
         <section data-area="sales" data-sub="품목" class="card full">
             <header>
-                <h2>메뉴별 매출 상위 15개</h2>
-                <button class="linkish" data-toggle="t-menu">표로 보기</button>
+                <h2>메뉴별 매출 순위</h2>
+                <button class="linkish" data-toggle="c-menu-wrap"
+                        data-label-shown="차트 접기" data-label-hidden="차트로 보기">차트로 보기</button>
             </header>
-            <svg class="plot" id="c-menu" role="img" aria-label="메뉴별 매출"></svg>
-            <div class="tableview" id="t-menu" hidden></div>
+            <div class="tableview tall" id="t-menu"></div>
+            <div id="c-menu-wrap" hidden>
+                <svg class="plot" id="c-menu" role="img" aria-label="메뉴별 매출 상위 15"></svg>
+            </div>
         </section>
 
         <section data-area="sales" data-sub="시간·요일" class="card">
             <header>
                 <h2>시간대별 매출</h2>
-                <button class="linkish" data-toggle="t-hour">표로 보기</button>
+                <button class="linkish" data-toggle="c-hour-wrap"
+                        data-label-shown="차트 접기" data-label-hidden="차트로 보기">차트로 보기</button>
             </header>
-            <svg class="plot" id="c-hour" role="img" aria-label="시간대별 매출"></svg>
-            <div class="tableview" id="t-hour" hidden></div>
+            <div class="tableview" id="t-hour"></div>
+            <div id="c-hour-wrap" hidden>
+                <svg class="plot" id="c-hour" role="img" aria-label="시간대별 매출"></svg>
+            </div>
         </section>
 
         <section data-area="sales" data-sub="시간·요일" class="card">
             <header>
                 <h2>요일별 매출</h2>
-                <button class="linkish" data-toggle="t-weekday">표로 보기</button>
+                <button class="linkish" data-toggle="c-weekday-wrap"
+                        data-label-shown="차트 접기" data-label-hidden="차트로 보기">차트로 보기</button>
             </header>
-            <svg class="plot" id="c-weekday" role="img" aria-label="요일별 매출"></svg>
-            <div class="tableview" id="t-weekday" hidden></div>
+            <div class="tableview" id="t-weekday"></div>
+            <div id="c-weekday-wrap" hidden>
+                <svg class="plot" id="c-weekday" role="img" aria-label="요일별 매출"></svg>
+            </div>
         </section>
 
     
@@ -305,15 +316,6 @@
             </div>
             <div class="tableview tall" id="t-allstores"></div>
             <p class="hint" id="as-note"></p>
-        </section>
-
-        <section data-area="sales" data-sub="매장" class="card full">
-            <header>
-                <h2>비정규 메뉴 현황</h2>
-                <button class="linkish" data-toggle="t-nonstd">전체 매장 표</button>
-            </header>
-            <svg class="plot" id="c-nonstd" role="img" aria-label="매장별 비정규 매출 비율"></svg>
-            <div class="tableview" id="t-nonstd" hidden></div>
         </section>
 
         <section data-area="sales" data-sub="매장" class="card full">
@@ -378,6 +380,15 @@
                 일평균은 일 단위 집계 기준(없는 매장은 월 증감률 대용)</p>
         </section>
 
+        <section data-area="sales" data-sub="매장" class="card full">
+            <header>
+                <h2>비정규 메뉴 현황</h2>
+                <button class="linkish" data-toggle="t-nonstd">전체 매장 표</button>
+            </header>
+            <svg class="plot" id="c-nonstd" role="img" aria-label="매장별 비정규 매출 비율"></svg>
+            <div class="tableview" id="t-nonstd" hidden></div>
+        </section>
+
         <!-- KPI 기준 설정 (88_kpi_settings.sql, 큐 #110) — 가맹점 KPI관리 엑셀
              05_안내의 가정값·목표·기준선. DB(kpi_settings)가 원본이고 여기서
              바꿉니다(D38) — 대시보드(#112)·목표 산정(#111)·주차 집계(#114)·
@@ -403,15 +414,6 @@
                 <p class="notice" id="kpi-set-notice"></p>
             </div>
         </details>
-
-        <section data-area="sales" data-sub="매장" class="card full">
-            <header>
-                <h2>메뉴 × 상권</h2>
-                <button class="linkish" data-toggle="t-area">표로 보기</button>
-            </header>
-            <div id="c-area"></div>
-            <div class="tableview" id="t-area" hidden></div>
-        </section>
 
         <section data-area="sales" data-sub="시간·요일" class="card">
             <header>
@@ -439,6 +441,15 @@
             </header>
             <svg class="plot" id="c-category" role="img" aria-label="분류별 매출 비중"></svg>
             <div class="tableview" id="t-category" hidden></div>
+        </section>
+
+        <section data-area="sales" data-sub="품목" class="card full">
+            <header>
+                <h2>메뉴 × 상권</h2>
+                <button class="linkish" data-toggle="t-area">표로 보기</button>
+            </header>
+            <div id="c-area"></div>
+            <div class="tableview" id="t-area" hidden></div>
         </section>
 
         <!-- '전 품목' 카드는 3라운드 2차에서 내렸습니다(담당자 확정).
@@ -544,17 +555,19 @@
             <div class="tableview" id="t-consents"></div>
         </section>
 
-        <section data-area="sales" data-sub="품목" class="card full">
-            <header>
+        <details data-area="sales" data-sub="품목" class="card ledger" id="unmapped-card">
+            <summary>
                 <h2>미매핑 품목</h2>
                 <span class="meta" id="unmapped-count"></span>
-            </header>
-            <p class="hint">
-                매핑표에 없는 품목입니다. 매핑표(<code>통합_매핑표.xlsx</code>)에 추가한 뒤
-                대시보드를 다시 만들면 사라집니다.
-            </p>
-            <div class="tableview" id="t-unmapped"></div>
-        </section>
+            </summary>
+            <div class="ledger-body">
+                <p class="hint">
+                    매핑표에 없는 품목입니다. 매핑표(<code>통합_매핑표.xlsx</code>)에 추가한 뒤
+                    대시보드를 다시 만들면 사라집니다.
+                </p>
+                <div class="tableview" id="t-unmapped"></div>
+            </div>
+        </details>
 
     </div>
 

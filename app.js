@@ -590,8 +590,12 @@ function draw(d) {
         rows: d.menus.slice(0, 15).map((r) => ({ label: r.menu, value: Number(r.amount) })),
         color: c.s1, horizontal: true, colors: c,
     });
-    table($("t-menu"), ["메뉴", "분류", "매출", "수량"],
-        d.menus.map((r) => [r.menu, catLabel(r.category), wonFull(r.amount), int(r.qty)]));
+    // 표가 기본 화면입니다(탭 정리 라운드) — 전 메뉴 순위표라 순위·비중을 답니다.
+    const menuTotal = d.menus.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+    table($("t-menu"), ["순위", "메뉴", "분류", "매출", "수량", "비중"],
+        d.menus.map((r, i) => [int(i + 1), r.menu, catLabel(r.category),
+            wonFull(r.amount), int(r.qty),
+            menuTotal > 0 ? `${(Number(r.amount) / menuTotal * 100).toFixed(1)}%` : "—"]));
 
     const hours = Array.from({ length: 24 }, (_, h) => {
         const found = d.hours.find((r) => Number(r.hour) === h);
