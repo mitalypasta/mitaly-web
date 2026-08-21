@@ -1140,6 +1140,116 @@ details.card.ledger[open] > summary h2::before { content: "\2212"; }   /* − */
 .ledger .tableview th,
 .ledger .tableview td { padding: 5px 8px; }
 
+/* ---- 표 전면 보기 (검수 반영 2026-08-21 — "표 하나당 큰 화면") ----------
+   카드의 표(.tableview)를 통째로 옮겨 화면 전체로 폅니다. 원장 밀도 규칙
+   (촘촘한 행·sticky 머리글)을 그대로 물려받습니다. */
+
+.bigtable-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 105;                  /* 모달(50)·env-badge(100) 위 · rvpanel(110) 아래 */
+    background: var(--page);
+    display: flex;
+    flex-direction: column;
+    padding: 16px 24px 20px;
+}
+
+.bigtable-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.bigtable-head h2 {
+    font-size: var(--fs-title);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+}
+
+.bigtable-head .bigtable-close { margin-left: auto; }
+
+.bigtable-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface-1);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+    padding: 6px 16px 12px;
+}
+
+/* 옮겨 온 표가 세로를 전부 쓰게 — 카드 안의 320px 상한을 풉니다. */
+.bigtable-body .tableview {
+    flex: 1;
+    max-height: none;
+    margin-top: 0;
+}
+
+.bigtable-body th,
+.bigtable-body td { padding: 5px 8px; }
+
+/* 표가 카드 밖(전면)에 나가 있는 동안 뒷화면 스크롤을 잠급니다. */
+body.bigtable-open { overflow: hidden; }
+
+/* 카드 머리의 '크게 보기' — 기존 linkish 문법에 얹는 표식만. */
+.bigtable-open-btn { flex: none; }
+
+/* ---- 추이 단위 선택 (검수 반영 2026-08-21 — "그 단위만 보기") -----------
+   서브탭 알약(.subitem)과 같은 문법이되, nav.js 가 .subitem 을 전역 배선하므로
+   클래스는 따로 둡니다(unitbtn). */
+
+.unitbar {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.unitbtn {
+    appearance: none;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    padding: 3px 10px;
+    font: inherit;
+    font-size: var(--fs-meta);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.unitbtn:hover { background: var(--surface-2); color: var(--text-primary); }
+
+.unitbtn:focus-visible {
+    outline: 2px solid var(--series-1);
+    outline-offset: 2px;
+}
+
+.unitbtn.is-on {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    font-weight: 600;
+}
+
+/* ---- 상단 판매 내역 타일 (검수 반영 2026-08-21 — 라벨을 말로) ----------- */
+
+.tile-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: var(--fs-body);
+    color: var(--text-secondary);
+}
+
+.tile-lines b {
+    font-size: var(--fs-title);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
 /* ---------------------------------------------------------------- 수집 요청 */
 
 .reqform {

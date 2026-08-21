@@ -340,6 +340,8 @@ async function initDashboard() {
     initHomeTiles();
     initHome();
     initHomeHero();
+    initTrend();
+    initBigtable();
     initDeliveryMap();
 
     // 보이는 화면(홈·매출)의 위 4칸을 먼저 그립니다. 안 보이는 20여 개 영역의
@@ -595,7 +597,7 @@ function draw(d) {
     $("kpi-stores").textContent = int(d.summary.store_count);
     $("kpi-menus").textContent = int(d.summary.menu_count);
 
-    drawMonthly(d.monthly, c);
+    drawTrend(d, c);
     drawMonthlyChannels(d.monthly, c);
     drawAlerts(d);
     drawReport(d);
@@ -1811,6 +1813,228 @@ function drawMonthly(rows, c) {
         }));
 
     drawLine($("c-monthly"), { xLabels: months.map(ymLabel), series, colors: c });
+}
+
+// ---- 매출 추이 단위 선택 (검수 반영 2026-08-21, 담당자 지시) -------------
+//
+// "연도면 연도만, 월별이면 월별만" — 추이 카드가 단위 하나를 골라 그 단위만
+// 그립니다. 월(기본)은 기존 월별 추이 그대로(필터 기간), 연도·분기는
+// api_monthly 를 전체 기간으로 받아 접고(매장·채널 필터는 적용), 주간은
+// 90 api_weekly_company(전 매장 고정), 시간대·요일은 load() 가 이미 받아 둔
+// 필터 데이터를 재사용합니다. 새 SQL 없음 — 일별만 전사 일별 rpc 가 없어
+// 빠져 있습니다(rpc 가 생기면 버튼을 더합니다).
+
+let trendUnit = "월";
+// 연도·분기용 전체 기간 월 데이터와 주간 응답 캐시 — 단위를 오갈 때마다
+// 다시 받지 않기 위해서입니다. 매장·채널 필터가 바뀌면 전체 기간 캐시를
+// 버립니다(key). 주간은 필터와 무관해 한 번이면 됩니다.
+const trendCache = { key: null, monthlyAll: null, weekly: null };
+
+function initTrend() {
+    for (const b of document.querySelectorAll("#trend-units .unitbtn")) {
+        b.addEventListener("click", () => {
+            trendUnit = b.dataset.unit;
+            for (const x of document.querySelectorAll("#trend-units .unitbtn")) {
+                x.classList.toggle("is-on", x === b);
+            }
+            if (S.lastData) drawTrend(S.lastData, palette());
+        });
+    }
+}
+
+function trendNote(text) {
+    const note = $("trend-note");
+    note.hidden = !text;
+    note.textContent = text || "";
+}
+
+function drawTrend(d, c) {
+    if (trendUnit === "월") {
+        trendNote("");
+        drawMonthly(d.monthly, c);
+        return;
+    }
+    if (trendUnit === "시간대") {
+        trendNote("");
+        $("legend-monthly").innerHTML = "";
+        const hours = Array.from({ length: 24 }, (_, h) => {
+            const found = d.hours.find((r) => Number(r.hour) === h);
+            return { label: `${h}`, value: found ? Number(found.amount) : 0 };
+        });
+        drawBars($("c-monthly"), { rows: hours, color: c.s1, horizontal: false, colors: c, unit: "시" });
+        table($("t-monthly"), ["시간대", "매출", "수량"],
+            d.hours.map((r) => [`${r.hour}시`, wonFull(r.amount), int(r.qty)]));
+        return;
+    }
+    if (trendUnit === "요일") {
+        trendNote("");
+        $("legend-monthly").innerHTML = "";
+        const weekdays = WEEKDAY_ORDER.map((w) => {
+            const found = d.weekdays.find((r) => r.weekday === w);
+            return { label: w, value: found ? Number(found.amount) : 0 };
+        });
+        drawBars($("c-monthly"), { rows: weekdays, color: c.s1, horizontal: false, colors: c });
+        table($("t-monthly"), ["요일", "매출", "수량"],
+            WEEKDAY_ORDER.map((w) => {
+                const found = d.weekdays.find((r) => r.weekday === w) || {};
+                return [w, wonFull(found.amount || 0), int(found.qty || 0)];
+            }));
+        return;
+    }
+    if (trendUnit === "주") { drawTrendWeekly(c); return; }
+    drawTrendRollup(trendUnit, d, c);   // 연도 · 분기
+}
+
+// 연도·분기 — 전체 기간 api_monthly 를 단위로 접습니다. 채널 갈래(홀 먼저)와
+// 범례·표 문법은 월별 카드와 같습니다.
+async function drawTrendRollup(unit, d, c) {
+    const range = S.filterRange || {};
+    if (!range.max) return;
+    const key = `${d.args.p_store || ""}|${d.args.p_channel || ""}`;
+    if (trendCache.key !== key || !trendCache.monthlyAll) {
+        trendNote("전체 기간을 불러오는 중…");
+        const { data, error } = await db.rpc("api_monthly", {
+            p_ym_from: range.min, p_ym_to: range.max,
+            p_store: d.args.p_store, p_channel: d.args.p_channel,
+        });
+        if (error) {
+            trendNote("불러오지 못했습니다: " + (error.message || error));
+            return;
+        }
+        trendCache.key = key;
+        trendCache.monthlyAll = data || [];
+    }
+    if (trendUnit !== unit) return;   // 받는 사이 단위가 바뀌면 그쪽이 그립니다
+
+    const rows = trendCache.monthlyAll;
+    const keyOf = unit === "연도"
+        ? (ym) => `${Math.floor(ym / 100)}년`
+        : (ym) => `${Math.floor(ym / 100)} ${Math.ceil((ym % 100) / 3)}분기`;
+    const periods = [...new Set(rows.map((r) => keyOf(r.ym)))].sort();
+    const channels = [...new Set(rows.map((r) => r.channel))]
+        .sort((a, b) => (a === "홀" ? -1 : b === "홀" ? 1 : 0));
+    const sums = new Map();
+    for (const r of rows) {
+        const k = `${keyOf(r.ym)}|${r.channel}`;
+        sums.set(k, (sums.get(k) || 0) + Number(r.amount));
+    }
+    const series = channels.map((name) => ({
+        name,
+        color: c[CHANNEL_COLORS[name] || "s1"],
+        values: periods.map((p) => sums.get(`${p}|${name}`) || 0),
+    }));
+
+    const legend = $("legend-monthly");
+    legend.innerHTML = "";
+    if (series.length >= 2) {
+        for (const s of series) {
+            const span = document.createElement("span");
+            span.innerHTML = `<i style="background:${s.color}"></i>${s.name}`;
+            legend.append(span);
+        }
+    }
+    table($("t-monthly"), [unit, ...channels, "합계"],
+        periods.map((p) => {
+            const cells = channels.map((ch) => sums.get(`${p}|${ch}`) || 0);
+            return [p, ...cells.map(wonFull),
+                wonFull(cells.reduce((a, b) => a + b, 0))];
+        }));
+    drawLine($("c-monthly"), { xLabels: periods, series, colors: c });
+    trendNote(`전체 기간(${ymLabel(range.min)}~${ymLabel(range.max)}) 기준 — `
+        + "위 기간 필터와 무관 · 매장·채널 필터는 적용");
+}
+
+// 주간 — 90 api_weekly_company. 일 단위 집계(fact_daily) 원천이라 전 매장
+// 고정이고 위 필터와 무관합니다(주차별 카드와 같은 기준 · 여기는 26주).
+async function drawTrendWeekly(c) {
+    if (!trendCache.weekly) {
+        trendNote("주간 집계를 불러오는 중…");
+        const { data, error } = await db.rpc("api_weekly_company", { p_weeks: 26 });
+        if (error) {
+            trendNote("불러오지 못했습니다: " + (error.message || error));
+            return;
+        }
+        trendCache.weekly = data || {};
+    }
+    if (trendUnit !== "주") return;
+
+    const w = trendCache.weekly;
+    const weeks = [...(w.weeks || [])].reverse();   // 과거 → 최신
+    if (!weeks.length) { trendNote("아직 일 단위 집계가 없습니다."); return; }
+
+    $("legend-monthly").innerHTML = "";
+    drawLine($("c-monthly"), {
+        xLabels: weeks.map((r) => r.week_start.slice(5)),
+        series: [{ name: "전사", color: c.s1, values: weeks.map((r) => Number(r.amount)) }],
+        colors: c,
+    });
+    table($("t-monthly"), ["주 시작일", "매출", "주문수", "운영 매장수"],
+        [...weeks].reverse().map((r) => [r.week_start, wonFull(r.amount),
+            int(r.orders), int(r.store_count)]));
+    const DOW = { 1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토", 7: "일" };
+    const d0 = DOW[w.week_start_dow] || "?";
+    const d1 = DOW[(((w.week_start_dow || 4) + 5) % 7) + 1] || "?";
+    trendNote(`전 매장 · 최근 ${int(weeks.length)}주 · 주: ${d0}~${d1}(설정값) — 위 필터와 무관`);
+}
+
+// ---- 표 전면 보기 (검수 반영 2026-08-21, 담당자 지시) --------------------
+//
+// "표가 될 수 있는 것 하나당 큰 화면" — 매출 탭의 표 있는 카드마다 '크게
+// 보기'를 달고, 누르면 그 표(.tableview)를 전면 껍데기(#bigtable)로 **이동**
+// 해 화면 전체로 봅니다. 복사가 아니라 이동이라 정렬 클릭·위임 리스너 같은
+// 표의 동작이 그대로 살고, 닫으면 원래 자리(접힘 상태 포함)로 돌아갑니다.
+
+let bigtableReturn = null;   // { tv, parent, next, wasHidden }
+
+function openBigtable(tv, title, meta) {
+    if (bigtableReturn) closeBigtable();
+    bigtableReturn = {
+        tv, parent: tv.parentNode, next: tv.nextSibling, wasHidden: tv.hidden,
+    };
+    tv.hidden = false;
+    $("bigtable-title").textContent = title;
+    $("bigtable-meta").textContent = meta || "";
+    $("bigtable-body").append(tv);
+    $("bigtable").hidden = false;
+    document.body.classList.add("bigtable-open");
+    $("bigtable-close").focus();
+}
+
+function closeBigtable() {
+    if (bigtableReturn) {
+        const { tv, parent, next, wasHidden } = bigtableReturn;
+        tv.hidden = wasHidden;
+        parent.insertBefore(tv, next);
+        bigtableReturn = null;
+    }
+    $("bigtable").hidden = true;
+    document.body.classList.remove("bigtable-open");
+}
+
+function initBigtable() {
+    for (const card of document.querySelectorAll('[data-area="sales"]')) {
+        const tv = card.querySelector(".tableview");
+        if (!tv || !tv.id) continue;
+        const head = card.querySelector("header, summary");
+        if (!head) continue;
+        const title = (head.querySelector("h2")?.textContent || "표").trim();
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "linkish bigtable-open-btn";
+        btn.textContent = "크게 보기";
+        btn.addEventListener("click", (e) => {
+            // summary 안에서는 기본 동작이 접힘 토글이라 막습니다.
+            e.preventDefault();
+            e.stopPropagation();
+            const meta = (head.querySelector(".meta")?.textContent || "").trim();
+            openBigtable(tv, title, meta);
+        });
+        head.append(btn);
+    }
+    $("bigtable-close").addEventListener("click", closeBigtable);
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !$("bigtable").hidden) closeBigtable();
+    });
 }
 
 // ---- 월별 홀/배달 막대 (3라운드 2차, 담당자 피드백 3-1) -----------------

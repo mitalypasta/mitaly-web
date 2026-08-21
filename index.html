@@ -116,6 +116,9 @@
         </div>
     </div>
 
+    <!-- 상단 4타일 → 2타일 (검수 반영 2026-08-21, 담당자 지시) — 판매 수량·
+         매장 수·판매 메뉴 수는 라벨만으로 안 읽혀서, 매출만 크게 남기고 셋은
+         말로 풀어 한 타일에 담습니다. 숫자는 셋 다 그대로입니다(삭제 0). -->
     <div class="kpis page-kpis" id="sales-kpis">
         <div class="tile hero">
             <div class="label">선택 기간 매출</div>
@@ -123,16 +126,14 @@
             <div class="sub" id="kpi-range"></div>
         </div>
         <div class="tile">
-            <div class="label">판매 수량</div>
-            <div class="value" id="kpi-qty">—</div>
-        </div>
-        <div class="tile">
-            <div class="label">매장 수</div>
-            <div class="value" id="kpi-stores">—</div>
-        </div>
-        <div class="tile">
-            <div class="label">판매 메뉴 수</div>
-            <div class="value" id="kpi-menus">—</div>
+            <div class="label">선택 기간 판매 내역</div>
+            <div class="tile-lines">
+                <span>팔린 메뉴 수량 합계 <b id="kpi-qty">—</b>개</span>
+                <span>팔린 메뉴 가짓수 <b id="kpi-menus">—</b>종</span>
+                <span>매출이 잡힌 매장 <b id="kpi-stores">—</b>곳</span>
+            </div>
+            <div class="sub">매장 수가 평소(94~96곳)보다 적으면 그 기간
+                수집이 빈 채널이 있다는 신호입니다.</div>
         </div>
     </div>
 
@@ -182,13 +183,27 @@
             </div>
         </section>
 
-        <section data-area="sales" data-sub="요약" class="card full">
+        <!-- 매출 추이 — 단위를 골라 그 단위만 봅니다(검수 반영 2026-08-21,
+             담당자 지시). 월(기본)은 기존 '월별 매출 추이' 그대로이고 연도·
+             분기는 api_monthly 전체 기간을 접어서, 주간은 90 api_weekly_company,
+             시간대·요일은 이미 받아 둔 필터 데이터를 재사용합니다(app.js
+             drawTrend — 새 SQL 없음). 일별은 전사 일별 rpc가 생기면 붙습니다. -->
+        <section data-area="sales" data-sub="요약" class="card full" id="trend-card">
             <header>
-                <h2>월별 매출 추이</h2>
+                <h2>매출 추이</h2>
+                <div class="unitbar" id="trend-units" role="group" aria-label="추이 단위">
+                    <button type="button" class="unitbtn" data-unit="연도">연도</button>
+                    <button type="button" class="unitbtn" data-unit="분기">분기</button>
+                    <button type="button" class="unitbtn is-on" data-unit="월">월별</button>
+                    <button type="button" class="unitbtn" data-unit="주">주간</button>
+                    <button type="button" class="unitbtn" data-unit="시간대">시간대</button>
+                    <button type="button" class="unitbtn" data-unit="요일">요일</button>
+                </div>
                 <button class="linkish" data-toggle="t-monthly">표로 보기</button>
             </header>
+            <p class="hint" id="trend-note" hidden></p>
             <div class="legend" id="legend-monthly"></div>
-            <svg class="plot" id="c-monthly" role="img" aria-label="월별 매출 추이"></svg>
+            <svg class="plot" id="c-monthly" role="img" aria-label="매출 추이"></svg>
             <div class="tableview" id="t-monthly" hidden></div>
         </section>
 
@@ -2216,6 +2231,21 @@
 </div>
 
 <div class="tooltip" id="tooltip" hidden></div>
+
+<!-- 표 전면 보기 (검수 반영 2026-08-21, 담당자 지시 — "표 하나당 큰 화면").
+     매출 탭의 표 있는 카드마다 '크게 보기' 버튼이 붙고(app.js initBigtable),
+     누르면 그 표를 이 껍데기로 옮겨 화면 전체로 봅니다. 닫으면 제자리로
+     돌아가므로 정렬·클릭 같은 표의 동작이 그대로 삽니다(복사가 아니라 이동). -->
+<div class="bigtable-overlay" id="bigtable" hidden role="dialog" aria-modal="true"
+     aria-labelledby="bigtable-title">
+    <header class="bigtable-head">
+        <h2 id="bigtable-title"></h2>
+        <span class="meta" id="bigtable-meta"></span>
+        <button type="button" class="ghost bigtable-close" id="bigtable-close"
+                aria-label="닫기">✕ 닫기</button>
+    </header>
+    <div class="bigtable-body" id="bigtable-body"></div>
+</div>
 
 <script type="module" src="app.js"></script>
 </body>
