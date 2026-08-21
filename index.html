@@ -57,7 +57,12 @@
         <button class="navitem" data-go="sales" type="button">📊 매출</button>
         <button class="navitem" data-go="settlement" type="button">💰 정산</button>
         <button class="navitem" data-go="ads" type="button">📣 광고</button>
-        <button class="navitem" data-go="map" type="button">🗺 매장 지도</button>
+        <!-- 매장 지도는 2026-08-21 담당자 지시로 내렸습니다("매장 지도가 굳이
+             필요 없어 보임. 일단 안 보이게만 해줘") — 버튼만 hidden 이고 지도
+             카드(data-area="map")·map.js·SQL 은 전부 그대로입니다. 다시 켤 때는
+             이 hidden 하나만 지우면 됩니다. localStorage 에 'map' 이 남은
+             사용자는 nav.js initAreas 가 홈으로 돌립니다(hidden 버튼 방어). -->
+        <button class="navitem" data-go="map" type="button" hidden>🗺 매장 지도</button>
         <div class="navgroup">매장운영</div>
         <button class="navitem" data-go="reviews" type="button">⭐ 리뷰</button>
         <button class="navitem" data-go="visits" type="button">🚶 방문·점검</button>
@@ -68,6 +73,11 @@
         <button class="navitem" data-go="stores" type="button">🏪 매장 정보</button>
         <button class="navitem" data-go="lifecycle" type="button">🏪 오픈·폐점</button>
         <button class="navitem" data-go="comms" type="button">📢 공지</button>
+        <div class="navgroup">설정</div>
+        <!-- 설정 탭 (카드 #130) — 메뉴 매핑표 편집 + 수집 커버리지.
+             매핑표는 96_menu_mapping.sql 이 원본(D38)이고 web/settings.js 가
+             그립니다. 수집 커버리지는 매출 '수집 현황' 서브탭에서 옮겨 왔습니다. -->
+        <button class="navitem" data-go="settings" type="button">⚙️ 설정</button>
         <!-- '수집·내보내기' 화면은 3라운드 2차에서 내렸습니다(담당자 확정 —
              자리 PC 가 매일 알아서 수집하므로 웹 수집 요청이 불필요).
              엑셀 내보내기는 매출 탭 필터 줄의 버튼으로 옮겨졌고, 서버의
@@ -127,15 +137,16 @@
          전환은 즉시입니다. -->
     <!-- 요약 서브탭은 2026-08-21 담당자 지시로 없앴습니다 — 매장 대시보드가
          매출 탭의 첫 화면입니다("매장 대시보드가 있으면 맨 위에 매장·기간을
-         고르는 이유가 없다"). 요약의 진단·급증급감·KPI 설정은 '매장' 으로
-         이동, 전사 요약류(추이·주차별·매장별 전수)는 담당자 확정으로 삭제. -->
+         고르는 이유가 없다"). 같은 날 오후 담당자 확정(#129)으로 품목·
+         시간·요일·매장 세 서브탭은 '전체 매장 요약' 하나로 합쳤습니다 —
+         카드는 전부 이동(삭제 0), 전사 시계열 hero(연도~일별 단위 선택)가
+         새 화면의 답입니다. 수집 현황의 설정 탭 이전은 별도 카드(#130). -->
     <nav class="subnav" data-area="sales" id="salesnav" aria-label="매출 보기">
         <button class="subitem is-on" data-sub-go="매장 대시보드" type="button">매장 대시보드</button>
-        <button class="subitem" data-sub-go="품목" type="button">품목</button>
-        <button class="subitem" data-sub-go="시간·요일" type="button">시간·요일</button>
-        <button class="subitem" data-sub-go="매장" type="button">매장</button>
+        <button class="subitem" data-sub-go="전체 매장 요약" type="button">전체 매장 요약</button>
         <button class="subitem" data-sub-go="보고서" type="button">보고서</button>
-        <button class="subitem" data-sub-go="수집" type="button">수집 현황</button>
+        <!-- '수집 현황' 서브탭은 카드 #130 에서 설정 탭으로 옮겼습니다
+             (담당자 지시 2026-08-21) — 카드는 아래 data-area="settings" 구역에. -->
     </nav>
 
     <div class="grid">
@@ -150,6 +161,12 @@
         <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-card">
             <header>
                 <h2>매장 대시보드</h2>
+                <!-- 선택 매장 엑셀 추출(카드 #128) — 이 화면의 구성 요소(KPI·손익·
+                     연도별·분기별·주간·일간·시간대·메뉴 3종)를 시트 하나씩 담은
+                     파일 하나. 카드 엑셀(dom.js)과 같은 SheetJS 사본을 씁니다. -->
+                <button class="linkish" id="sd-export" type="button"
+                        title="이 매장 대시보드의 카드별 시트를 담은 엑셀 파일을 내려받습니다">선택 매장 엑셀 추출</button>
+                <span class="meta" id="sd-export-msg"></span>
                 <span class="meta" id="sd-meta"></span>
             </header>
             <div class="reqform">
@@ -230,23 +247,77 @@
             <div class="tableview" id="t-sd-daily"></div>
         </section>
 
-        <!-- 품목 서브탭도 half 가 이것 하나뿐 — 위 '상위 15곳'과 같은 이유로
-             full(M5). -->
-        <!-- 표가 기본입니다(2026-08-21 담당자 지시 — 탭 데이터 정리 라운드).
-             표는 전 메뉴 순위(순위·비중 열 포함), 차트는 상위 15 토글. -->
-        <section data-area="sales" data-sub="품목" class="card full">
+        <!-- ============================================================
+             시간대·메뉴 4카드 (카드 #128) — 선택 매장 × 기준월(기준일의 달)의
+             분해. 품목/시간·요일 서브탭과 같은 rpc(api_by_hour·api_by_menu·
+             api_menu_matrix)를 p_store=선택 매장으로 부릅니다(전역 필터
+             f-store 가 이미 받는 인자 — 새 SQL 없음, store_dash.js).
+             기준일이 바뀌면 기준월이 따라 바뀌므로 이 카드들도 닻과 같이
+             움직입니다. 표 기본(탭 정리 라운드 관례). ================== -->
+        <section data-area="sales" data-sub="매장 대시보드" class="card" id="sd-hour-card">
             <header>
-                <h2>메뉴별 매출 순위</h2>
-                <button class="linkish" data-toggle="c-menu-wrap"
-                        data-label-shown="차트 접기" data-label-hidden="차트로 보기">차트로 보기</button>
+                <h2>시간대별 매출</h2>
+                <span class="meta" id="sd-hour-meta"></span>
             </header>
-            <div class="tableview tall" id="t-menu"></div>
-            <div id="c-menu-wrap" hidden>
-                <svg class="plot" id="c-menu" role="img" aria-label="메뉴별 매출 상위 15"></svg>
-            </div>
+            <div class="tableview" id="t-sd-hour"></div>
         </section>
 
-        <section data-area="sales" data-sub="시간·요일" class="card">
+        <section data-area="sales" data-sub="매장 대시보드" class="card" id="sd-menu-card">
+            <header>
+                <h2>메뉴 판매량</h2>
+                <span class="meta" id="sd-menu-meta"></span>
+            </header>
+            <div class="tableview tall" id="t-sd-menu"></div>
+        </section>
+
+        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-mweek-card">
+            <header>
+                <h2>메뉴 × 요일</h2>
+                <span class="meta" id="sd-mweek-meta"></span>
+            </header>
+            <div class="tableview tall" id="t-sd-mweek"></div>
+        </section>
+
+        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-mpart-card">
+            <header>
+                <h2>메뉴 × 시간대</h2>
+                <span class="meta" id="sd-mpart-meta"></span>
+            </header>
+            <div class="tableview tall" id="t-sd-mpart"></div>
+        </section>
+
+        <!-- ============================================================
+             전체 매장 요약 (카드 #129) — 전 매장(전사) 단위 분석 화면.
+             hero 는 이 전사 추이 카드 하나뿐입니다(화면당 hero 1 —
+             docs/web-hierarchy.md 1절). 연도·분기·월은 위 전역 필터(기간·
+             매장·채널)의 api_monthly 를 접고, 주간은 90(api_weekly_company)·
+             일별은 95(api_daily_company — 홀/배달 분해)를 씁니다. 출처가
+             달라지는 단위는 카드 각주가 기준을 말합니다(위계 문서 5절).
+             시간대별·요일별·품목별과 매장 카드들은 옛 품목·시간·요일·매장
+             서브탭에서 전부 이동해 온 것입니다(삭제 0).
+             ============================================================ -->
+        <section data-area="sales" data-sub="전체 매장 요약" class="card hero-card" id="company-card">
+            <header class="hero-head">
+                <div class="hero-q">전사 매출은 어떻게 가고 있나?</div>
+                <span class="hero-badge" id="company-badge" hidden></span>
+                <!-- 추이 단위 선택(위계 문서 5절 unitbtn 문법) — 연도·분기·
+                     월·주간·일별 다섯 단위를 카드 하나가 받습니다. -->
+                <div class="unitbar" id="company-units" role="group" aria-label="추이 단위">
+                    <button class="unitbtn" data-unit="year" type="button">연도</button>
+                    <button class="unitbtn" data-unit="quarter" type="button">분기</button>
+                    <button class="unitbtn is-on" data-unit="month" type="button">월</button>
+                    <button class="unitbtn" data-unit="week" type="button">주간</button>
+                    <button class="unitbtn" data-unit="day" type="button">일별</button>
+                </div>
+            </header>
+            <div class="hero-stats" id="company-stats"></div>
+            <div class="legend" id="legend-company"></div>
+            <svg class="plot" id="c-company" role="img" aria-label="전사 매출 추이"></svg>
+            <div class="tableview" id="t-company"></div>
+            <p class="hint" id="company-note"></p>
+        </section>
+
+        <section data-area="sales" data-sub="전체 매장 요약" class="card">
             <header>
                 <h2>시간대별 매출</h2>
                 <button class="linkish" data-toggle="c-hour-wrap"
@@ -258,7 +329,7 @@
             </div>
         </section>
 
-        <section data-area="sales" data-sub="시간·요일" class="card">
+        <section data-area="sales" data-sub="전체 매장 요약" class="card">
             <header>
                 <h2>요일별 매출</h2>
                 <button class="linkish" data-toggle="c-weekday-wrap"
@@ -270,7 +341,58 @@
             </div>
         </section>
 
-    
+        <section data-area="sales" data-sub="전체 매장 요약" class="card">
+            <header>
+                <h2>메뉴 × 요일</h2>
+                <button class="linkish" data-toggle="t-mweek">표로 보기</button>
+            </header>
+            <div id="c-mweek"></div>
+            <div class="tableview" id="t-mweek" hidden></div>
+        </section>
+
+        <section data-area="sales" data-sub="전체 매장 요약" class="card">
+            <header>
+                <h2>메뉴 × 시간대</h2>
+                <button class="linkish" data-toggle="t-mpart">표로 보기</button>
+            </header>
+            <p class="hint">아침 06–11 · 점심 11–14 · 오후 14–17 · 저녁 17–06</p>
+            <div id="c-mpart"></div>
+            <div class="tableview" id="t-mpart" hidden></div>
+        </section>
+
+        <!-- 표가 기본입니다(2026-08-21 담당자 지시 — 탭 데이터 정리 라운드).
+             표는 전 메뉴 순위(순위·비중 열 포함), 차트는 상위 15 토글. -->
+        <section data-area="sales" data-sub="전체 매장 요약" class="card full">
+            <header>
+                <h2>메뉴별 매출 순위</h2>
+                <button class="linkish" data-toggle="c-menu-wrap"
+                        data-label-shown="차트 접기" data-label-hidden="차트로 보기">차트로 보기</button>
+            </header>
+            <div class="tableview tall" id="t-menu"></div>
+            <div id="c-menu-wrap" hidden>
+                <svg class="plot" id="c-menu" role="img" aria-label="메뉴별 매출 상위 15"></svg>
+            </div>
+        </section>
+
+        <section data-area="sales" data-sub="전체 매장 요약" class="card full">
+            <header>
+                <h2>분류별 비중</h2>
+                <button class="linkish" data-toggle="t-category">표로 보기</button>
+            </header>
+            <svg class="plot" id="c-category" role="img" aria-label="분류별 매출 비중"></svg>
+            <div class="tableview" id="t-category" hidden></div>
+        </section>
+
+        <section data-area="sales" data-sub="전체 매장 요약" class="card full">
+            <header>
+                <h2>메뉴 × 상권</h2>
+                <button class="linkish" data-toggle="t-area">표로 보기</button>
+            </header>
+            <div id="c-area"></div>
+            <div class="tableview" id="t-area" hidden></div>
+        </section>
+
+
     <!-- SV 에게 보내는 월간 보고서. 본사가 형식을 PDF, 대상을 SV 로 확정했습니다
          (docs/hq-standards.md 2번).
 
@@ -287,9 +409,59 @@
         <div id="report-sheet"></div>
     </section>
 
-    <section data-area="sales" data-sub="수집" class="card full">
+    <!-- ============================================================
+         설정 탭 (카드 #130) — ① 메뉴 매핑표 편집 ② 수집 커버리지(이전).
+         ============================================================ -->
+
+    <!-- 메뉴 매핑표 (96_menu_mapping.sql · web/settings.js).
+         D38 — DB 가 원본, 이 화면이 수정 창구입니다. 여기서 고친 매핑은
+         export_menu_mapping.py 가 xlsx 로 재생성해 repo 로 나가야 빌더에
+         닿습니다(그 사슬은 큐 #130 설계 표 — 이번 카드는 제안까지). -->
+    <section data-area="settings" class="card full" id="mapping-card">
+        <header>
+            <h2>메뉴 매핑표</h2>
+            <span class="meta" id="mm-meta"></span>
+        </header>
+        <p class="hint">
+            원본표기가 이미 있으면 그 연결을 고치고, 없으면 새로 더합니다.
+            여기서 고친 것은 다음 매핑표 반영 때 대시보드 재구축에 쓰입니다.
+        </p>
+        <div class="unitbar" id="mm-tabs"></div>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="mm-raw">원본표기</label>
+                <input type="text" id="mm-raw" placeholder="예: 토마토 파스타 (매운맛)">
+            </div>
+            <div class="field grow">
+                <label for="mm-std">표준명 (표준메뉴 · 제외 · 비정규)</label>
+                <select id="mm-std"></select>
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" id="mm-save">저장</button>
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" class="ghost" id="mm-clear">비우기</button>
+            </div>
+        </div>
+        <p class="notice" id="mm-notice"></p>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="mm-q">이 분류에서 찾기</label>
+                <input type="search" id="mm-q" placeholder="원본표기 일부 입력">
+            </div>
+        </div>
+        <div class="tableview tall" id="t-mapping"></div>
+    </section>
+
+    <!-- 수집 커버리지 — 매출 '수집 현황' 서브탭에서 이전(카드 #130).
+         데이터는 종전대로 매출 필터 조회(load)의 api_coverage_* 가 채우고,
+         기간 기준은 카드 머리(meta)에 표시합니다(설정 탭에는 필터 줄이 없음). -->
+    <section data-area="settings" class="card full">
             <header>
                 <h2>수집 커버리지</h2>
+                <span class="meta" id="coverage-meta"></span>
                 <button class="linkish" data-toggle="t-coverage">매장별로 보기</button>
             </header>
             <div id="c-coverage"></div>
@@ -302,7 +474,7 @@
              재정렬. 기준월·SV 는 카드 자체 고르개라 위 전역 필터와 무관합니다
              (주차별 카드와 같은 방식). 열이 23개라 표는 카드 안(.tableview)
              에서만 가로 스크롤됩니다. 폐점 매장도 행에 있고 배지가 붙습니다. -->
-        <section data-area="sales" data-sub="매장" class="card full" id="allstores-card">
+        <section data-area="sales" data-sub="전체 매장 요약" class="card full" id="allstores-card">
             <header>
                 <h2>전매장 현황</h2>
                 <span class="meta" id="as-meta"></span>
@@ -321,7 +493,7 @@
             <p class="hint" id="as-note"></p>
         </section>
 
-        <section data-area="sales" data-sub="매장" class="card full">
+        <section data-area="sales" data-sub="전체 매장 요약" class="card full">
             <header>
                 <h2>매장 비교</h2>
                 <button class="linkish" data-toggle="t-stores">표 접기</button>
@@ -329,7 +501,7 @@
             <div class="tableview tall" id="t-stores"></div>
         </section>
 
-        <section data-area="sales" data-sub="매장" class="card full" id="alerts-card">
+        <section data-area="sales" data-sub="전체 매장 요약" class="card full" id="alerts-card">
             <header>
                 <h2>급증·급감 매장 · 기간 대비</h2>
                 <span class="meta" id="alerts-summary"></span>
@@ -365,7 +537,7 @@
              매장을 심각순(연속하락 > 달성률 미달 > 기준선 위반)으로 올립니다.
              증상·원인·조치 문구는 서버 규칙 표(kpi_diagnosis_rules)가 원본
              (web/diagnosis.js). 위 필터(기간·매장)와 무관합니다. -->
-        <section data-area="sales" data-sub="매장" class="card full" id="diagnosis-card">
+        <section data-area="sales" data-sub="전체 매장 요약" class="card full" id="diagnosis-card">
             <header>
                 <h2>매장 진단</h2>
                 <span class="meta" id="diag-meta"></span>
@@ -383,7 +555,7 @@
                 일평균은 일 단위 집계 기준(없는 매장은 월 증감률 대용)</p>
         </section>
 
-        <section data-area="sales" data-sub="매장" class="card full">
+        <section data-area="sales" data-sub="전체 매장 요약" class="card full">
             <header>
                 <h2>비정규 메뉴 현황</h2>
                 <button class="linkish" data-toggle="t-nonstd">전체 매장 표</button>
@@ -399,7 +571,7 @@
              4절 그대로(web/kpi.js). -->
         <!-- 원장 계급(카드 #118) — 매일 보는 값이 아니라 기준표라 기본 접힘.
              내용·기능은 그대로입니다(내용 삭제 0). -->
-        <details data-area="sales" data-sub="매장" class="card ledger" id="kpi-settings-card">
+        <details data-area="sales" data-sub="전체 매장 요약" class="card ledger" id="kpi-settings-card">
             <summary>
                 <h2>KPI 기준 설정</h2>
                 <span class="meta" id="kpi-set-meta"></span>
@@ -418,46 +590,37 @@
             </div>
         </details>
 
-        <section data-area="sales" data-sub="시간·요일" class="card">
-            <header>
-                <h2>메뉴 × 요일</h2>
-                <button class="linkish" data-toggle="t-mweek">표로 보기</button>
-            </header>
-            <div id="c-mweek"></div>
-            <div class="tableview" id="t-mweek" hidden></div>
-        </section>
-
-        <section data-area="sales" data-sub="시간·요일" class="card">
-            <header>
-                <h2>메뉴 × 시간대</h2>
-                <button class="linkish" data-toggle="t-mpart">표로 보기</button>
-            </header>
-            <p class="hint">아침 06–11 · 점심 11–14 · 오후 14–17 · 저녁 17–06</p>
-            <div id="c-mpart"></div>
-            <div class="tableview" id="t-mpart" hidden></div>
-        </section>
-
-        <section data-area="sales" data-sub="품목" class="card full">
-            <header>
-                <h2>분류별 비중</h2>
-                <button class="linkish" data-toggle="t-category">표로 보기</button>
-            </header>
-            <svg class="plot" id="c-category" role="img" aria-label="분류별 매출 비중"></svg>
-            <div class="tableview" id="t-category" hidden></div>
-        </section>
-
-        <section data-area="sales" data-sub="품목" class="card full">
-            <header>
-                <h2>메뉴 × 상권</h2>
-                <button class="linkish" data-toggle="t-area">표로 보기</button>
-            </header>
-            <div id="c-area"></div>
-            <div class="tableview" id="t-area" hidden></div>
-        </section>
-
         <!-- '전 품목' 카드는 3라운드 2차에서 내렸습니다(담당자 확정).
              api_all_items(11_all_items_fix.sql)와 데이터는 그대로 있고,
              화면과 그 무거운 조회(2,600종)만 뺐습니다. 미매핑 카드는 유지. -->
+
+        <!-- ============================================================
+             매장 리뷰 보기 (카드 #132 — 리뷰 탭의 '매장 대시보드'식 매장 보기).
+             콤보는 dom.js searchify(직접 그린 목록 — datalist 금지, 디자인
+             언어 문서). 새 조회를 만들지 않습니다: 리뷰 목록·요약이 이미
+             전역 매장 필터(f-store)를 쓰므로, 이 콤보는 f-store 의 거울입니다 —
+             여기서 고르면 f-store 가 바뀌어 아래 리뷰 목록도 같은 매장으로
+             좁혀지고, 카드 내용은 그 load() 가 받아 온 요약(api_review_summary)
+             에서 그립니다(app.js drawReviewStoreView). 검토 대기 초안만
+             매장을 아는 기존 rpc(api_pending_drafts, 14_reply_drafts.sql)를
+             매장을 골랐을 때 한 번 더 받습니다.
+             ============================================================ -->
+        <section data-area="reviews" class="card full" id="rv-store-card">
+            <header>
+                <h2>매장 리뷰 보기</h2>
+                <span class="meta" id="rvs-meta"></span>
+            </header>
+            <div class="reqform">
+                <div class="field grow">
+                    <label for="rv-store">매장</label>
+                    <select id="rv-store"><option value="">매장을 고르세요</option></select>
+                </div>
+            </div>
+            <div class="kpis" id="rvs-kpis"></div>
+            <div id="rvs-bars"></div>
+            <div class="tableview" id="t-rvs-platform"></div>
+            <p class="hint" id="rvs-note"></p>
+        </section>
 
         <section data-area="reviews" class="card full" id="review-card">
             <header>
@@ -558,7 +721,7 @@
             <div class="tableview" id="t-consents"></div>
         </section>
 
-        <details data-area="sales" data-sub="품목" class="card ledger" id="unmapped-card">
+        <details data-area="sales" data-sub="전체 매장 요약" class="card ledger" id="unmapped-card">
             <summary>
                 <h2>미매핑 품목</h2>
                 <span class="meta" id="unmapped-count"></span>
@@ -1356,6 +1519,35 @@
          위의 화면입니다. 본사에 광고비 집행내역 자료가 애초에 없음이 확정돼
          (2026-08-11 담당자) 반입 대기가 아니라 웹에서 직접 넣습니다(큐 #92).
          광고 변경(쓰기)은 점주 개인 계정이라 만들지 않습니다(scope-2026 6번, D18). -->
+
+    <!-- 매장 보기 — 광고 탭의 매장 단면 (카드 #131 · 담당자 지시 2026-08-21).
+         매장 대시보드와 같은 문법(searchify 콤보 → 그 매장 카드). 광고 실적은
+         api_ad_spend 응답을 매장으로 거른 것(자료가 없으면 빈 자리 그대로 —
+         집행내역은 본사에 부존재 확정), 배달앱 메뉴 대조는
+         api_delivery_menu_check(p_store) 의 그 매장 결과입니다(57). 아래
+         전체 보기 카드는 그대로입니다(삭제 0). -->
+    <section data-area="ads" class="card full" id="ads-store-card">
+        <header>
+            <h2>매장 보기</h2>
+            <span class="meta" id="adv-meta"></span>
+        </header>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="adv-store">매장</label>
+                <select id="adv-store"><option value="">매장을 고르세요</option></select>
+            </div>
+        </div>
+        <div class="sd-empty" id="adv-empty">매장을 선택하세요 — 위 매장 칸에 이름을 치면 검색됩니다.</div>
+        <div id="adv-detail" hidden>
+            <div class="kpis" id="adv-kpis"></div>
+            <p class="hint" id="adv-ads-hint" hidden></p>
+            <div class="tableview" id="t-adv-ads"></div>
+            <h3>배달앱 메뉴 대조 — 이 매장</h3>
+            <p class="hint" id="adv-dm-meta"></p>
+            <div class="tableview" id="t-adv-dm"></div>
+        </div>
+    </section>
+
     <section data-area="ads" class="card full" id="ads-card">
         <header>
             <h2>광고 집행 현황</h2>
@@ -1457,6 +1649,33 @@
          59_ourhome_orders.sql(아워홈 본사물류 발주량, QUEUE #67) 위의 화면입니다.
          '발주량 - 이론사용량 = 자점매입 의심' 의 앞 절반이 이제 있습니다.
          뒤 절반(판정)은 로스·폐기율이 와야 켜집니다 — 59 설계 판단 [4]. -->
+    <!-- ============================================================
+         매장 발주·식자재 보기 (카드 #132 — 식자재 탭의 '매장 대시보드'식
+         매장 보기, web/ing_store.js). 매장 1곳을 골라 아워홈 발주량 추이(59)
+         × 매출(api_monthly) = 월별 원가율, 이론 사용량(49)의 매장 단면을
+         봅니다 — 전부 기존 rpc 재사용, 새 SQL 없음. 콤보는 searchify.
+         아래 발주량·이론 사용량 카드의 고르개는 건드리지 않습니다(그 카드가
+         제 필터로 다시 받게 하면 같은 조회가 두 번 나갑니다).
+         ============================================================ -->
+    <section data-area="ingredients" class="card full" id="ing-store-card">
+        <header>
+            <h2>매장 발주·식자재 보기</h2>
+            <span class="meta" id="is-meta"></span>
+        </header>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="is-store">매장</label>
+                <select id="is-store"><option value="">매장을 고르세요</option></select>
+            </div>
+        </div>
+        <div class="kpis" id="is-kpis"></div>
+        <div class="tableview" id="t-is-months"></div>
+        <svg class="plot" id="c-is-oh" role="img" aria-label="월별 아워홈 발주액 막대"></svg>
+        <p class="hint" id="is-note"></p>
+        <div class="tableview" id="t-is-usage"></div>
+        <p class="hint" id="is-usage-note"></p>
+    </section>
+
     <section data-area="ingredients" class="card full" id="ourhome-card">
         <header>
             <h2>발주량 (아워홈)</h2>
@@ -2014,6 +2233,33 @@
          요율·납기·지연이자는 settlement_settings(본사 값)이고, 청구는 매출
          (agg_month)로 계산한 예상치입니다 — 본사 청구·입금 원자료가 반입되면
          그 값(source=hq)이 우선하고 갱신해도 덮이지 않습니다. -->
+
+    <!-- 매장 보기 — 정산의 매장 단면 (카드 #131 · 담당자 지시 2026-08-21
+         "정산·광고 탭도 매장 대시보드처럼"). 매장 대시보드(sd-card)와 같은
+         문법: searchify 콤보로 매장을 고르면 그 매장 카드가 채워집니다.
+         원천은 전부 기존 rpc(api_royalty_month 를 달 단위로 캐시 +
+         api_royalty_receivables + api_royalty_store_rates)라 새 SQL 없음 —
+         settlement.js initSettlementStoreView. 아래 전체 보기 카드 3장은
+         그대로입니다(삭제 0). -->
+    <section data-area="settlement" class="card full" id="settlement-store-card">
+        <header>
+            <h2>매장 보기</h2>
+            <span class="meta" id="sts-meta"></span>
+        </header>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="sts-store">매장</label>
+                <select id="sts-store"><option value="">매장을 고르세요</option></select>
+            </div>
+        </div>
+        <div class="sd-empty" id="sts-empty">매장을 선택하세요 — 위 매장 칸에 이름을 치면 검색됩니다.</div>
+        <div id="sts-detail" hidden>
+            <div class="kpis" id="sts-kpis"></div>
+            <div class="tableview" id="t-sts-months"></div>
+            <p class="hint" id="sts-note"></p>
+        </div>
+    </section>
+
     <section data-area="settlement" class="card full" id="settlement-month-card">
         <header>
             <h2>월별 로열티 청구</h2>

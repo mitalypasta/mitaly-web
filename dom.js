@@ -211,7 +211,10 @@ export function searchify(target) {
     const refreshPlaceholder = () => {
         const blank = options().find((o) => o.value === "");
         // '전체'류 항목이 있으면 빈 입력 = 그 항목. 자리 문구로 보여 줍니다.
-        input.placeholder = blank ? blank.textContent : "매장 검색";
+        // 매장이 아닌 select(설정 탭 표준명 등)는 data-combo-placeholder /
+        // data-combo-empty 로 제 문구를 줍니다 — 기본값은 종전 그대로.
+        input.placeholder = blank ? blank.textContent
+            : (select.dataset.comboPlaceholder || "매장 검색");
         showSelected();
     };
     new MutationObserver(() => { refreshPlaceholder(); if (!pop.hidden) renderList(); })
@@ -248,7 +251,8 @@ export function searchify(target) {
             ? shown.map((o, i) =>
                 `<li role="option" data-i="${i}" class="${o.value === cur ? "is-cur" : ""}`
                 + `${o.value === "" ? " is-blank" : ""}">${escape(o.textContent)}</li>`).join("")
-            : '<li class="is-empty">일치하는 매장이 없습니다</li>';
+            : `<li class="is-empty">${escape(
+                select.dataset.comboEmpty || "일치하는 매장이 없습니다")}</li>`;
         active = shown.length ? Math.max(0, shown.findIndex((o) => o.value === cur)) : -1;
         if (q !== "" && shown.length) active = 0;
         paintActive();

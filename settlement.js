@@ -3,8 +3,8 @@
 
 import { wonFull, int, ymLabel } from "./format.js";
 import { escape, monthsBetween } from "./util.js";
-import { $, table } from "./dom.js";
-import { db } from "./client.js";
+import { $, table, searchify } from "./dom.js";
+import { db, fetchStores } from "./client.js";
 import { S } from "./state.js";
 import { refreshTasksSummary, refreshTaskList, taskStatusTag } from "./tasks.js";
 
@@ -46,6 +46,7 @@ export function initSettlement() {
     $("pay-submit").addEventListener("click", submitPayment);
     initSettlementActions();
     initRoyaltyRates();
+    initSettlementStoreView();
 
     Promise.all([refreshSettlementMonth(), refreshReceivables()]);
 }
@@ -217,6 +218,7 @@ async function generateInvoices() {
     }
     msg.textContent = `매장 ${int(data.stores)}곳 · ${int(data.written)}건 반영`
         + (data.hq_kept ? ` · 본사 자료 ${int(data.hq_kept)}건 유지` : "");
+    stsInvalidate();
     await Promise.all([refreshSettlementMonth(), refreshReceivables()]);
 }
 
@@ -286,6 +288,7 @@ async function submitPayment() {
             : "기록했습니다. 완납됐습니다.";
     $("pay-amount").value = "";
     $("pay-note").value = "";
+    stsInvalidate();
     await Promise.all([refreshSettlementMonth(), refreshReceivables()]);
 }
 
@@ -372,6 +375,7 @@ function initSettlementActions() {
             return;
         }
         const invoiceId = Number($("settlement-payments-panel").dataset.invoiceId);
+        stsInvalidate();
         await Promise.all([refreshSettlementMonth(), refreshReceivables()]);
         showSettlementPayments(invoiceId);
     });
@@ -507,6 +511,8 @@ async function saveRate(reset) {
         false);
     renderRateList();
     // 미청구 매장의 '예상 청구' 미리보기가 이 요율을 쓰므로 같이 새로 그립니다.
+    // 매장 보기의 실요율 타일도 같은 값을 보므로 캐시를 버립니다.
+    stsInvalidate();
     await refreshSettlementMonth();
 }
 
@@ -523,6 +529,195 @@ function initRoyaltyRates() {
     });
     $("rate-save").addEventListener("click", () => saveRate(false));
     $("rate-reset").addEventListener("click", () => saveRate(true));
+}
+
+// ---- 매장 보기 (카드 #131 · 담당자 지시 2026-08-21) ------------------------
+//
+// 매장 대시보드와 같은 문법 — searchify 콤보로 매장을 고르면 그 매장의
+// 청구·입금·미수·실요율 타일 + 최근 12개월 정산 추이 표가 채워집니다.
+// 새 SQL 없음: api_royalty_month(달마다 전 매장이 들어 있음)를 달 단위로
+// 캐시해 매장을 바꿔도 재조회하지 않고, 미수 잔액은 api_royalty_receivables,
+// 실요율은 api_royalty_store_rates(84)를 그대로 씁니다. 청구 생성·입금·요율
+// 저장이 일어나면 stsInvalidate 가 캐시를 버리고 다시 그립니다.
+
+const STS_MONTHS_SHOWN = 12;       // 추이 표 범위 — 최근 12개월
+let stsMonths = [];                // 조회 대상 연월(오름차순)
+const stsMonthCache = new Map();   // ym → api_royalty_month 응답 promise
+let stsRatesPromise = null;        // api_royalty_store_rates 응답 promise
+let stsSeq = 0;                    // 매장을 빠르게 바꿀 때 늦게 온 응답 버리기
+
+function stsMonthData(ym) {
+    if (!stsMonthCache.has(ym)) {
+        stsMonthCache.set(ym, db.rpc("api_royalty_month", { p_ym: ym })
+            .then((r) => {
+                if (r.error) {
+                    stsMonthCache.delete(ym);   // 실패는 캐시로 굳히지 않습니다
+                    throw new Error(r.error.message);
+                }
+                return r.data || {};
+            }));
+    }
+    return stsMonthCache.get(ym);
+}
+
+function stsRates() {
+    if (!stsRatesPromise) {
+        stsRatesPromise = db.rpc("api_royalty_store_rates")
+            .then((r) => {
+                if (r.error) {
+                    stsRatesPromise = null;
+                    throw new Error(r.error.message);
+                }
+                return r.data || {};
+            });
+    }
+    return stsRatesPromise;
+}
+
+function stsInvalidate() {
+    stsMonthCache.clear();
+    stsRatesPromise = null;
+    if ($("sts-store") && $("sts-store").value) refreshSettlementStore();
+}
+
+function stsTile(label, value, sub, urgent) {
+    return `<div class="tile${urgent ? " t-urgent" : ""}">`
+        + `<div class="label">${escape(label)}</div>`
+        + `<div class="value">${value}</div>`
+        + (sub ? `<div class="sub">${sub}</div>` : "")
+        + `</div>`;
+}
+
+async function refreshSettlementStore() {
+    const name = $("sts-store").value;
+    const empty = $("sts-empty");
+    const detail = $("sts-detail");
+    if (!name) {
+        empty.hidden = false;
+        detail.hidden = true;
+        $("sts-meta").textContent = "";
+        return;
+    }
+    const seq = ++stsSeq;
+    $("sts-meta").textContent = "불러오는 중…";
+
+    let monthsData, rates, recv;
+    try {
+        [monthsData, rates, recv] = await Promise.all([
+            Promise.all(stsMonths.map(stsMonthData)),
+            stsRates(),
+            // 미수는 입금 기록으로 수시로 변해 캐시하지 않습니다(조회 하나뿐).
+            db.rpc("api_royalty_receivables").then((r) => {
+                if (r.error) throw new Error(r.error.message);
+                return r.data || {};
+            }),
+        ]);
+    } catch (e) {
+        if (seq !== stsSeq) return;
+        empty.hidden = true;
+        detail.hidden = false;
+        $("sts-meta").textContent = "";
+        $("sts-kpis").innerHTML = "";
+        $("t-sts-months").innerHTML =
+            '<p class="hint">불러오지 못했습니다: ' + escape(e.message) + "</p>";
+        $("sts-note").textContent = "";
+        return;
+    }
+    if (seq !== stsSeq) return;      // 그 사이 다른 매장을 골랐으면 버립니다
+
+    empty.hidden = true;
+    detail.hidden = false;
+
+    // 월별 추이 — 달마다 그 매장 행을 뽑습니다(없으면 매출·청구 둘 다 없는 달).
+    const rows = stsMonths.map((ym, i) => {
+        const s = (monthsData[i].stores || []).find((r) => r.store === name);
+        return { ym, s };
+    });
+
+    const sum = (pick) => rows.reduce((a, r) => a + (r.s ? Number(pick(r.s)) || 0 : 0), 0);
+    const billedSum = sum((s) => s.billed_amount);
+    const paidSum = sum((s) => s.paid_amount);
+
+    // 미수 잔액은 전 기간(청구가 살아 있는 한 12개월 밖도 잡힙니다).
+    const myRecv = (recv.items || []).filter((r) => r.store === name);
+    const recvSum = myRecv.reduce((a, r) => a + (Number(r.outstanding) || 0), 0);
+    const maxOverdue = myRecv.reduce((a, r) => Math.max(a, r.overdue_days || 0), 0);
+
+    // 실요율 — 개별 요율이 있으면 그 값, 없으면 공통 요율(84 규칙 그대로).
+    const mine = (rates.stores || []).find((r) => r.store === name);
+    const ratePct = mine && mine.rate_pct != null ? mine.rate_pct : null;
+
+    $("sts-meta").textContent = stsMonths.length
+        ? `최근 ${stsMonths.length}개월 · ${ymLabel(stsMonths[0])} ~ ${ymLabel(stsMonths[stsMonths.length - 1])}`
+        : "";
+
+    $("sts-kpis").innerHTML = [
+        stsTile("① 청구한 돈 (기간 합계)", escape(wonFull(billedSum)),
+            `청구 ${int(rows.filter((r) => r.s && r.s.invoice_id != null).length)}개월`),
+        stsTile("② 들어온 돈 (입금)", escape(wonFull(paidSum)), ""),
+        stsTile("③ 못 받은 돈 (전 기간)", escape(wonFull(recvSum)),
+            recvSum > 0
+                ? `연체 ${int(myRecv.length)}건 · 최장 ${int(maxOverdue)}일 — 아래 미수 목록에서 처리`
+                : "미수 없음",
+            recvSum > 0),
+        stsTile("로열티 요율",
+            ratePct != null
+                ? `${escape(String(ratePct))}%`
+                : (rates.default_rate_pct != null
+                    ? `${escape(String(rates.default_rate_pct))}%` : "—"),
+            ratePct != null
+                ? "이 매장 개별 요율 — 아래 '로열티 수정'에서 바꿉니다"
+                : "공통 요율"),
+    ].join("");
+
+    // 표는 최신 달부터. 열 이름은 월별 표와 같은 말(같은 돈 = 같은 이름).
+    const list = [...rows].reverse();
+    table($("t-sts-months"),
+        ["월", "상태", "이 달 매출", "청구한 돈", "들어온 돈", "못 받은 돈", "납기일"],
+        list.map(({ ym, s }) => !s
+            ? [ymLabel(ym), '<span class="tag">자료 없음</span>', "—", "—", "—", "—", "—"]
+            : [
+                ymLabel(ym),
+                settleStatusTag(s.status),
+                s.sales_amount != null ? wonFull(s.sales_amount) : "—",
+                s.invoice_id != null
+                    ? wonFull(s.billed_amount)
+                        + (s.source === "hq"
+                            ? '<div class="meta">본사 확정</div>'
+                            : `<div class="meta">매출 × ${escape(String(s.rate_pct))}%</div>`)
+                    : "—",
+                wonFull(s.paid_amount),
+                s.outstanding == null ? "—"
+                    : s.outstanding < 0
+                        ? `${wonFull(s.outstanding)} <span class="tag h-warn">과입금</span>`
+                        : wonFull(s.outstanding)
+                            + (s.overdue_days > 0 && s.outstanding > 0
+                                ? `<div class="meta">연체 ${int(s.overdue_days)}일</div>` : ""),
+                s.due_date ? escape(s.due_date) : "—",
+            ]),
+        { html: true });
+
+    $("sts-note").textContent =
+        "청구·입금은 위 월별 로열티 청구 표와 같은 원천입니다 — 청구가 없는 달은 "
+        + "'청구 없음'으로 보이고, '청구 생성·갱신'을 누르면 만들어집니다.";
+}
+
+async function initSettlementStoreView() {
+    const months = S.filterRange
+        ? monthsBetween(S.filterRange.min, S.filterRange.max) : [];
+    stsMonths = months.slice(-STS_MONTHS_SHOWN);
+
+    const select = $("sts-store");
+    const { data: stores } = await fetchStores();
+    for (const s of stores || []) {
+        const option = document.createElement("option");
+        // 정산 rpc 응답이 매장 이름으로 오므로 값도 이름입니다(sd-store 는 id).
+        option.value = s.name;
+        option.textContent = s.name;
+        select.append(option);
+    }
+    searchify(select);
+    select.addEventListener("change", refreshSettlementStore);
 }
 
 async function refreshReceivables() {

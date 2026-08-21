@@ -23,6 +23,7 @@ import { initAccountPresence } from "./account.js";
 import { initLifecycle } from "./lifecycle.js";
 import { initKakaoStats } from "./kakao_stats.js";
 import { initOurhome } from "./ourhome.js";
+import { initIngStore } from "./ing_store.js";
 import { initStoreDb } from "./store_db.js";
 import { initIngredients } from "./ingredients.js";
 import { initCredentials } from "./credentials.js";
@@ -43,6 +44,7 @@ import { initKpiSettings } from "./kpi.js";
 import { initStoreDash } from "./store_dash.js";
 import { initDiagnosis } from "./diagnosis.js";
 import { initAllStores } from "./allstores.js";
+import { initSettings } from "./settings.js";
 
 // 폼 밖 비밀번호 칸(매장 정보 탭 암호 게이트·계정 편집)을 제 폼에 가둔 대신,
 // 그 폼은 제출(새로고침)하지 않습니다 — Enter 는 각 모듈의 keydown 이 처리.
@@ -213,7 +215,8 @@ async function initDashboard() {
     for (const id of ["f-store", "dmap-store", "oh-store", "iu-store",
                       "cred-store", "cred-f-store", "ct-store", "ct-f-store",
                       "v-store", "vs-store", "la-store", "pm-store",
-                      "dm-store", "tk-store", "tk-filter-store", "pay-invoice"]) {
+                      "dm-store", "tk-store", "tk-filter-store", "pay-invoice",
+                      "rv-store"]) {
         searchify(id);
     }
 
@@ -249,6 +252,25 @@ async function initDashboard() {
         option.textContent = name;
         storeSelect.append(option);
     }
+
+    // 리뷰 탭 '매장 리뷰 보기' 콤보(카드 #132) — f-store 의 거울입니다.
+    // 리뷰 목록·요약이 이미 f-store 로 좁혀지므로 새 조회 축을 만들지 않고,
+    // 여기서 고르면 f-store 를 그 매장으로 바꿔 기존 load() 하나가 목록과
+    // 매장 보기 카드를 같이 채웁니다(같은 매장을 다시 골라도 재조회 없음).
+    // 반대 방향(필터 줄·홈 이상신호 행에서 f-store 가 바뀔 때)의 미러는
+    // drawReviewStoreView 가 그릴 때마다 맞춥니다.
+    const rvStore = $("rv-store");
+    for (const name of info.stores || []) {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        rvStore.append(option);
+    }
+    rvStore.addEventListener("change", () => {
+        if (storeSelect.value === rvStore.value) return;
+        storeSelect.value = rvStore.value;
+        storeSelect.dispatchEvent(new Event("change"));
+    });
 
     // 배달 지도 카드의 자체 고르개(S17). 위 필터 줄이 지도 영역에서는 안 보여서
     // (showArea) 이론 사용량 카드처럼 카드가 직접 갖습니다 — 지도는 이제 이
@@ -368,11 +390,15 @@ async function initDashboard() {
         // 매장 대시보드(#112)·전매장 현황(#113)도 자체 고르개를 갖는 단발
         // 조회라 load() 묶음 밖입니다 — 필터 변경에 재조회하지 않습니다.
         initStoreDash, initAllStores,
+        // 전사 추이 hero(#129)의 주간(90)·일별(95) 재료도 전 매장 고정의
+        // 단발 조회입니다 — 연도·분기·월은 load() 의 api_monthly 를 씁니다.
+        initCompanyTrend,
         initTasks, initInquiries, initDrafts,
         initNotices, initVisits, initStoreDb, initAccountPresence,
         initLifecycle, initKakaoStats, initNotifications, initRecipients,
         initConsents, initSettlement, initAds, initIngredients,
-        initOurhome, initPosMenu, initComms, initKpiSettings,
+        initOurhome, initIngStore, initPosMenu, initComms, initKpiSettings,
+        initSettings,
     ]));
     loadLastUpdated();
 }
@@ -484,6 +510,16 @@ async function load(onFirstPaint) {
         .then((r) => (r.error ? {} : ((r.data || [])[0] || {}).status || {}))
         .catch(() => ({}));
 
+    // '매장 리뷰 보기'(카드 #132)의 검토 대기 초안 — 매장을 골랐을 때만
+    // 받습니다. api_draft_summary 는 매장을 모르는 전체 합계라, 매장을 아는
+    // 기존 rpc(api_pending_drafts, 14_reply_drafts.sql)를 재사용해 화면에서
+    // 그 매장 것만 셉니다(dev·prod 대기분 수백 건 수준 — 1,000 상한 안).
+    const pendingDrafts = args.p_store
+        ? db.rpc("api_pending_drafts", { p_limit: 1000 })
+            .then((r) => (r.error ? [] : ((r.data || [])[0] || {}).items || []))
+            .catch(() => [])
+        : Promise.resolve([]);
+
     // 화면 맨 위 4개(요약·월별추이·매장별·매장비교)를 먼저 받아 그리고,
     // 나머지는 그 뒤에 채웁니다.
     //
@@ -493,9 +529,10 @@ async function load(onFirstPaint) {
     // **보이기까지가 짧아집니다.**
     // 이 둘은 없어도 화면이 떠야 하는 것들이라 위 묶음에 안 넣었습니다.
     // 늦게 오면 2차 그리기에 반영됩니다.
-    const pending = { draftSummary: {}, reviewSync: {} };
+    const pending = { draftSummary: {}, reviewSync: {}, pendingDrafts: [] };
     draftSummary.then((v) => { pending.draftSummary = v; });
     reviewSync.then((v) => { pending.reviewSync = v; });
+    pendingDrafts.then((v) => { pending.pendingDrafts = v; });
 
     // ⚠️ 필터를 연달아 바꾸면 load() 가 여러 번 겹칩니다. 2단계로 나눈 뒤로는
     //    옛 조회의 2차가 새 조회보다 늦게 끝나 **옛 결과가 화면을 덮어쓰는**
@@ -563,6 +600,7 @@ function pack(results, args, pending) {
         compare: ((d(18))[0] || {}).compare || {},
         draftSummary: pending.draftSummary,
         reviewSync: pending.reviewSync,
+        pendingDrafts: pending.pendingDrafts,
     };
 }
 
@@ -593,6 +631,9 @@ function draw(d) {
 
     drawAlerts(d);
     drawReport(d);
+    // 전사 추이 hero(#129) — 연도·분기·월 단위가 이 load() 의 api_monthly 를
+    // 접으므로 필터 변경마다 같이 다시 그립니다(주간·일별은 자기 캐시).
+    drawCompanyTrend();
 
     drawBars($("c-menu"), {
         rows: d.menus.slice(0, 15).map((r) => ({ label: r.menu, value: Number(r.amount) })),
@@ -634,6 +675,300 @@ function draw(d) {
     drawCategory(d, c);
     drawReviews(d, c);
     drawUnmapped(d);
+}
+
+// ---- 전사 매출 추이 (카드 #129 — '전체 매장 요약' hero) -----------------
+//
+// 옛 품목·시간·요일·매장 서브탭을 합친 '전체 매장 요약' 화면의 답 카드.
+// 단위 다섯(연도·분기·월·주간·일별)을 unitbtn 한 줄이 고릅니다
+// (docs/web-hierarchy.md 5절). 연도·분기·월은 load() 가 이미 받는
+// api_monthly(전역 필터 기준)를 여기서 접고 — 새 조회 없음(report.js 의
+// 연월 접기와 같은 규칙) —, 주간은 90(api_weekly_company)·일별은
+// 95(api_daily_company — 홀/배달 분해)를 씁니다. 두 rpc 는 전 매장·전 채널
+// 고정의 단발 조회(주차별 카드 #114 전례)라 필터 변경에 다시 받지 않고,
+// 단위마다 출처가 다른 것은 카드 각주가 말합니다(위계 문서 5절 규칙).
+// 증감 색은 KPI 시트 관례(상승 빨강 wk-up · 하락 파랑 wk-down —
+// docs/kpi-sheet-adoption.md, 옛 주차별 카드 그대로)입니다.
+
+const COMPANY_DOW_KO = { 1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토", 7: "일" };
+const COMPANY_UNIT_PREV = { year: "전년", quarter: "전분기", month: "전월",
+                            week: "전주", day: "전일" };
+
+let companyUnit = "month";
+let companyWeekly = null;   // api_weekly_company 응답(jsonb 스칼라)
+let companyDaily = null;    // api_daily_company 응답(jsonb 스칼라)
+
+// "2026-08-13" → "08/13" (옛 주차별 카드의 라벨 규칙 그대로).
+const companyMd = (iso) => `${String(iso).slice(5, 7)}/${String(iso).slice(8, 10)}`;
+
+// 전기 대비(%). 전기가 0이거나 없으면 null — 0 나눗셈·신규 기간 오탐 방지
+// (18·19·90 과 같은 규칙).
+function companyPct(cur, prev) {
+    if (prev == null || !(Number(prev) > 0)) return null;
+    return Math.round((Number(cur) - Number(prev)) / Number(prev) * 1000) / 10;
+}
+
+function companyPctCell(pct) {
+    if (pct == null) return "—";
+    const text = `${pct > 0 ? "+" : ""}${pct}%`;
+    const cls = pct > 0 ? "wk-up" : pct < 0 ? "wk-down" : "";
+    return cls ? `<span class="${cls}">${escape(text)}</span>` : escape(text);
+}
+
+// api_monthly(채널별 한 줄 — ym·channel(홀/배달)·amount·qty)를 연·분기·월
+// 묶음으로 접습니다. key 는 정렬용 숫자, label 은 화면 표기입니다.
+function foldCompanyMonthly(keyOf, labelOf) {
+    const map = new Map();
+    for (const r of ((S.lastData || {}).monthly) || []) {
+        const key = keyOf(Number(r.ym));
+        const slot = map.get(key) || { key, amount: 0, qty: 0, hall: 0, delivery: 0 };
+        const amt = Number(r.amount) || 0;
+        slot.amount += amt;
+        slot.qty += Number(r.qty) || 0;
+        if (r.channel === "홀") slot.hall += amt;
+        else slot.delivery += amt;
+        map.set(key, slot);
+    }
+    return [...map.values()]
+        .sort((a, b) => a.key - b.key)
+        .map((s) => ({ ...s, label: labelOf(s.key) }));
+}
+
+function companyMonthlyRows() {
+    if (companyUnit === "year") {
+        return foldCompanyMonthly((ym) => Math.floor(ym / 100), (y) => `${y}년`);
+    }
+    if (companyUnit === "quarter") {
+        // 표기는 1분기~4분기(담당자 지시 — Q1 금지, 매장 대시보드 분기 카드 전례).
+        return foldCompanyMonthly(
+            (ym) => Math.floor(ym / 100) * 10 + Math.ceil((ym % 100) / 3),
+            (k) => `${Math.floor(k / 10)}년 ${k % 10}분기`);
+    }
+    return foldCompanyMonthly((ym) => ym, (ym) => ymLabel(ym));
+}
+
+function initCompanyTrend() {
+    for (const b of document.querySelectorAll("#company-units .unitbtn")) {
+        b.addEventListener("click", () => {
+            companyUnit = b.dataset.unit;
+            for (const x of document.querySelectorAll("#company-units .unitbtn")) {
+                x.classList.toggle("is-on", x === b);
+            }
+            drawCompanyTrend();
+        });
+    }
+    // 주간·일별 재료 — 실패해도 화면이 죽지 않고 그 단위에만 안내가 남습니다
+    // (90·95 미적용 프로젝트 대비, draftSummary 와 같은 태도). 26주·8주(56일)는
+    // 반년 흐름을 보는 분량이고, 더 길게는 엑셀 내보내기 몫입니다.
+    db.rpc("api_weekly_company", { p_weeks: 26 })
+        .then((r) => {
+            if (r.error) return;
+            companyWeekly = Array.isArray(r.data) ? r.data[0] : r.data;
+            if (companyUnit === "week") drawCompanyTrend();
+        })
+        .catch(() => { /* 위 주석 — 그 단위 안내문이 대신 남습니다 */ });
+    db.rpc("api_daily_company", { p_days: 56 })
+        .then((r) => {
+            if (r.error) return;
+            companyDaily = Array.isArray(r.data) ? r.data[0] : r.data;
+            if (companyUnit === "day") drawCompanyTrend();
+        })
+        .catch(() => { /* 위 주석 */ });
+    drawCompanyTrend();
+}
+
+function companyHeroStat(label, valueHtml, subHtml) {
+    return `<div class="hero-stat"><div class="hs-label">${escape(label)}</div>`
+        + `<div class="hero-num">${valueHtml}</div>`
+        + (subHtml ? `<div class="hs-sub">${subHtml}</div>` : "")
+        + "</div>";
+}
+
+function companyBadge(pct) {
+    const badge = $("company-badge");
+    if (pct == null) { badge.hidden = true; return; }
+    badge.hidden = false;
+    // 상태 3색 의미 고정(위계 문서 4절) — 급감선 -10%(hq-standards 의
+    // 급증·급감 기준)만 조치 필요, 소폭 감소는 주의, 유지·증가는 정상.
+    badge.className = "hero-badge "
+        + (pct <= -10 ? "hb-critical" : pct < 0 ? "hb-attn" : "hb-good");
+    badge.textContent =
+        `${COMPANY_UNIT_PREV[companyUnit]} 대비 ${pct > 0 ? "+" : ""}${pct}%`;
+}
+
+function drawCompanyTrend() {
+    if (!$("company-card")) return;
+    const c = palette();
+    const stats = $("company-stats");
+    const legendEl = $("legend-company");
+    const svg = $("c-company");
+    const tv = $("t-company");
+    const note = $("company-note");
+
+    const empty = (text) => {
+        stats.innerHTML = "";
+        legendEl.innerHTML = "";
+        svg.hidden = true;
+        companyBadge(null);
+        tv.innerHTML = `<p class="hint">${escape(text)}</p>`;
+        note.textContent = "";
+    };
+    const channelLegend = () => {
+        legendEl.innerHTML =
+            `<span><i style="background:${c.s1}"></i>홀</span>`
+            + `<span><i style="background:${c.s2}"></i>배달</span>`;
+    };
+
+    if (companyUnit === "week") {
+        const weeks = ((companyWeekly || {}).weeks) || [];
+        if (!weeks.length) return empty("아직 주 단위 집계가 없습니다.");
+        const latest = weeks[0];                    // 서버가 최신 주 먼저.
+        const asc = [...weeks].reverse();
+        const dowStart = COMPANY_DOW_KO[(companyWeekly || {}).week_start_dow] || "?";
+
+        companyBadge(latest.wow_pct != null ? Number(latest.wow_pct) : null);
+        stats.innerHTML =
+            companyHeroStat("최근 주 전사 매출", escape(won(latest.amount)),
+                `${escape(companyMd(latest.week_start))}~${escape(companyMd(latest.week_end))}`
+                + ` (${escape(dowStart)}요일 시작) · ${escape(wonFull(latest.amount))}`)
+            + companyHeroStat("주문수", escape(int(latest.orders)),
+                `운영 ${escape(int(latest.store_count))}곳`)
+            + companyHeroStat("지점당 매출",
+                latest.per_store != null ? escape(won(latest.per_store)) : "—",
+                "전사 매출 ÷ 운영 매장수");
+
+        legendEl.innerHTML = "";
+        svg.hidden = false;
+        drawLine(svg, {
+            xLabels: asc.map((w) => companyMd(w.week_start)),
+            series: [{ name: "전사 매출", color: c.s1,
+                       values: asc.map((w) => Number(w.amount) || 0) }],
+            colors: c,
+        });
+
+        table(tv, ["주 시작일", "매출", "전주비", "주문수", "운영 매장수", "지점당"],
+            weeks.map((w) => [
+                `${escape(w.week_start)} ~ ${escape(companyMd(w.week_end))}`,
+                escape(wonFull(w.amount)),
+                companyPctCell(w.wow_pct != null ? Number(w.wow_pct) : null),
+                escape(int(w.orders)),
+                escape(int(w.store_count)),
+                w.per_store != null ? escape(won(w.per_store)) : "—",
+            ]),
+            { html: true,
+              export: { headers: ["주 시작일", "주 종료일", "매출", "전주비(%)",
+                                  "주문수", "운영 매장수", "지점당"],
+                        rows: weeks.map((w) => [w.week_start, w.week_end, w.amount,
+                                                w.wow_pct, w.orders, w.store_count,
+                                                w.per_store]) } });
+        note.textContent = "주간·일별은 전 매장·전 채널 고정(위 필터와 무관) · "
+            + "일 단위 집계 기준 · 운영 매장수 = 그 주 매출이 있는 매장 수";
+        return;
+    }
+
+    if (companyUnit === "day") {
+        const rows = ((companyDaily || {}).rows) || [];   // 오래된 날 먼저.
+        if (!rows.length) return empty("아직 일 단위 집계가 없습니다.");
+        const latest = rows[rows.length - 1];
+        const prev = rows.length > 1 ? rows[rows.length - 2] : null;
+
+        companyBadge(companyPct(latest.amount, prev && prev.amount));
+        const dayLabel = (r) =>
+            `${r.day} (${COMPANY_DOW_KO[r.dow] || "?"})`;
+        stats.innerHTML =
+            companyHeroStat("최근 일자 전사 매출", escape(won(latest.amount)),
+                `${escape(dayLabel(latest))} · ${escape(wonFull(latest.amount))}`)
+            + companyHeroStat("홀 / 배달",
+                `${escape(won(latest.hall_amount))} / ${escape(won(latest.delivery_amount))}`,
+                "홀 = 이지포스·아임유 매출 · 배달 = 배달앱 매출")
+            + companyHeroStat("주문수", escape(int(latest.orders)),
+                `운영 ${escape(int(latest.store_count))}곳`);
+
+        channelLegend();
+        svg.hidden = false;
+        drawLine(svg, {
+            xLabels: rows.map((r) => companyMd(r.day)),
+            series: [
+                { name: "홀", color: c.s1,
+                  values: rows.map((r) => Number(r.hall_amount) || 0) },
+                { name: "배달", color: c.s2,
+                  values: rows.map((r) => Number(r.delivery_amount) || 0) },
+            ],
+            colors: c,
+        });
+
+        const desc = [...rows].reverse();           // 표는 최신 날 먼저.
+        table(tv, ["일자", "매출", "전일비", "홀", "배달", "주문수", "운영 매장수"],
+            desc.map((r, i) => [
+                escape(dayLabel(r)),
+                escape(wonFull(r.amount)),
+                companyPctCell(companyPct(r.amount,
+                    i + 1 < desc.length ? desc[i + 1].amount : null)),
+                escape(wonFull(r.hall_amount)),
+                escape(wonFull(r.delivery_amount)),
+                escape(int(r.orders)),
+                escape(int(r.store_count)),
+            ]),
+            { html: true,
+              export: { headers: ["일자", "요일", "매출", "홀", "배달",
+                                  "주문수", "운영 매장수"],
+                        rows: desc.map((r) => [r.day, COMPANY_DOW_KO[r.dow] || "",
+                                               r.amount, r.hall_amount,
+                                               r.delivery_amount, r.orders,
+                                               r.store_count]) } });
+        note.textContent = "주간·일별은 전 매장·전 채널 고정(위 필터와 무관) · "
+            + "일 단위 집계 기준 · 홀 = 이지포스·아임유, 배달 = 배민·쿠팡이츠·요기요 등";
+        return;
+    }
+
+    // 연도·분기·월 — 전역 필터(기간·매장·채널) 기준의 api_monthly 접기.
+    if (!S.lastData) return empty("집계 중…");
+    const rows = companyMonthlyRows();
+    if (!rows.length) return empty("데이터가 없습니다.");
+    const latest = rows[rows.length - 1];
+    const prev = rows.length > 1 ? rows[rows.length - 2] : null;
+    const unitName = companyUnit === "year" ? "연도"
+        : companyUnit === "quarter" ? "분기" : "월";
+
+    companyBadge(companyPct(latest.amount, prev && prev.amount));
+    stats.innerHTML =
+        companyHeroStat(`최근 ${unitName} 매출`, escape(won(latest.amount)),
+            `${escape(latest.label)} · ${escape(wonFull(latest.amount))}`)
+        + companyHeroStat("홀 / 배달",
+            `${escape(won(latest.hall))} / ${escape(won(latest.delivery))}`,
+            "홀 = 이지포스·아임유 매출 · 배달 = 배달앱 매출")
+        + companyHeroStat("판매 수량", escape(int(latest.qty)),
+            `${escape(latest.label)} 기준`);
+
+    channelLegend();
+    svg.hidden = false;
+    drawLine(svg, {
+        xLabels: rows.map((r) => r.label),
+        series: [
+            { name: "홀", color: c.s1, values: rows.map((r) => r.hall) },
+            { name: "배달", color: c.s2, values: rows.map((r) => r.delivery) },
+        ],
+        colors: c,
+    });
+
+    const desc = [...rows].reverse();               // 표는 최신 기간 먼저.
+    table(tv, [unitName, "매출", `${COMPANY_UNIT_PREV[companyUnit]}비`,
+               "홀", "배달", "수량"],
+        desc.map((r, i) => [
+            escape(r.label),
+            escape(wonFull(r.amount)),
+            companyPctCell(companyPct(r.amount,
+                i + 1 < desc.length ? desc[i + 1].amount : null)),
+            escape(wonFull(r.hall)),
+            escape(wonFull(r.delivery)),
+            escape(int(r.qty)),
+        ]),
+        { html: true,
+          export: { headers: [unitName, "매출", "홀", "배달", "수량"],
+                    rows: desc.map((r) => [r.label, r.amount, r.hall,
+                                           r.delivery, r.qty]) } });
+    note.textContent = "연도·분기·월은 위 기간·매장·채널 필터 기준 — "
+        + "주간·일별 단위만 전 매장 고정입니다.";
 }
 
 // ---- 홈 (오늘 할 일 + 알아야 할 변화) ---------------------------------
@@ -967,7 +1302,84 @@ function ratingStars(value) {
     return "★".repeat(n) + "☆".repeat(Math.max(0, 5 - n));
 }
 
+// ---- 매장 리뷰 보기 (카드 #132 — 리뷰 탭의 '매장 대시보드'식 매장 보기) ----
+//
+// 새 조회 없이 load() 가 이미 받아 온 요약(api_review_summary — f-store 로
+// 좁혀진 것)을 매장 단면 카드로 그립니다. 부정 리뷰 기준은 앱 공통의
+// '3점 이하'(홈 타일·이상신호·rv-rating 과 같은 기준)입니다. 검토 대기
+// 초안만 매장을 아는 api_pending_drafts(전체 기간)에서 셉니다 — 기간 필터와
+// 기준이 다른 것을 타일 각주가 말합니다.
+
+function drawReviewStoreView(d, c) {
+    const store = $("f-store").value;
+    // 미러 — 필터 줄·홈 이상신호 행에서 f-store 가 바뀌어도 콤보가 따라갑니다.
+    if ($("rv-store").value !== store) $("rv-store").value = store;
+
+    const kpis = $("rvs-kpis");
+    if (!store) {
+        $("rvs-meta").textContent = "";
+        kpis.innerHTML = '<div class="sd-empty">매장을 선택하세요 — 위 매장 칸에 '
+            + "이름을 치면 검색되고, 아래 리뷰 목록도 그 매장으로 좁혀집니다.</div>";
+        $("rvs-bars").innerHTML = "";
+        $("t-rvs-platform").innerHTML = "";
+        $("rvs-note").textContent = "";
+        return;
+    }
+
+    const s = d.reviewSummary || {};
+    const total = Number(s.total) || 0;
+    const byRating = s.by_rating || [];
+    const negative = byRating
+        .filter((r) => Number(r.rating) <= 3)
+        .reduce((a, r) => a + (Number(r.count) || 0), 0);
+    const mine = (d.pendingDrafts || []).filter((x) => x.store === store);
+    const draftWait = mine.filter((x) => x.status === "draft").length;
+    const draftApproved = mine.filter((x) => x.status === "approved").length;
+
+    $("rvs-meta").textContent =
+        `${store} · ${ymLabel(d.args.p_ym_from)} ~ ${ymLabel(d.args.p_ym_to)}`;
+
+    const tile = (label, value, sub, cls) =>
+        `<div class="tile${cls ? " " + cls : ""}"><div class="label">${escape(label)}</div>`
+        + `<div class="value">${value}</div>`
+        + (sub ? `<div class="sub">${sub}</div>` : "") + "</div>";
+    kpis.innerHTML = [
+        tile("리뷰", `${int(total)}건`,
+            total ? `평균 ${escape(String(s.avg_rating ?? "—"))}점` : "이 기간 리뷰 없음"),
+        tile("부정 리뷰 (3점 이하)", `${int(negative)}건`, "",
+            negative > 0 ? "t-attn" : ""),
+        tile("미답변", `${int(Number(s.unanswered) || 0)}건`, ""),
+        tile("검토 대기 초안", `${int(draftWait)}건`,
+            `승인됨 ${int(draftApproved)}건 · 전체 기간 기준`),
+    ].join("");
+
+    // 별점 분포 — 아래 목록 카드의 rv-bars 와 같은 문법(같은 요약 데이터).
+    const max = Math.max(1, ...byRating.map((r) => Number(r.count) || 0));
+    $("rvs-bars").innerHTML = byRating.length
+        ? '<div class="rvbars">' + byRating.map((r) => {
+            const n = Number(r.count) || 0;
+            return `<div class="rvbar"><span class="rvbar-label">${ratingStars(r.rating)}</span>`
+                + `<span class="rvbar-track"><i style="width:${(n / max) * 100}%;`
+                + `background:${c.s1}"></i></span>`
+                + `<span class="rvbar-count">${int(n)}</span></div>`;
+        }).join("") + "</div>"
+        : "";
+
+    // 채널별 건수 (api_review_summary 의 by_platform 그대로).
+    const byPlatform = s.by_platform || [];
+    if (byPlatform.length) {
+        table($("t-rvs-platform"), ["플랫폼", "리뷰", "미답변"],
+            byPlatform.map((p) => [p.platform, int(p.count), int(p.unanswered)]));
+    } else {
+        $("t-rvs-platform").innerHTML = "";
+    }
+
+    $("rvs-note").textContent =
+        "기간·플랫폼은 위 필터를 따르고, 아래 리뷰 목록도 이 매장으로 좁혀져 있습니다.";
+}
+
 function drawReviews(d, c) {
+    drawReviewStoreView(d, c);
     const summary = d.reviewSummary || {};
     let rows = d.reviews || [];
     // 'AI 초안만' — 초안이 붙은 리뷰만 남깁니다 (검토가 목적일 때 매몰 방지)
@@ -1322,9 +1734,19 @@ function initDrafts() {
 // (HEAT_STEPS·heatColor·inkOn·renderHeat 는 charts.js 로 이동 — 위 import)
 
 // ---- 수집 커버리지 ----------------------------------------------------
+//
+// 카드는 설정 탭에 삽니다(카드 #130 — 매출 '수집 현황' 서브탭에서 이전).
+// 데이터는 종전대로 이 파이프라인(load → draw)이 매출 필터 기간으로 채우는데,
+// 설정 탭에는 필터 줄이 없으므로 어느 기간을 보고 있는지 카드 머리에 씁니다.
 
 function drawCoverage(d) {
     const months = [...new Set(d.coverageBySource.map((r) => r.ym))].sort((a, b) => a - b);
+    const metaEl = $("coverage-meta");
+    if (metaEl) {
+        metaEl.textContent = months.length
+            ? `${ymLabel(months[0])} ~ ${ymLabel(months[months.length - 1])} 기준`
+            : "";
+    }
     const sources = [...new Set(d.coverageBySource.map((r) => r.source))].sort();
     const index = new Map(d.coverageBySource.map((r) => [`${r.source}|${r.ym}`, r]));
 
@@ -1744,7 +2166,9 @@ function initBigtable() {
         if (!tv || !tv.id) continue;
         const head = card.querySelector("header, summary");
         if (!head) continue;
-        const title = (head.querySelector("h2")?.textContent || "표").trim();
+        // hero 카드(#129 전사 추이)는 제목이 h2 가 아니라 질문(.hero-q)입니다.
+        const title = (head.querySelector("h2")?.textContent
+            || head.querySelector(".hero-q")?.textContent || "표").trim();
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "linkish bigtable-open-btn";

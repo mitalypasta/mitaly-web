@@ -11,13 +11,15 @@
 //   구분해 주는 것을 그대로 그립니다(adoption 6절).
 
 import { db, fetchStores } from "./client.js";
-import { won, wonFull, int, ymLabel } from "./format.js";
+import { won, wonFull, int, ymLabel, ymDash, catLabel } from "./format.js";
 import { escape, niceTicks } from "./util.js";
 import { S } from "./state.js";
-import { $, monthPicker, searchify, showTip, hideTip } from "./dom.js";
+import { $, monthPicker, searchify, showTip, hideTip, table, loadSheetJS } from "./dom.js";
 import { palette, drawBars } from "./charts.js";
 
 const DOW_KO = { 1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토", 7: "일" };
+const WEEKDAY_ORDER = ["월", "화", "수", "목", "금", "토", "일"];
+const DAYPART_ORDER = ["아침", "점심", "오후", "저녁"];
 const md = (iso) => `${iso.slice(5, 7)}/${iso.slice(8, 10)}`;
 
 let last = null;          // 마지막 응답 — 서브탭 전환 시 차트 재그리기용
@@ -93,7 +95,10 @@ function render(d) {
     renderPnl(d.pnl);
     renderYearSelect(d);
     renderYearly(d);
-    renderQuarterly((d.store || {}).name);
+    // 분기·시간대·메뉴 카드는 조회가 더 붙는 비동기 렌더입니다 — 엑셀 추출이
+    // 진행 중인 조회를 기다릴 수 있게 promise 를 잡아 둡니다(카드 #128).
+    quarterLoading = renderQuarterly((d.store || {}).name);
+    menuLoading = renderMenuCards(d);
     renderWeekly(d);
     renderDaily(d);
 
@@ -405,6 +410,8 @@ function drawStackedBars(svg, c, bars) {
 
 let quarterCacheName = null;
 let quarterRows = null;
+let quarterList = [];        // 화면에 그린 분기 행 — 엑셀 추출이 같이 씁니다
+let quarterLoading = null;   // 진행 중 분기 조회 (엑셀이 기다림)
 
 async function renderQuarterly(storeName) {
     const box = $("t-sd-quarter");
@@ -451,6 +458,7 @@ async function renderQuarterly(storeName) {
         r.qoq = i > 0 && prev > 0
             ? Math.round((r.total - prev) / prev * 1000) / 10 : null;
     });
+    quarterList = list;
 
     $("sd-q-meta").textContent = list.length
         ? `전체 기간 · ${list[0].label} ~ ${list[list.length - 1].label} (마지막 분기는 진행 중일 수 있음)`
@@ -527,6 +535,291 @@ function renderDaily(d) {
         + `</tbody></table>`;
 }
 
+// ---- ⓖ 시간대·메뉴 4카드 (카드 #128) --------------------------------------
+//
+// 선택 매장 × 기준월(기준일의 달)의 분해 — 품목/시간·요일 서브탭과 같은
+// rpc(api_by_hour · api_by_menu · api_menu_matrix)를 p_store=선택 매장으로
+// 부릅니다(전역 필터 f-store 가 이미 넘기는 인자 그대로 — 새 SQL 없음).
+// 기준일을 바꾸면 기준월이 따라 바뀌고(refresh) 캐시 키가 갈리므로 이
+// 카드들도 닻과 같이 움직입니다. 표는 dom.js table() — 카드 엑셀 버튼이
+// 자동으로 붙습니다(3라운드 0-4).
+
+let menuCacheKey = null;   // `${매장}|${기준월}` — 같은 조합이면 재조회 없음
+let menuCards = null;      // { hours, menus, mweek, mpart } — 엑셀 추출 공용
+let menuLoading = null;    // 진행 중 조회 (엑셀이 기다림)
+
+// 동시에 2개씩만 — authenticated 는 쿼리당 8초 제한이라 한꺼번에 던지면
+// 서로 밀려 통째로 실패할 수 있습니다(app.js runInto 머리주석과 같은 이유).
+async function rpcBatch(thunks, limit = 2) {
+    const results = new Array(thunks.length);
+    let next = 0;
+    async function worker() {
+        while (next < thunks.length) {
+            const i = next++;
+            results[i] = await thunks[i]();
+        }
+    }
+    await Promise.all(Array.from({ length: Math.min(limit, thunks.length) }, worker));
+    return results;
+}
+
+async function renderMenuCards(d) {
+    const storeName = (d.store || {}).name;
+    if (!storeName) return;
+    const key = `${storeName}|${d.ym}`;
+    if (menuCacheKey === key && menuCards) { drawMenuCards(d.ym); return; }
+
+    for (const id of ["sd-hour-meta", "sd-menu-meta", "sd-mweek-meta", "sd-mpart-meta"]) {
+        $(id).textContent = "불러오는 중…";
+    }
+    const args = { p_ym_from: d.ym, p_ym_to: d.ym, p_store: storeName, p_channel: null };
+    const [hour, menu, mweek, mpart] = await rpcBatch([
+        () => db.rpc("api_by_hour", args),
+        () => db.rpc("api_by_menu", args),
+        () => db.rpc("api_menu_matrix", { p_field: "weekday", ...args }),
+        () => db.rpc("api_menu_matrix", { p_field: "daypart", ...args }),
+    ]);
+    // 조회 중에 매장·기준일이 또 바뀌었으면 이 응답은 버립니다(app.js 의
+    // stillMine 과 같은 이유 — 늦게 온 옛 결과가 화면을 덮으면 조용히 틀립니다).
+    if (!last || `${(last.store || {}).name}|${last.ym}` !== key) return;
+
+    const bad = [hour, menu, mweek, mpart].find((r) => r.error);
+    if (bad) {
+        menuCacheKey = null;
+        menuCards = null;
+        for (const id of ["sd-hour-meta", "sd-menu-meta", "sd-mweek-meta", "sd-mpart-meta"]) {
+            $(id).textContent = "";
+        }
+        for (const id of ["t-sd-hour", "t-sd-menu", "t-sd-mweek", "t-sd-mpart"]) {
+            $(id).innerHTML = '<p class="hint">불러오지 못했습니다: '
+                + escape(bad.error.message) + "</p>";
+        }
+        return;
+    }
+    menuCacheKey = key;
+    menuCards = {
+        hours: hour.data || [],
+        menus: menu.data || [],
+        mweek: mweek.data || [],
+        mpart: mpart.data || [],
+    };
+    drawMenuCards(d.ym);
+}
+
+// api_menu_matrix 응답(메뉴마다 {menu, category, total, buckets} 한 줄 —
+// 1,000행 상한 회피 모양)을 표 행으로. 열 순서는 고정(app.js drawMenuMatrix).
+function matrixRows(data, order) {
+    const rows = (data || []).map((r) => ({
+        menu: r.menu,
+        category: catLabel(r.category),
+        total: Number(r.total) || 0,
+        buckets: r.buckets || {},
+    })).sort((a, b) => b.total - a.total);
+    const seen = new Set();
+    for (const row of rows) Object.keys(row.buckets).forEach((b) => seen.add(b));
+    const buckets = order.filter((b) => seen.has(b));
+    return { rows, buckets };
+}
+
+function drawMenuCards(ym) {
+    const label = `기준월 ${ymLabel(ym)}`;
+    const c = menuCards;
+
+    $("sd-hour-meta").textContent = label;
+    table($("t-sd-hour"), ["시간대", "매출", "수량"],
+        (c.hours || []).map((r) => [`${r.hour}시`, wonFull(r.amount), int(r.qty)]));
+
+    // 판매량·매출 순위 — 품목 서브탭의 전 메뉴 순위표와 같은 열 구성.
+    const menus = [...(c.menus || [])]
+        .sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0));
+    const menuTotal = menus.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+    $("sd-menu-meta").textContent = label;
+    table($("t-sd-menu"), ["순위", "메뉴", "분류", "판매량", "매출", "비중"],
+        menus.map((r, i) => [int(i + 1), r.menu, catLabel(r.category),
+            int(r.qty), wonFull(r.amount),
+            menuTotal > 0 ? `${(Number(r.amount) / menuTotal * 100).toFixed(1)}%` : "—"]));
+
+    const mw = matrixRows(c.mweek, WEEKDAY_ORDER);
+    $("sd-mweek-meta").textContent = label;
+    table($("t-sd-mweek"), ["메뉴", "분류", ...mw.buckets, "합계"],
+        mw.rows.map((r) => [r.menu, r.category,
+            ...mw.buckets.map((b) => wonFull(r.buckets[b] || 0)), wonFull(r.total)]));
+
+    const mp = matrixRows(c.mpart, DAYPART_ORDER);
+    $("sd-mpart-meta").textContent = label;
+    table($("t-sd-mpart"), ["메뉴", "분류", ...mp.buckets, "합계"],
+        mp.rows.map((r) => [r.menu, r.category,
+            ...mp.buckets.map((b) => wonFull(r.buckets[b] || 0)), wonFull(r.total)]));
+}
+
+// ---- ⓗ 선택 매장 엑셀 추출 (카드 #128) ------------------------------------
+//
+// 이 화면의 구성 요소 하나당 시트 하나 — KPI · 추정손익 · 연도별 · 분기별 ·
+// 주간 · 일간 + 시간대별 · 메뉴 판매량 · 메뉴×요일 · 메뉴×시간대.
+// 라이브러리는 카드 엑셀(dom.js loadSheetJS)과 같은 SheetJS 사본을 재사용
+// 합니다(새 CDN 금지). 값은 원시 숫자로 넣습니다 — 화면의 '1,234원'류 표기
+// 없이 엑셀에서 바로 계산되게(allstores.js 내보내기와 같은 판단).
+
+const pctNum = (ratio) =>
+    ratio == null ? "" : Math.round(Number(ratio) * 1000) / 10;   // 0.123 → 12.3
+
+async function exportStoreDash() {
+    const button = $("sd-export");
+    const msg = $("sd-export-msg");
+    if (!last || !(last.store || {}).name) {
+        msg.textContent = "매장을 먼저 선택하세요.";
+        setTimeout(() => { msg.textContent = ""; }, 8000);
+        return;
+    }
+    button.disabled = true;
+    msg.textContent = "엑셀을 만드는 중…";
+    try {
+        // 분기·시간대·메뉴 카드의 조회가 아직 돌고 있으면 끝을 기다립니다 —
+        // 화면과 파일이 같은 숫자여야 합니다.
+        if (quarterLoading) await quarterLoading;
+        if (menuLoading) await menuLoading;
+        if (!menuCards) throw new Error("시간대·메뉴 데이터를 불러오지 못했습니다");
+
+        const d = last;
+        const k = d.kpi || {};
+        const p = d.pnl;
+        const storeName = (d.store || {}).name;
+        const XLSX = await loadSheetJS();
+        const wb = XLSX.utils.book_new();
+        const sheet = (name, aoa) => XLSX.utils.book_append_sheet(
+            wb, XLSX.utils.aoa_to_sheet(aoa), name);
+
+        sheet("요약정보", [
+            ["미태리 매장 대시보드"],
+            ["매장", storeName],
+            ["기준월", ymDash(d.ym)],
+            ["기준일", d.anchor_day || ""],
+            ["만든 시각", new Date().toLocaleString("ko-KR")],
+            ["매출 기준", "배달=할인 전 / 홀=할인 후 (프로젝트 규칙)"],
+        ]);
+
+        sheet("KPI", [
+            ["지표", "값", "비고"],
+            ["총매출", Number(k.sales) || 0, ""],
+            ["목표", k.target != null ? Number(k.target) : "",
+                k.target == null ? "목표 없음"
+                    : k.target_source === "manual" ? "직접 입력 목표"
+                    : (TARGET_BASIS_KO[k.target_basis] || "")],
+            ["달성률(%)", pctNum(k.achievement), ""],
+            ["전월 매출", k.prev_sales != null ? Number(k.prev_sales) : "", ""],
+            ["전월비(%)", k.mom_pct != null ? Number(k.mom_pct) : "", ""],
+            ["영업일수", Number(k.business_days) || 0, "매출이 있는 날 수"],
+            ["일평균 매출", k.daily_avg != null ? Number(k.daily_avg) : "", ""],
+            ["인당 생산성", k.per_person != null ? Number(k.per_person) : "",
+                k.per_person == null ? "근무인원 미입력" : ""],
+            ["홀 매출", Number(k.hall_sales) || 0, ""],
+            ["배달 매출", Number(k.delivery_sales) || 0, ""],
+            ["배달 비중(%)", pctNum(k.delivery_share), ""],
+            ["주문 건수", Number(k.orders_total) || 0,
+                `홀 ${Number(k.orders_hall) || 0} · 배달 ${Number(k.orders_delivery) || 0}`],
+        ]);
+
+        const pnlRow = (label, key) => {
+            const item = p[key] || {};
+            const amount = Number(item.amount) || 0;
+            return [label, amount,
+                p.sales > 0 ? pctNum(amount / p.sales) : "", basisText(key, item)];
+        };
+        sheet("추정손익", p ? [
+            ["항목", "금액", "매출 대비(%)", "근거"],
+            ["총매출", Number(p.sales) || 0, "", ""],
+            pnlRow("식자재비", "food"),
+            pnlRow("인건비", "labor"),
+            pnlRow("임차료", "rent"),
+            pnlRow("배달수수료", "delivery_fee"),
+            pnlRow("로열티·광고", "royalty"),
+            pnlRow("공과금·기타", "utility"),
+            ["총비용", Number(p.total_cost) || 0,
+                p.sales > 0 ? pctNum(p.total_cost / p.sales) : "", ""],
+            ["영업이익", Number(p.profit) || 0, pctNum(p.profit_rate),
+                "가정값 기반 추정치"],
+        ] : [["항목", "금액", "매출 대비(%)", "근거"]]);
+
+        const yearly = Array.isArray(d.yearly) ? d.yearly : [];
+        sheet("연도별", [
+            ["연월", "총매출", "전월비(%)", "홀", "배달", "아워홈 발주액",
+             "식자재율(%)", "영업일수", "일평균"],
+            ...yearly.map((r, i) => {
+                const prev = i > 0 ? Number(yearly[i - 1].sales) || 0 : 0;
+                const mom = i > 0 && prev > 0 && r.sales
+                    ? Math.round((Number(r.sales) - prev) / prev * 1000) / 10 : "";
+                return [r.ym, Number(r.sales) || 0, mom,
+                    Number(r.hall) || 0, Number(r.delivery) || 0,
+                    r.ourhome != null ? Math.round(Number(r.ourhome)) : "",
+                    pctNum(r.food_rate),
+                    Number(r.business_days) || 0,
+                    r.daily_avg != null ? Number(r.daily_avg) : ""];
+            }),
+        ]);
+
+        sheet("분기별", [
+            ["분기", "홀", "배달", "합계", "전분기비(%)"],
+            ...quarterList.map((r) => [r.label, r.hall, r.delivery, r.total,
+                r.qoq != null ? r.qoq : ""]),
+        ]);
+
+        const weekly = Array.isArray(d.weekly) ? d.weekly : [];
+        sheet("주간", [
+            ["주차", "주 시작", "주 끝", "매출", "전주비(%)", "주문수"],
+            ...weekly.map((w) => [weekLabel(w.week_start), w.week_start, w.week_end,
+                Number(w.amount) || 0,
+                w.wow_pct != null ? Number(w.wow_pct) : "",
+                Number(w.orders) || 0]),
+        ]);
+
+        const daily = Array.isArray(d.daily) ? d.daily : [];
+        sheet("일간", [
+            ["날짜", "요일", "매출"],
+            // 빈칸 = 미영업 · 0 = 0원 기록 — 화면과 같은 구분을 파일에도 둡니다.
+            ...daily.map((x) => [x.day, DOW_KO[x.dow] || "",
+                x.amount == null ? "" : Number(x.amount)]),
+        ]);
+
+        sheet("시간대별", [
+            ["시", "매출", "수량"],
+            ...(menuCards.hours || []).map((r) => [Number(r.hour),
+                Number(r.amount) || 0, Number(r.qty) || 0]),
+        ]);
+
+        const menus = [...(menuCards.menus || [])]
+            .sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0));
+        const menuTotal = menus.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+        sheet("메뉴판매량", [
+            ["순위", "메뉴", "분류", "판매량", "매출", "비중(%)"],
+            ...menus.map((r, i) => [i + 1, r.menu, catLabel(r.category),
+                Number(r.qty) || 0, Number(r.amount) || 0,
+                menuTotal > 0 ? Math.round(Number(r.amount) / menuTotal * 1000) / 10 : ""]),
+        ]);
+
+        const matrixSheet = (name, data, order) => {
+            const { rows, buckets } = matrixRows(data, order);
+            sheet(name, [
+                ["메뉴", "분류", ...buckets, "합계"],
+                ...rows.map((r) => [r.menu, r.category,
+                    ...buckets.map((b) => Number(r.buckets[b]) || 0), r.total]),
+            ]);
+        };
+        matrixSheet("메뉴×요일", menuCards.mweek, WEEKDAY_ORDER);
+        matrixSheet("메뉴×시간대", menuCards.mpart, DAYPART_ORDER);
+
+        const safe = String(storeName).replace(/[\\/:*?"<>|]/g, " ")
+            .replace(/\s+/g, " ").trim();
+        XLSX.writeFile(wb, `미태리_매장대시보드_${safe}_${ymDash(d.ym)}.xlsx`);
+        msg.textContent = "엑셀을 내려받았습니다.";
+    } catch (err) {
+        msg.textContent = "엑셀을 만들지 못했습니다: " + String(err.message || err);
+    } finally {
+        button.disabled = false;
+        // 안내는 잠시 뒤 지웁니다 — 카드 머리라 오래 남으면 자리를 차지합니다.
+        setTimeout(() => { if (!button.disabled) msg.textContent = ""; }, 8000);
+    }
+}
+
 // ---- 배선 ---------------------------------------------------------------
 
 export async function initStoreDash() {
@@ -561,6 +854,8 @@ export async function initStoreDash() {
         select.append(option);
     }
     searchify(select);
+
+    $("sd-export").addEventListener("click", exportStoreDash);
 
     for (const id of ["sd-store", "sd-ym", "sd-day", "sd-year"]) {
         $(id).addEventListener("change", () => {

@@ -23,6 +23,12 @@ const AREA_KEY = "mitaly.area";
 let salesSub = "매장 대시보드";
 
 export function showSalesSub(sub) {
+    // 없는 서브탭 방어 — 서브탭 이름이 바뀐 뒤(#129: 품목·시간·요일·매장 →
+    // '전체 매장 요약') 옛 이름이 저장값·옛 코드 경로로 들어오면 빈 화면이
+    // 됩니다. 버튼이 없는 이름이면 기본값(첫 화면)으로 받습니다.
+    if (!document.querySelector(`.subitem[data-sub-go="${sub}"]`)) {
+        sub = "매장 대시보드";
+    }
     salesSub = sub;
     for (const el of document.querySelectorAll('[data-area="sales"][data-sub]')) {
         el.hidden = el.dataset.sub !== sub;
@@ -32,8 +38,9 @@ export function showSalesSub(sub) {
         b.setAttribute("aria-current", b.dataset.subGo === sub ? "true" : "false");
     }
     // 맨 위 필터 블록(기간·매장·채널·엑셀·기간 타일)은 매장 대시보드에서
-    // 숨깁니다(담당자 지시 — 대시보드가 자체 고르개를 가져 중복). 품목·
-    // 시간·요일·매장·보고서·수집은 이 필터로 기간을 정하므로 그대로 보입니다.
+    // 숨깁니다(담당자 지시 — 대시보드가 자체 고르개를 가져 중복). 전체 매장
+    // 요약(시간대·요일·품목별 카드와 전사 추이의 연도·분기·월 단위)·보고서·
+    // 수집은 이 필터로 기간을 정하므로 그대로 보입니다.
     const wantFilters = sub !== "매장 대시보드";
     const filters = document.querySelector(".filters");
     const exportField = $("sales-export-field");
@@ -53,9 +60,11 @@ export function showArea(area) {
     if (area !== "stores" && typeof S.credPass !== "undefined" && S.credPass) credLock();
     if (area !== "stores" && typeof S.ctPass !== "undefined" && S.ctPass) ctLock();
 
-    // 수집 화면 폴링(app.js)이 '지금 어느 영역인가' 를 읽습니다 (큐 #107 F6).
-    // entry(app.js)는 여기서 import 할 수 없으므로 상태 + 이벤트로 알립니다 —
-    // 수집 영역에 들어오는 순간 쉬고 있던 폴링이 바로 한 번 돕니다.
+    // '지금 어느 영역인가'(S.area)와 진입 이벤트를 함께 알립니다. 원래 수집
+    // 화면 폴링 몫이었는데(큐 #107 F6) 그 화면은 3라운드 2차에서 내렸고,
+    // 지금 읽는 곳은 홈(app.js loadHome — 부팅 착지 판정)과 설정 탭
+    // (settings.js — 진입 시 실패분 재조회, 카드 #130)입니다.
+    // entry(app.js)는 여기서 import 할 수 없으므로 상태 + 이벤트로 알립니다.
     S.area = area;
     window.dispatchEvent(new CustomEvent("mitaly:area", { detail: area }));
 
@@ -101,7 +110,12 @@ export function initAreas() {
     let saved = "home";
     try { saved = localStorage.getItem(AREA_KEY) || "home"; } catch (e) { /* 무시 */ }
     // 저장된 값이 지금 없는 영역일 수 있습니다(영역 이름이 바뀐 뒤).
-    if (!document.querySelector(`.navitem[data-go="${saved}"]`)) saved = "home";
+    // 버튼이 hidden 인 영역(매장 지도 — 2026-08-21 담당자 지시로 버튼만 내림)도
+    // 같은 폴백을 태웁니다 — querySelector 는 hidden 버튼도 그대로 잡으므로
+    // (카드 #132 실측: hidden 속성은 selector 판정에 안 걸립니다) 존재 검사만
+    // 으로는 숨긴 화면이 계속 열립니다.
+    const savedButton = document.querySelector(`.navitem[data-go="${saved}"]`);
+    if (!savedButton || savedButton.hidden) saved = "home";
     showArea(saved);
 }
 
@@ -174,9 +188,9 @@ export function initHomeTiles() {
                 $("iq-filter").dispatchEvent(new Event("change"));
             }
             if (tileId === "home-tile-diagnosis") {
-                // 진단 카드는 매출의 '매장' 서브탭에 있습니다(요약 폐지로
-                // 이동) — 스크롤 대상이 숨어 있지 않게 서브탭부터 맞춥니다.
-                showSalesSub("매장");
+                // 진단 카드는 매출의 '전체 매장 요약' 서브탭에 있습니다(#129
+                // 재편) — 스크롤 대상이 숨어 있지 않게 서브탭부터 맞춥니다.
+                showSalesSub("전체 매장 요약");
             }
             requestAnimationFrame(() => {
                 document.getElementById(cardId)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -201,8 +215,8 @@ export function initHomeTiles() {
                 $("rv-rating").value = "low";
             }
             if (row.dataset.kind === "alert") {
-                // 급증·급감 카드도 '매장' 서브탭으로 옮겨졌습니다(요약 폐지).
-                showSalesSub("매장");
+                // 급증·급감 카드도 '전체 매장 요약' 서브탭에 있습니다(#129).
+                showSalesSub("전체 매장 요약");
                 $("alerts-only").checked = true;
                 $("alerts-only").dispatchEvent(new Event("change"));
             }

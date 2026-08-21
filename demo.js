@@ -1405,6 +1405,41 @@ const DEMO_KPI_SETTINGS = [
     { metric: "kpi_min_profit_rate",      value: 0.1,      min_value: 0, max_value: 1,    note: "영업이익률 하한 — 추정손익 기준 0.1(=10%) 미만이면 점검" },
 ].map((row) => ({ ...row, updated_at: null }));
 
+// 메뉴 매핑표(96_menu_mapping.sql 미러, 카드 #130) — 설정 탭이 씁니다.
+// 위 MENUS 이름을 재사용해 분류 탭·연결이 화면에서 그럴듯하게 보이고,
+// 실데이터의 세 부류(정규·제외·비정규)와 '표준메뉴에 없는 표준명'(원본에
+// 9건 실재 — 기타 탭으로 묶임)을 전부 한 번씩 넣어 둡니다.
+const DEMO_MENU_STD = [
+    { position: 1,  name: "크림 뇨끼",       category: "신메뉴" },
+    { position: 2,  name: "로제 파스타",     category: "시그니처" },
+    { position: 3,  name: "토마토 파스타",   category: "토마토" },
+    { position: 4,  name: "알리오 올리오",   category: "오일" },
+    { position: 5,  name: "감바스 파스타",   category: "오일" },
+    { position: 6,  name: "봉골레 파스타",   category: "오일" },
+    { position: 7,  name: "까르보나라",      category: "까르보나라" },
+    { position: 8,  name: "마르게리따 피자", category: "피자" },
+    { position: 9,  name: "페퍼로니 피자",   category: "피자" },
+    { position: 10, name: "고르곤졸라 피자", category: "피자" },
+    { position: 11, name: "씨저 샐러드",     category: "사이드" },
+    { position: 12, name: "갈릭 브레드",     category: "사이드" },
+    { position: 13, name: "감자튀김",        category: "사이드" },
+    { position: 14, name: "커플세트",        category: "세트" },
+].map((row) => ({ ...row, updated_at: null }));
+
+let demoMenuMappings = [
+    { position: 1, raw: "(금)베이컨 까르보나라",      std: "까르보나라" },
+    { position: 2, raw: "[포장]로제 파스타",          std: "로제 파스타" },
+    { position: 3, raw: "토마토 파스타 (매운맛)",     std: "토마토 파스타" },
+    { position: 4, raw: "[[시그니처]] 감바스 파스타", std: "감바스 파스타" },
+    { position: 5, raw: "레몬에이드",                 std: "제외" },
+    { position: 6, raw: "콜라 1.25L",                 std: "제외" },
+    { position: 7, raw: "치즈 뽀모도로 파스타",       std: "비정규" },
+    { position: 8, raw: "신메뉴테스트A",              std: "비정규" },
+    // 표준메뉴 시트에 없는 표준명(원본 유산) — 기타 탭에 뜨는지 확인용.
+    { position: 9, raw: "[포장]우유 쏙~치즈볼(3P)",   std: "우유 쏙 치즈볼" },
+].map((row) => ({ ...row, updated_at: null }));
+let nextMenuMappingPos = 10;
+
 // 매장별 요율 예외(84_royalty_store_rates 미러) — store_id → {rate_pct, note,
 // updated_at}. 샘플03점을 개별 요율로 미리 넣어 '개별' 표기·다른 요율의 청구
 // 계산이 화면에서 바로 보이게 합니다.
@@ -1839,14 +1874,11 @@ const HANDLERS = {
     // 배달앱 메뉴 대조 (QUEUE #61, 57_delivery_menu.sql). 종류 4가지가 화면에
     // 어떻게 갈려 보이는지가 이 픽스처의 확인 항목이라 종류마다 한 줄 이상 둡니다.
     // 값은 2026-08-07 dev 실측(고척점·부안점·구월힐캐슬점)에서 가져온 모양입니다.
-    api_delivery_menu_check: () => ({
-        collected_at: new Date().toISOString(),
-        stores: 3,
-        menus: 190,
-        // 배달 가격 채널이 아직 안 정해졌다는 표시 — 화면 안내가 여기에 걸립니다.
-        price_channel_set: false,
-        counts: { app_only: 3, hidden: 2, channel_gap: 2, price_diff: 2 },
-        items: [
+    // p_store 는 실제 함수처럼 거릅니다(#131 광고 탭 매장 보기) — 아래 매장명이
+    // '미태리 샘플NN점' 이라 stores 표('샘플NN점')와 접두만 다르므로, 접두를
+    // 벗겨서도 대조합니다(데모 한정 — 실서버는 stores.name 정확 일치).
+    api_delivery_menu_check: ({ p_store } = {}) => {
+        const all = [
             { kind: "app_only", store: "미태리 샘플01점", platform: "baemin",
               menu_name: "사이드 한판 샘플러", category: "[사이드ㅣ 같이 먹기 좋은 메뉴]",
               price: 7800, pos_price: null, hidden: false },
@@ -1874,8 +1906,22 @@ const HANDLERS = {
             { kind: "price_diff", store: "미태리 샘플03점", platform: "baemin",
               menu_name: "떡볶이 치킨 그라탕", category: "매장 요청",
               price: 10300, pos_price: 8800, hidden: false },
-        ],
-    }),
+        ];
+        const items = !p_store ? all : all.filter((it) =>
+            it.store === p_store
+            || it.store.replace(/^미태리\s*/, "") === p_store);
+        const counts = {};
+        for (const it of items) counts[it.kind] = (counts[it.kind] || 0) + 1;
+        return {
+            collected_at: new Date().toISOString(),
+            stores: new Set(items.map((it) => it.store)).size,
+            menus: p_store ? items.length : 190,
+            // 배달 가격 채널이 아직 안 정해졌다는 표시 — 화면 안내가 여기에 걸립니다.
+            price_channel_set: false,
+            counts,
+            items,
+        };
+    },
 
     api_filters: () => [{
         ym_min: MONTHS[0],
@@ -2307,6 +2353,27 @@ const HANDLERS = {
             reviews_total: DEMO_REVIEWS.length,
             reviews_openable: openable,
         } }];
+    },
+
+    // 검토 대기 초안 목록(14_reply_drafts.sql) — '매장 리뷰 보기'(카드 #132)가
+    // 매장별 대기 건수를 셉니다. 실제 함수와 같은 규칙: draft·approved 만,
+    // 별점 낮은 것부터. 승인·반려가 메모리에서 바뀌면 여기도 따라갑니다.
+    api_pending_drafts: ({ p_limit } = {}) => {
+        const items = [];
+        for (const r of DEMO_REVIEWS) {
+            for (const d of r.drafts || []) {
+                if (!["draft", "approved"].includes(d.status)) continue;
+                items.push({
+                    draft_id: d.id, draft: d.contents, status: d.status,
+                    model: "demo", variant: d.variant, created_at: r.written_at,
+                    review_id: r.id, rating: r.rating, review: r.contents,
+                    author_name: r.author_name, written_at: r.written_at,
+                    order_count: r.order_count, platform: r.platform, store: r.store,
+                });
+            }
+        }
+        items.sort((a, b) => (a.rating ?? 99) - (b.rating ?? 99));
+        return [{ items: items.slice(0, p_limit || 200) }];
     },
 
     // AI 답글 초안. 데모에서는 DEMO_REVIEWS 의 drafts 를 그대로 셉니다.
@@ -2940,6 +3007,36 @@ const HANDLERS = {
         row.value = value;
         row.updated_at = new Date().toISOString();
         return { ok: true, metric: p_metric, value };
+    },
+
+    // ---- 메뉴 매핑표 (96_menu_mapping.sql, 카드 #130) — 함수 규칙 그대로 ----
+    api_menu_mapping: () => ({
+        std: DEMO_MENU_STD.map((row) => ({ ...row })),
+        mappings: demoMenuMappings.map((row) => ({
+            raw: row.raw, std: row.std, updated_at: row.updated_at,
+        })),
+    }),
+
+    save_menu_mapping: ({ p_raw, p_std }) => {
+        const raw = (p_raw || "").trim();
+        const std = (p_std || "").trim();
+        if (!raw) return { ok: false, reason: "원본표기를 입력하세요" };
+        if (!std) return { ok: false, reason: "표준명을 고르세요" };
+        if (std !== "제외" && std !== "비정규"
+            && !DEMO_MENU_STD.some((s) => s.name === std)) {
+            return { ok: false,
+                     reason: `표준메뉴에 없는 이름입니다: ${std} — 표준메뉴 목록에서 `
+                         + "고르거나 제외/비정규를 쓰세요" };
+        }
+        const existing = demoMenuMappings.find((row) => row.raw === raw);
+        if (existing) {
+            existing.std = std;
+            existing.updated_at = new Date().toISOString();
+            return { ok: true, raw, std, mode: "updated" };
+        }
+        demoMenuMappings.push({ position: nextMenuMappingPos++, raw, std,
+                                updated_at: new Date().toISOString() });
+        return { ok: true, raw, std, mode: "inserted" };
     },
 
     generate_royalty_invoices: ({ p_ym }) => {
@@ -3944,15 +4041,23 @@ const HANDLERS = {
                     { store: "샘플미연결점", matched: false });
 
         const rows = picked.map((s, i) => {
-            const qty = months.length * (300 + Math.floor(rand() * 1500));
+            // 발주액을 데모 매출과 같은 자리(38M×weight÷30 — baseRows·
+            // demoAmountAt 의 스케일)에 맞춥니다. 안 맞추면 '매장 발주·식자재
+            // 보기'(카드 #132)의 원가율이 데모에서 1,000%대로 떠 버그처럼
+            // 보입니다 — 매장 대시보드 데모의 식자재율 가정(0.33)과 같은 33%
+            // 안팎으로 떨어지게 ±4%p 만 흔듭니다.
+            const st = STORES.find((x) => x.name === s.store);
+            const monthly = Math.round(38_000_000 * ((st && st.weight) || 1) / 30
+                * (0.29 + rand() * 0.08));
+            const amount = monthly * months.length;
             return {
                 store: s.store,
                 // 첫 매장만 사업장코드가 둘 — 재계약으로 코드가 새로 난 경우입니다.
                 busiplcd: i === 0 ? "FNAA1,FNAA2" : `FN${String(i).padStart(3, "0")}`,
                 busipl_count: i === 0 ? 2 : 1,
                 months: months.length,
-                qty,
-                amount: qty * (8000 + Math.floor(rand() * 4000)),
+                qty: Math.round(amount / (8000 + Math.floor(rand() * 4000))),
+                amount,
                 matched: s.matched,
             };
         }).filter((r) => !p_store || r.store === p_store)
