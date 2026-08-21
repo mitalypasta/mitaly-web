@@ -152,6 +152,36 @@
 
     <div class="grid">
 
+        <!-- 매출 요약 hero — 화면의 질문 "이번 달 괜찮나?" 의 답 (카드 #118,
+             docs/web-hierarchy.md). 홈 '최근 매출' 줄과 같은 기준(최근 완성월 ·
+             전 매장 · 위 필터와 무관)이고, 달성률은 89_store_targets 의
+             api_store_targets 를 그대로 씁니다(app.js initSalesHero — 새 SQL 없음).
+             아래 추이·주차별·급증급감 카드들이 이 답의 근거층입니다. -->
+        <section data-area="sales" data-sub="요약" class="card hero-card" id="sales-hero">
+            <header class="hero-head">
+                <div class="hero-q">이번 달 괜찮나?
+                    <span class="meta" id="sh-meta"></span></div>
+                <span class="hero-badge" id="sh-badge" hidden></span>
+            </header>
+            <div class="hero-stats">
+                <div class="hero-stat">
+                    <div class="hs-label">기준월 매출</div>
+                    <div class="hero-num" id="sh-amount">—</div>
+                    <div class="hs-sub" id="sh-amount-sub"></div>
+                </div>
+                <div class="hero-stat">
+                    <div class="hs-label">목표 달성률</div>
+                    <div class="hero-num" id="sh-achieve">—</div>
+                    <div class="hs-sub" id="sh-achieve-sub"></div>
+                </div>
+                <div class="hero-stat">
+                    <div class="hs-label">전월 대비</div>
+                    <div class="hero-num" id="sh-mom">—</div>
+                    <div class="hs-sub" id="sh-mom-sub"></div>
+                </div>
+            </div>
+        </section>
+
         <section data-area="sales" data-sub="요약" class="card full">
             <header>
                 <h2>월별 매출 추이</h2>
@@ -242,42 +272,50 @@
                 일평균은 일 단위 집계 기준(없는 매장은 월 증감률 대용)</p>
         </section>
 
-        <!-- 요약 서브탭에서 반쪽(half) 카드는 이것 하나라 짝이 없어 오른쪽
-             열이 통째로 비었습니다(SALES-DIAGNOSIS M5) — full 로 올립니다.
-             상위 15 제한은 3라운드 2차에서 풀었습니다(담당자 피드백 3-3) —
-             전 매장을 그리고 카드 안에서 스크롤합니다(.plotscroll). -->
-        <section data-area="sales" data-sub="요약" class="card full">
-            <header>
+        <!-- 매장별 매출 (전체) — 원장 계급(카드 #118, docs/web-hierarchy.md).
+             전 매장 전수라 기본 접힘이고, 펼치면 표가 먼저입니다(원장 = 전수 표).
+             차트는 '차트로 보기' 로 그대로 꺼낼 수 있습니다 — 내용 삭제 0.
+             (full 승격·전 매장 스크롤 이력은 SALES-DIAGNOSIS M5 · 담당자 피드백 3-3) -->
+        <details data-area="sales" data-sub="요약" class="card ledger" id="store-ledger">
+            <summary>
                 <h2>매장별 매출 (전체)</h2>
-                <button class="linkish" data-toggle="t-store">표로 보기</button>
-            </header>
-            <div class="plotscroll">
-                <svg class="plot" id="c-store" role="img" aria-label="매장별 매출"></svg>
+                <span class="meta">전 매장 전수 — 펼쳐서 보기</span>
+            </summary>
+            <div class="ledger-body">
+                <div class="tableview" id="t-store"></div>
+                <button class="linkish" data-toggle="c-store-wrap"
+                        data-label-shown="차트 접기" data-label-hidden="차트로 보기">차트로 보기</button>
+                <div class="plotscroll" id="c-store-wrap" hidden>
+                    <svg class="plot" id="c-store" role="img" aria-label="매장별 매출"></svg>
+                </div>
             </div>
-            <div class="tableview" id="t-store" hidden></div>
-        </section>
+        </details>
 
         <!-- KPI 기준 설정 (88_kpi_settings.sql, 큐 #110) — 가맹점 KPI관리 엑셀
              05_안내의 가정값·목표·기준선. DB(kpi_settings)가 원본이고 여기서
              바꿉니다(D38) — 대시보드(#112)·목표 산정(#111)·주차 집계(#114)·
              진단(#115)이 이 값을 읽습니다. 항목 표기는 kpi-sheet-adoption.md
              4절 그대로(web/kpi.js). -->
-        <section data-area="sales" data-sub="요약" class="card full" id="kpi-settings-card">
-            <header>
+        <!-- 원장 계급(카드 #118) — 매일 보는 값이 아니라 기준표라 기본 접힘.
+             내용·기능은 그대로입니다(내용 삭제 0). -->
+        <details data-area="sales" data-sub="요약" class="card ledger" id="kpi-settings-card">
+            <summary>
                 <h2>KPI 기준 설정</h2>
                 <span class="meta" id="kpi-set-meta"></span>
-            </header>
-            <p class="hint">비율은 0~1로 넣습니다 — 예: 식자재 원가율 36% → 0.36.
-                로열티·광고분담률은 매장별 실요율이 있으면 그 값이 우선이고,
-                여기 값은 실요율이 없을 때 쓰입니다.</p>
-            <div class="tableview" id="t-kpi-settings"></div>
-            <div class="reqform">
-                <div class="field">
-                    <button type="button" id="kpi-set-save">바뀐 값 저장</button>
+            </summary>
+            <div class="ledger-body">
+                <p class="hint">비율은 0~1로 넣습니다 — 예: 식자재 원가율 36% → 0.36.
+                    로열티·광고분담률은 매장별 실요율이 있으면 그 값이 우선이고,
+                    여기 값은 실요율이 없을 때 쓰입니다.</p>
+                <div class="tableview" id="t-kpi-settings"></div>
+                <div class="reqform">
+                    <div class="field">
+                        <button type="button" id="kpi-set-save">바뀐 값 저장</button>
+                    </div>
                 </div>
+                <p class="notice" id="kpi-set-notice"></p>
             </div>
-            <p class="notice" id="kpi-set-notice"></p>
-        </section>
+        </details>
 
         <!-- ============================================================
              매장 대시보드 (카드 #112 — KPI 엑셀 01_대시보드 이식,
@@ -611,6 +649,21 @@
          급감·부정 리뷰는 전 매장·고정 기준(app.js loadHome). 그래서 홈에는
          필터 줄이 안 보입니다(nav.js showArea) — 매출은 매출 탭에서 봅니다.
          바로 가기 타일은 사이드바와 중복이라 뺐습니다(같은 피드백 3번). -->
+    <!-- 홈 hero — 화면의 질문 "지금 조치할 게 있나?" 의 답 (카드 #118,
+         docs/web-hierarchy.md). 아래 타일 5개(미처리·승인 대기·문의·초안·진단)의
+         합계를 한 숫자로 먼저 답합니다. 값은 여러 모듈이 비동기로 채우므로
+         타일을 관찰해 따라갑니다(app.js initHomeHero — 별도 조회 없음). -->
+    <section data-area="home" class="card hero-card" id="home-hero">
+        <header class="hero-head">
+            <div class="hero-q">지금 조치할 게 있나?</div>
+            <span class="hero-badge" id="home-hero-badge" hidden></span>
+        </header>
+        <div class="hero-answer">
+            <span class="hero-num" id="home-hero-num">—</span>
+        </div>
+        <p class="hero-facts" id="home-hero-facts">집계 중…</p>
+    </section>
+
     <section data-area="home" class="card full" id="home-card">
         <header>
             <h2>오늘 현황</h2>

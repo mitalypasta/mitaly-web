@@ -275,7 +275,27 @@ async function initDashboard() {
         button.addEventListener("click", () => {
             const target = $(button.dataset.toggle);
             target.hidden = !target.hidden;
-            button.textContent = target.hidden ? "표로 보기" : "차트로 보기";
+            // 기본은 표 토글(표로/차트로 보기). 원장 카드처럼 차트가 토글
+            // 대상이면 data-label-shown/hidden 이 문구를 정합니다(카드 #118).
+            button.textContent = target.hidden
+                ? (button.dataset.labelHidden || "표로 보기")
+                : (button.dataset.labelShown || "차트로 보기");
+            // 숨긴 채 그려진 차트는 fallback 폭으로 굳어 있습니다(H2 와 같은
+            // 병) — 방금 드러난 대상에 차트가 있으면 한 번 다시 그립니다.
+            if (!target.hidden && S.lastData && target.querySelector("svg.plot")) {
+                draw(S.lastData);
+            }
+        });
+    });
+
+    // 원장(ledger) 카드는 기본 접힘이라, 접힌 채 그려진 차트가 fallback 폭으로
+    // 굳습니다 — 펼치는 순간 한 번 다시 그립니다(위 토글과 같은 이유).
+    document.querySelectorAll("details.ledger").forEach((box) => {
+        box.addEventListener("toggle", () => {
+            const svg = box.querySelector("svg.plot");
+            if (box.open && S.lastData && svg && svg.clientWidth > 0) {
+                draw(S.lastData);
+            }
         });
     });
 
@@ -319,6 +339,7 @@ async function initDashboard() {
     // 홈 타일 배선과 지도 nav 배선은 조회가 없어(클릭 리스너뿐) 먼저 겁니다.
     initHomeTiles();
     initHome();
+    initHomeHero();
     initDeliveryMap();
 
     // 보이는 화면(홈·매출)의 위 4칸을 먼저 그립니다. 안 보이는 20여 개 영역의
@@ -332,6 +353,9 @@ async function initDashboard() {
     // 원래 순서를 지킵니다. (수집 요청·계정 상태·내보내기 화면의 init 3개는
     // 3라운드 2차에서 화면과 함께 빠졌습니다 — 엑셀은 위 필터 줄 버튼이 대신.)
     await load(() => runAfterPaint([
+        // 매출 요약 hero(#118)가 이 묶음의 맨 앞입니다 — 화면의 답이라 보이는
+        // 4칸 직후 가장 먼저 채웁니다(필터와 무관한 단발 조회).
+        initSalesHero,
         // 주차별 전사 카드(#114)는 매출 영역이지만 필터와 무관한 단발 조회라
         // load() 묶음이 아니라 여기서 한 번만 붑니다(필터 변경에 재조회 없음).
         // 매장 진단(#115)도 같은 이유 — 기준월 고르개는 카드가 직접 갖습니다.
@@ -640,6 +664,121 @@ function draw(d) {
 //   · 경고 배너 — loadHomeHealth(아래). 평소에는 안 보입니다.
 
 let homeLoadedAt = 0;
+
+// ---- 홈 hero — "지금 조치할 게 있나?" (카드 #118, docs/web-hierarchy.md) --
+//
+// 타일 5개(미처리·승인 대기·문의 검토·초안 검토·진단 대상)의 합을 한 숫자로
+// 먼저 답합니다. 값은 여러 모듈이 비동기로 채우므로(app/tasks/inquiries/
+// diagnosis) 조회를 더 하지 않고 타일 숫자를 관찰해 따라갑니다(nav.js 의
+// tk-waiting 거울과 같은 방식).
+
+const HOME_HERO_PARTS = [
+    ["home-tasks", "미처리 업무"],
+    ["home-approvals", "승인 대기"],
+    ["home-inquiry", "문의 답변 검토"],
+    ["home-drafts", "답글 초안 검토"],
+    ["home-diag", "진단 대상"],
+];
+
+function updateHomeHero() {
+    const numEl = $("home-hero-num");
+    const badge = $("home-hero-badge");
+    const facts = $("home-hero-facts");
+    let total = 0;
+    let loaded = 0;
+    const parts = [];
+    for (const [id, label] of HOME_HERO_PARTS) {
+        const raw = ($(id).textContent || "").replace(/[^\d]/g, "");
+        if (raw === "") continue;   // 아직 집계 전("—")
+        loaded += 1;
+        const n = Number(raw);
+        total += n;
+        if (n > 0) parts.push(`${escape(label)} <b>${int(n)}</b>`);
+    }
+    if (!loaded) {
+        numEl.textContent = "—";
+        badge.hidden = true;
+        facts.textContent = "집계 중…";
+        return;
+    }
+    numEl.textContent = `${int(total)}건`;
+    // 미처리 업무(기준일 초과)가 있으면 조치 필요 — 타일의 급함 구분
+    // (t-urgent/t-attn)과 같은 눈금입니다.
+    const overdue = Number(($("home-tasks").textContent || "").replace(/[^\d]/g, "")) > 0;
+    badge.hidden = false;
+    badge.className = "hero-badge "
+        + (total === 0 ? "hb-good" : overdue ? "hb-critical" : "hb-attn");
+    badge.textContent = total === 0 ? "없음" : overdue ? "조치 필요" : "확인 필요";
+    facts.innerHTML =
+        (parts.length ? parts.join(" · ") : "미처리·검토 대기·진단 대상 모두 0건")
+        + (loaded < HOME_HERO_PARTS.length ? " · 일부 집계 중" : "");
+}
+
+function initHomeHero() {
+    const refresh = debounce(updateHomeHero, 120);
+    new MutationObserver(refresh).observe($("home-tiles"), {
+        childList: true, characterData: true, subtree: true,
+    });
+    updateHomeHero();
+}
+
+// ---- 매출 요약 hero — "이번 달 괜찮나?" (카드 #118) ----------------------
+//
+// 기준은 홈 '최근 매출' 줄과 같습니다: 최근 완성월(H3) · 전 매장 · 아래
+// 필터와 무관. 달성률은 89_store_targets 의 api_store_targets(전 매장
+// 목표+실적)를 전사로 합쳐 만듭니다 — 새 SQL 없음(#118). 전월비는 급증·급감
+// 카드와 같은 원천(api_sales_compare)입니다.
+
+async function initSalesHero() {
+    const range = S.filterRange || {};
+    if (!range.max) return;
+    const t = new Date();
+    const nowYm = t.getFullYear() * 100 + (t.getMonth() + 1);
+    const baseYm = (range.max >= nowYm && range.max > range.min)
+        ? shiftYm(range.max, -1) : range.max;
+    $("sh-meta").textContent =
+        `${ymLabel(baseYm)} 마감분 · 전 매장 — 아래 필터와 무관`;
+
+    const [tgtRes, cmpRes] = await Promise.all([
+        db.rpc("api_store_targets", { p_ym: baseYm }),
+        db.rpc("api_sales_compare", { p_ym: baseYm, p_store: null }),
+    ]);
+
+    if (!cmpRes.error) {
+        const cd = cmpRes.data;
+        const cmp = ((Array.isArray(cd) ? cd[0] : cd) || {}).compare || {};
+        const co = cmp.company || {};
+        $("sh-amount").textContent = won(co.amount);
+        $("sh-amount-sub").textContent =
+            co.prev_mom_amount != null ? `전월 ${won(co.prev_mom_amount)}` : "";
+        $("sh-mom").innerHTML =
+            `<span class="${pctClass(co.mom_pct_change)}">${pctText(co.mom_pct_change)}</span>`;
+        $("sh-mom-sub").textContent =
+            co.yoy_pct_change != null ? `전년동월 ${pctText(co.yoy_pct_change)}` : "";
+    }
+
+    // 전사 달성률 = Σ실적 ÷ Σ목표 (목표 있는 매장만 — 89 설계 그대로).
+    const td = tgtRes.error ? null : tgtRes.data;
+    const tObj = (Array.isArray(td) ? td[0] : td) || {};
+    const rows = (tObj.rows || []).filter((r) => Number(r.target) > 0);
+    const sumTarget = rows.reduce((a, r) => a + Number(r.target), 0);
+    const sumActual = rows.reduce((a, r) => a + (Number(r.actual) || 0), 0);
+    const badge = $("sh-badge");
+    if (sumTarget > 0) {
+        const ach = sumActual / sumTarget;
+        $("sh-achieve").textContent = `${(ach * 100).toFixed(1)}%`;
+        $("sh-achieve-sub").textContent =
+            `목표 ${won(sumTarget)} · 실적 ${won(sumActual)} · ${int(rows.length)}곳`;
+        badge.hidden = false;
+        badge.className = "hero-badge " + (ach >= 1 ? "hb-good" : "hb-attn");
+        badge.textContent = ach >= 1 ? "목표 달성" : "목표 미달";
+    } else {
+        $("sh-achieve").textContent = "—";
+        $("sh-achieve-sub").textContent = tgtRes.error
+            ? `불러오지 못했습니다: ${tgtRes.error.message || tgtRes.error}`
+            : "목표가 아직 없습니다";
+    }
+}
 
 function initHome() {
     // 홈에 들어올 때마다 신선하면 그대로 두고, 오래됐으면 다시 받습니다.
