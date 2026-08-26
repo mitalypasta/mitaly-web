@@ -487,7 +487,7 @@ async function submitTask() {
 
     if (!title) {
         notice.className = "notice error";
-        notice.textContent = "제목은 필수입니다.";
+        notice.textContent = "제목은 꼭 넣어 주세요.";
         return;
     }
 
@@ -609,7 +609,7 @@ async function submitPreauth() {
 
     if (!scope) {
         notice.className = "notice error";
-        notice.textContent = "승인된 범위는 필수입니다 — 무엇이 승인됐는지 한 줄로 적어 주세요.";
+        notice.textContent = "무엇이 승인됐는지 한 줄은 꼭 적어 주세요.";
         return;
     }
 

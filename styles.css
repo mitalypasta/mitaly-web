@@ -657,7 +657,7 @@ header.top h1::before {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow-card);
-    padding: 18px 20px;
+    padding: 20px 22px;
 }
 
 .tile .label {
@@ -956,13 +956,14 @@ header.top h1::before {
 }
 
 /* 경계는 헤어라인이 지고 그림자는 흔적만 — 참고 3종 공통 문법
-   (docs/web-design-language.md). 패딩도 한 단 넉넉하게(20→24). */
+   (docs/web-design-language.md). 패딩은 두 단 넉넉하게(20→24→28,
+   2026-08-26 담당자 지시 "박스 안 텍스트 여백"). */
 .card {
     background: var(--surface-1);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow-card);
-    padding: 24px;
+    padding: 28px;
     min-width: 0;
 }
 
@@ -970,11 +971,24 @@ header.top h1::before {
 
 .card header {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 4px;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 7px 10px;
+    margin-bottom: 12px;
 }
+
+.card header h2 { width: 100%; }
+
+/* 카드 정보 줄 — 제목 아래 부제 자리. 크기는 제목과 같고 무게·색으로
+   물러납니다(타입 스케일 4단 밖 신규 크기 금지). */
+.card header .meta {
+    width: 100%;
+    font-size: var(--fs-title);
+    font-weight: 400;
+    color: var(--text-secondary);
+}
+.card header .meta:empty { display: none; }
 
 /* 제목은 데이터보다 뒤 — 무게를 한 단 내립니다(참고 3종의 절제된 라벨). */
 .card h2 {
@@ -987,7 +1001,7 @@ header.top h1::before {
 .card .hint {
     font-size: var(--fs-meta);
     color: var(--text-muted);
-    margin: 0 0 12px;
+    margin: 2px 0 14px;
 }
 
 /* 접기 카드 — 자주 열지 않는 카드(새 접수·사전 고지)를 여는 순간만 펼칩니다.
@@ -1047,7 +1061,7 @@ header.top h1::before {
 .tableview {
     max-height: 320px;
     overflow: auto;
-    margin-top: 8px;
+    margin-top: 12px;
 }
 
 table {
@@ -1099,13 +1113,13 @@ tbody tr:hover td { background: var(--page); }
 /* hero-card — 그 화면의 질문에 대한 답. 화면당 1개(타일 1~4개 묶음). */
 .card.hero-card { grid-column: 1 / -1; }
 
-.hero-head {
+/* .card header(align-items:center)보다 특이도를 높여야 왼쪽 정렬이 삽니다. */
+.card header.hero-head {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 8px 12px;
-    margin-bottom: 10px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 14px;
 }
 
 /* 화면의 질문 — 답(숫자)이 주인공이라 질문은 보조 크기로 물러납니다. */

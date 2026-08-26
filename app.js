@@ -94,10 +94,10 @@ function friendlyAuthError(message) {
     const text = String(message || "");
     if (/rate limit/i.test(text)) {
         return "메일 발송 한도를 넘었습니다. 무료 기본 메일은 시간당 2통까지입니다. " +
-               "비밀번호로 로그인하시거나, 1시간 뒤 다시 시도하세요.";
+               "비밀번호로 로그인하거나 1시간 뒤 다시 해 보세요.";
     }
     if (/invalid login credentials/i.test(text)) {
-        return "이메일 또는 비밀번호가 맞지 않습니다.";
+        return "이메일이나 비밀번호가 맞지 않습니다.";
     }
     if (/email not confirmed/i.test(text)) {
         return "아직 메일 인증이 끝나지 않은 계정입니다.";
@@ -1659,12 +1659,12 @@ function initDrafts() {
 
         let reason = null;
         if (act === "reject") {
-            reason = window.prompt("반려 사유를 적어주세요 (비워도 됩니다).\n"
+            reason = window.prompt("반려 사유를 적어 주세요 (비워도 됩니다).\n"
                 + "반려하면 이 리뷰는 다음 초안 생성 때 다시 씁니다.", "");
             if (reason === null) return;   // 취소
         }
         if (act === "send"
-            && !window.confirm("이 답글을 전송하시겠습니까?\n"
+            && !window.confirm("이 답글을 전송할까요?\n"
                 + "발송 큐에 올라가고 자리 PC가 배달앱에 등록합니다.")) {
             return;
         }
@@ -2544,7 +2544,7 @@ async function submitVisit() {
 
     if (!storeId || !visitedOn) {
         notice.className = "notice error";
-        notice.textContent = "매장·방문일은 필수입니다.";
+        notice.textContent = "매장과 방문일은 꼭 넣어 주세요.";
         return;
     }
 

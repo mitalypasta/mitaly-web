@@ -64,7 +64,7 @@ function evidenceText(ev, symptoms) {
 function renderDiagnosis() {
     const d = diagData;
     const box = $("t-diag");
-    if (!d) { box.innerHTML = '<p class="hint">데이터가 없습니다.</p>'; return; }
+    if (!d) { box.innerHTML = '<p class="hint">아직 올라온 데이터가 없습니다.</p>'; return; }
 
     const rules = new Map((d.rules || []).map((r) => [r.code, r]));
     const stores = d.stores || [];
@@ -79,7 +79,7 @@ function renderDiagnosis() {
     if (!rows.length) {
         box.innerHTML = flagged.length === 0 && stores.length > 0
             ? '<p class="hint">증상으로 판정된 매장이 없습니다.</p>'
-            : '<p class="hint">데이터가 없습니다.</p>';
+            : '<p class="hint">아직 올라온 데이터가 없습니다.</p>';
         return;
     }
 

@@ -76,7 +76,7 @@ async function submitLifecycleEvent() {
     const typeLabel = eventType === "open" ? "오픈" : "폐점";
 
     if (!storeId || !eventDate) {
-        laNotice("매장·일자는 필수입니다.", true);
+        laNotice("매장과 일자는 꼭 넣어 주세요.", true);
         return;
     }
 

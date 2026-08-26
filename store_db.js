@@ -293,7 +293,7 @@ async function submitNewStore() {
     const notice = $("sdb-n-notice");
     const name = $("sdb-n-name").value.trim();
     if (!name) {
-        sdbNotice(notice, "가맹점명은 필수입니다.", true);
+        sdbNotice(notice, "가맹점명은 꼭 넣어 주세요.", true);
         return;
     }
 

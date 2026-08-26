@@ -488,7 +488,7 @@ async function saveRate(reset) {
     if (!rateSelected) return;
     const rate = reset ? null : Number($("rate-input").value);
     if (!reset && (!Number.isFinite(rate) || rate < 0 || rate > 100)) {
-        rateNotice("요율(%)은 0 이상 100 이하 숫자여야 합니다.", true);
+        rateNotice("요율은 0~100 사이 숫자로 적어 주세요.", true);
         return;
     }
     $("rate-save").disabled = true;

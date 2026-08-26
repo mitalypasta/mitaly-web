@@ -267,7 +267,7 @@ function initViolationResolve() {
             "종료일을 입력하세요 (YYYY-MM-DD). 잘못 눌러도 아래 표에서 다시 열 수 있습니다.", today);
         if (resolvedOn === null) return;   // 취소
         if (!/^\d{4}-\d{2}-\d{2}$/.test(resolvedOn.trim())) {
-            window.alert("날짜 형식이 올바르지 않습니다 (예: 2026-07-29).");
+            window.alert("날짜는 2026-07-29 처럼 적어 주세요.");
             return;
         }
 
@@ -396,12 +396,12 @@ async function submitViolation() {
 
     if (!storeId || !violationType || !occurred) {
         notice.className = "notice error";
-        notice.textContent = "매장·위반유형·발생일은 필수입니다.";
+        notice.textContent = "매장·위반유형·발생일은 꼭 넣어 주세요.";
         return;
     }
     if (resolved && resolved < occurred) {
         notice.className = "notice error";
-        notice.textContent = "종료일이 발생일보다 앞설 수 없습니다.";
+        notice.textContent = "종료일이 발생일보다 앞입니다 — 날짜를 확인하세요.";
         return;
     }
 
