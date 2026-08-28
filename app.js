@@ -45,6 +45,7 @@ import { initStoreDash } from "./store_dash.js";
 import { initDiagnosis } from "./diagnosis.js";
 import { initAllStores } from "./allstores.js";
 import { initSettings } from "./settings.js";
+import { initTradeArea } from "./tradearea.js";
 
 // 폼 밖 비밀번호 칸(매장 정보 탭 암호 게이트·계정 편집)을 제 폼에 가둔 대신,
 // 그 폼은 제출(새로고침)하지 않습니다 — Enter 는 각 모듈의 keydown 이 처리.
@@ -399,7 +400,7 @@ async function initDashboard() {
         initLifecycle, initKakaoStats, initNotifications, initRecipients,
         initConsents, initSettlement, initAds, initIngredients,
         initOurhome, initIngStore, initPosMenu, initComms, initKpiSettings,
-        initSettings,
+        initSettings, initTradeArea,
     ]));
     loadLastUpdated();
 }

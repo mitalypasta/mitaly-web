@@ -1831,7 +1831,35 @@ const DEMO_DIAG_STORES = [
                   ourhome_cur: 11067000, decline_months: 0 } },
 ];
 
+// 상권 분석(98_trade_area) 데모 저장소 — 메모리에만 쌓입니다. 수집 응답 자체는
+// tradearea.js 의 demoRaw 가 만들고, 여기는 저장·이력 rpc 만 흉내냅니다.
+let tradeAreaRows = [];
+let tradeAreaSeq = 1;
+
 const HANDLERS = {
+    // 상권 분석 — 저장/목록/단건/삭제 (98_trade_area).
+    api_trade_area_save: (a) => {
+        const id = tradeAreaSeq++;
+        tradeAreaRows.unshift({
+            id, name: a.p_name || "", address: a.p_address || "",
+            radius: a.p_radius || 500, q75: a.p_q75 || 0,
+            result: a.p_result, created_at: new Date().toISOString(),
+        });
+        return { ok: true, id };
+    },
+    api_trade_area_list: () =>
+        tradeAreaRows.map(({ result, ...row }) => row),
+    api_trade_area_get: (a) =>
+        tradeAreaRows.find((r) => r.id === Number(a.p_id))
+            || { ok: false, reason: "분석을 찾을 수 없습니다" },
+    api_trade_area_delete: (a) => {
+        const before = tradeAreaRows.length;
+        tradeAreaRows = tradeAreaRows.filter((r) => r.id !== Number(a.p_id));
+        return before === tradeAreaRows.length
+            ? { ok: false, reason: "분석을 찾을 수 없습니다" }
+            : { ok: true, id: Number(a.p_id) };
+    },
+
     // 매장 좌표 (63_store_points). 마커가 폴리곤 위에 뜨는지와, **좌표가 없는
     // 매장이 있을 때 안내가 나오는지**를 같이 봅니다 — 샘플02점은 일부러
     // 좌표를 안 줍니다(주문은 있는데 마커가 없는 경우).

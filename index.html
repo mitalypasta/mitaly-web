@@ -57,6 +57,7 @@
         <button class="navitem" data-go="sales" type="button">📊 매출</button>
         <button class="navitem" data-go="settlement" type="button">💰 정산</button>
         <button class="navitem" data-go="ads" type="button">📣 광고</button>
+        <button class="navitem" data-go="tradearea" type="button">📍 상권 분석</button>
         <!-- 매장 지도는 2026-08-21 담당자 지시로 내렸습니다("매장 지도가 굳이
              필요 없어 보임. 일단 안 보이게만 해줘") — 버튼만 hidden 이고 지도
              카드(data-area="map")·map.js·SQL 은 전부 그대로입니다. 다시 켤 때는
@@ -424,6 +425,67 @@
          D38 — DB 가 원본, 이 화면이 수정 창구입니다. 여기서 고친 매핑은
          export_menu_mapping.py 가 xlsx 로 재생성해 repo 로 나가야 빌더에
          닿습니다(그 사슬은 큐 #130 설계 표 — 이번 카드는 제안까지). -->
+    <!-- 상권 분석 — 옛 구글시트 '예상매출 계산기'의 주소→반경 분석 이식
+         (2026-08-29, 담당자 지시 "실시간 검색"). 수집은 Cloudflare Worker
+         (/analyze — 카카오 지오코딩 + 마이프차)가 대신하고, 계산 모델은
+         tradearea.js 가 계산기와 같은 공식으로 돌립니다. 저장은 98_trade_area. -->
+    <section data-area="tradearea" class="card full" id="ta-card">
+        <header>
+            <h2>후보지 상권 분석</h2>
+            <span class="meta" id="ta-meta"></span>
+        </header>
+        <p class="hint">주소를 넣으면 반경 안 음식점 추정매출·인구를 실시간으로
+            받아 미태리 예상 월매출을 계산합니다. 결과는 아래 분석 이력에 자동
+            저장됩니다.</p>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="ta-address">후보지 주소</label>
+                <input type="text" id="ta-address" placeholder="예: 서울 마포구 양화로 186">
+            </div>
+            <div class="field">
+                <label for="ta-radius">반경</label>
+                <select id="ta-radius">
+                    <option value="500">500m (기본)</option>
+                    <option value="1000">1km (지방 권장)</option>
+                </select>
+            </div>
+            <div class="field grow">
+                <label for="ta-name">지점명 (비우면 동 이름)</label>
+                <input type="text" id="ta-name" placeholder="예: 홍대입구역">
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" id="ta-run">분석</button>
+            </div>
+        </div>
+        <p class="notice" id="ta-status"></p>
+        <div id="ta-result" hidden>
+            <div class="kpis" id="ta-hero"></div>
+            <p class="notice error" id="ta-warn" hidden></p>
+            <h3>매출 비교</h3>
+            <svg class="plot" id="c-ta-compare" role="img" aria-label="예상매출 vs 주변 평균"></svg>
+            <h3>주변 브랜드 매출</h3>
+            <p class="hint" id="ta-brands-hint"></p>
+            <svg class="plot" id="c-ta-brands" role="img" aria-label="주변 프랜차이즈 브랜드별 추정매출"></svg>
+            <button type="button" class="ghost" id="ta-brands-all" hidden>전체 보기</button>
+            <div id="ta-pop-card" hidden>
+                <h3>반경 인구</h3>
+                <div class="kpis" id="ta-pop"></div>
+                <h3>시간대별 유동인구</h3>
+                <svg class="plot" id="c-ta-float" role="img" aria-label="시간대별 유동인구 (평일·주말)"></svg>
+            </div>
+        </div>
+    </section>
+
+    <section data-area="tradearea" class="card full" id="ta-history-card">
+        <header>
+            <h2>분석 이력</h2>
+            <span class="meta" id="ta-h-meta"></span>
+        </header>
+        <p class="hint">행을 누르면 그때 결과를 다시 봅니다 — 재분석 없이 저장본을 엽니다.</p>
+        <div class="tableview" id="t-ta-history"></div>
+    </section>
+
     <section data-area="settings" class="card full" id="mapping-card">
         <header>
             <h2>메뉴 매핑표</h2>
