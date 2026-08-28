@@ -25,46 +25,60 @@ export const palette = () => ({
 });
 
 // ---- 히트맵 ----------------------------------------------------------
-
-const HEAT_STEPS_LIGHT = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95"];
-const HEAT_STEPS_DARK = ["#184f95", "#256abf", "#2a78d6", "#3987e5", "#6da7ec", "#9ec5f4"];
-
-function heatColor(value, max) {
-    if (!value || !max) return null;
-    const dark = getComputedStyle(document.documentElement)
-        .getPropertyValue("--surface-1").trim() === "#1a1a19";
-    const steps = dark ? HEAT_STEPS_DARK : HEAT_STEPS_LIGHT;
-    const index = Math.min(steps.length - 1,
-        Math.floor((value / max) * steps.length));
-    return steps[index];
+//
+// 색·글자색은 styles.css 의 --heat-* 토큰(.heat .h1~.h6)이 정합니다.
+// 여기서는 값 → 단계(1~6)만 정합니다. 예전에는 JS 가 hex 를 직접 골랐는데
+// ① 다크 판정이 옛 surface 값("#1a1a19")과 비교해 다크에서도 라이트 색이
+// 나왔고 ② 테마를 바꿔도 다시 그리기 전까지 낡은 색이 남았습니다.
+// 클래스로 붙이면 두 문제가 구조적으로 없습니다.
+//
+// 단계는 제곱근 눈금입니다. 매출은 상위 몇 메뉴가 최댓값을 끌어올려
+// 선형(value/max)으로 나누면 나머지 전부가 1단계에 몰려 색이 일을 안 합니다
+// — 제곱근이면 중간 값이 중간 단계로 퍼져 행끼리 비교가 됩니다.
+function heatBin(value, max) {
+    if (!value || !max) return 0;
+    return Math.max(1, Math.min(6, Math.ceil(Math.sqrt(value / max) * 6)));
 }
 
-// 칸 안 글씨는 배경 밝기에 따라 흰색/검정을 고릅니다. 대비를 항상 확보하려고요.
-function inkOn(hex) {
-    if (!hex) return "var(--text-muted)";
-    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
-    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    return lum > 0.55 ? "#0b0b0b" : "#ffffff";
-}
-
-export function renderHeat(container, { rows, cols, get, label, rowLabel = (r) => r }) {
+// rows×cols 격자. 옵션:
+//   rowTitle — 행 머리글이 잘렸을 때 title 로 보여줄 전체 이름
+//   summary  — 오른쪽 끝 요약 열 { label, get, format } (정렬 기준을 보여줍니다)
+//   note     — 표 아래 한 줄 각주 (상위 N 제한 등, 아래 전체 표와의 관계)
+// 각 행의 최댓값 칸은 .peak 로 표시합니다 — "이 메뉴는 어디서 잘 팔리나"가
+// 행 단위 질문이라, 행마다 답 하나를 짚어 줍니다.
+export function renderHeat(container, { rows, cols, get, label, rowLabel = (r) => r,
+                           rowTitle = null, summary = null, note = "" }) {
     const max = Math.max(1, ...rows.flatMap((r) => cols.map((cx) => get(r, cx) || 0)));
-    const head = cols.map((cx) => `<th>${escape(cx)}</th>`).join("");
+    const head = cols.map((cx) => `<th>${escape(cx)}</th>`).join("") +
+        (summary ? `<th class="sum">${escape(summary.label)}</th>` : "");
     const body = rows.map((r) => {
-        const cells = cols.map((cx) => {
-            const v = get(r, cx) || 0;
-            const bg = heatColor(v, max);
-            return `<td class="cell${v ? "" : " empty"}"` +
-                (bg ? ` style="background:${bg};color:${inkOn(bg)}"` : "") +
-                ` title="${escape(rowLabel(r))} · ${escape(cx)} · ${label(v)}">` +
+        const values = cols.map((cx) => get(r, cx) || 0);
+        // 최댓값이 여럿(동률)이면 표시하지 않습니다 — "어디가 제일인가"의 답이
+        // 하나가 아닌데 여러 칸에 테두리를 두르면 소음입니다(커버리지처럼
+        // 같은 수가 연달아 나오는 격자에서 실제로 그렇게 됩니다).
+        const peak = Math.max(...values);
+        const unique = values.filter((v) => v === peak).length === 1;
+        const cells = values.map((v, i) => {
+            const cls = v
+                ? ` h${heatBin(v, max)}${v === peak && unique && cols.length > 1 ? " peak" : ""}`
+                : " empty";
+            return `<td class="cell${cls}"` +
+                ` title="${escape(rowTitle ? rowTitle(r) : rowLabel(r))}` +
+                ` · ${escape(cols[i])} · ${label(v)}">` +
                 `${v ? label(v) : "—"}</td>`;
         }).join("");
-        return `<tr><th>${escape(rowLabel(r))}</th>${cells}</tr>`;
+        const sum = summary
+            ? `<td class="sum">${escape(summary.format(summary.get(r)))}</td>` : "";
+        const th = `<th${rowTitle ? ` title="${escape(rowTitle(r))}"` : ""}>` +
+            `${escape(rowLabel(r))}</th>`;
+        return `<tr>${th}${cells}${sum}</tr>`;
     }).join("");
 
+    // 각주는 스크롤 상자(.heat) 밖에 둡니다 — 표를 옆으로 밀어도 제자리.
     container.innerHTML =
         `<div class="heat"><table><thead><tr><th></th>${head}</tr></thead>` +
-        `<tbody>${body}</tbody></table></div>`;
+        `<tbody>${body}</tbody></table></div>` +
+        (note ? `<div class="heat-note">${escape(note)}</div>` : "");
 }
 
 // ---- 선 그래프 --------------------------------------------------------

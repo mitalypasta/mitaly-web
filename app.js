@@ -391,7 +391,8 @@ async function initDashboard() {
         // 조회라 load() 묶음 밖입니다 — 필터 변경에 재조회하지 않습니다.
         initStoreDash, initAllStores,
         // 전사 추이 hero(#129)의 주간(90)·일별(95) 재료도 전 매장 고정의
-        // 단발 조회입니다 — 연도·분기·월은 load() 의 api_monthly 를 씁니다.
+        // 단발 조회입니다 — 월은 load() 의 api_monthly 를 접고, 연도·분기는
+        // 전 기간 api_monthly 를 처음 고를 때 한 번 받습니다(카드 #139).
         initCompanyTrend,
         initTasks, initInquiries, initDrafts,
         initNotices, initVisits, initStoreDb, initAccountPresence,
@@ -631,8 +632,8 @@ function draw(d) {
 
     drawAlerts(d);
     drawReport(d);
-    // 전사 추이 hero(#129) — 연도·분기·월 단위가 이 load() 의 api_monthly 를
-    // 접으므로 필터 변경마다 같이 다시 그립니다(주간·일별은 자기 캐시).
+    // 전사 추이 hero(#129) — 월 단위가 이 load() 의 api_monthly 를 접으므로
+    // 필터 변경마다 같이 다시 그립니다(연도·분기·주간·일별은 자기 캐시).
     drawCompanyTrend();
 
     drawBars($("c-menu"), {
@@ -681,11 +682,17 @@ function draw(d) {
 //
 // 옛 품목·시간·요일·매장 서브탭을 합친 '전체 매장 요약' 화면의 답 카드.
 // 단위 다섯(연도·분기·월·주간·일별)을 unitbtn 한 줄이 고릅니다
-// (docs/web-hierarchy.md 5절). 연도·분기·월은 load() 가 이미 받는
-// api_monthly(전역 필터 기준)를 여기서 접고 — 새 조회 없음(report.js 의
-// 연월 접기와 같은 규칙) —, 주간은 90(api_weekly_company)·일별은
-// 95(api_daily_company — 홀/배달 분해)를 씁니다. 두 rpc 는 전 매장·전 채널
-// 고정의 단발 조회(주차별 카드 #114 전례)라 필터 변경에 다시 받지 않고,
+// (docs/web-hierarchy.md 5절). 월은 load() 가 이미 받는 api_monthly
+// (전역 필터 기준)를 여기서 접고 — 새 조회 없음(report.js 의 연월 접기와
+// 같은 규칙) —, 주간은 90(api_weekly_company)·일별은 95(api_daily_company
+// — 홀/배달 분해)를 씁니다. **연도·분기는 전 기간 api_monthly 를 따로 한 번
+// 받아 접습니다**(카드 #139) — 필터 기본값이 최근 한 달이라 필터 기준으로
+// 접으면 행이 하나뿐이라 전년(전분기) 비교가 안 나오기 때문입니다. 전 기간·
+// 전 매장·전 채널 고정 1회 조회(매장 대시보드 분기 카드의 캐시 전례)이고,
+// 처음 그 단위를 고를 때 받아 캐시합니다(부팅 비용 없음 · 필터와 무관이라
+// 무효화 불요). 실패하면 종전대로 필터 기준 접기로 폴백합니다.
+// 두 rpc(90·95)는 전 매장·전 채널 고정의 단발 조회(주차별 카드 #114 전례)라
+// 필터 변경에 다시 받지 않고,
 // 단위마다 출처가 다른 것은 카드 각주가 말합니다(위계 문서 5절 규칙).
 // 증감 색은 KPI 시트 관례(상승 빨강 wk-up · 하락 파랑 wk-down —
 // docs/kpi-sheet-adoption.md, 옛 주차별 카드 그대로)입니다.
@@ -697,6 +704,37 @@ const COMPANY_UNIT_PREV = { year: "전년", quarter: "전분기", month: "전월
 let companyUnit = "month";
 let companyWeekly = null;   // api_weekly_company 응답(jsonb 스칼라)
 let companyDaily = null;    // api_daily_company 응답(jsonb 스칼라)
+let companyAllMonthly = null;   // 전 기간 api_monthly 행 (연도·분기 전용 캐시)
+let companyAllLoading = false;  // 진행 중 조회 (중복 조회 방지)
+let companyAllFailed = false;   // 실패 → 필터 기준 접기로 폴백(재시도 안 함)
+
+// 연도·분기용 전 기간 재료를 (아직이면) 받아 옵니다. 그 단위를 처음 고를 때
+// 한 번만 — 전 기간·전 매장·전 채널 고정이라 필터가 바뀌어도 유효합니다.
+// 조회 파라미터는 load() 의 api_monthly 와 같고 범위만 데이터 전 구간
+// (S.filterRange = api_filters 의 ym_min~ym_max)입니다.
+function ensureCompanyAllMonthly() {
+    if (companyAllMonthly || companyAllLoading || companyAllFailed) return;
+    const range = S.filterRange || {};
+    if (!range.max) { companyAllFailed = true; return; }
+    companyAllLoading = true;
+    db.rpc("api_monthly", { p_ym_from: range.min, p_ym_to: range.max,
+                            p_store: null, p_channel: null })
+        .then((r) => {
+            companyAllLoading = false;
+            if (r.error) companyAllFailed = true;
+            else companyAllMonthly = r.data || [];
+            if (companyUnit === "year" || companyUnit === "quarter") {
+                drawCompanyTrend();
+            }
+        })
+        .catch(() => {
+            companyAllLoading = false;
+            companyAllFailed = true;
+            if (companyUnit === "year" || companyUnit === "quarter") {
+                drawCompanyTrend();
+            }
+        });
+}
 
 // "2026-08-13" → "08/13" (옛 주차별 카드의 라벨 규칙 그대로).
 const companyMd = (iso) => `${String(iso).slice(5, 7)}/${String(iso).slice(8, 10)}`;
@@ -717,9 +755,9 @@ function companyPctCell(pct) {
 
 // api_monthly(채널별 한 줄 — ym·channel(홀/배달)·amount·qty)를 연·분기·월
 // 묶음으로 접습니다. key 는 정렬용 숫자, label 은 화면 표기입니다.
-function foldCompanyMonthly(keyOf, labelOf) {
+function foldCompanyMonthly(rows, keyOf, labelOf) {
     const map = new Map();
-    for (const r of ((S.lastData || {}).monthly) || []) {
+    for (const r of rows || []) {
         const key = keyOf(Number(r.ym));
         const slot = map.get(key) || { key, amount: 0, qty: 0, hall: 0, delivery: 0 };
         const amt = Number(r.amount) || 0;
@@ -734,17 +772,21 @@ function foldCompanyMonthly(keyOf, labelOf) {
         .map((s) => ({ ...s, label: labelOf(s.key) }));
 }
 
+// 연도·분기는 전 기간 캐시가 있으면 그걸(전년 비교가 항상 나옴), 아직이거나
+// 실패면 필터 기준 재료를 접습니다. 월은 항상 필터 기준입니다.
 function companyMonthlyRows() {
+    const filtered = ((S.lastData || {}).monthly) || [];
     if (companyUnit === "year") {
-        return foldCompanyMonthly((ym) => Math.floor(ym / 100), (y) => `${y}년`);
+        return foldCompanyMonthly(companyAllMonthly || filtered,
+            (ym) => Math.floor(ym / 100), (y) => `${y}년`);
     }
     if (companyUnit === "quarter") {
         // 표기는 1분기~4분기(담당자 지시 — Q1 금지, 매장 대시보드 분기 카드 전례).
-        return foldCompanyMonthly(
+        return foldCompanyMonthly(companyAllMonthly || filtered,
             (ym) => Math.floor(ym / 100) * 10 + Math.ceil((ym % 100) / 3),
             (k) => `${Math.floor(k / 10)}년 ${k % 10}분기`);
     }
-    return foldCompanyMonthly((ym) => ym, (ym) => ymLabel(ym));
+    return foldCompanyMonthly(filtered, (ym) => ym, (ym) => ymLabel(ym));
 }
 
 function initCompanyTrend() {
@@ -784,7 +826,7 @@ function companyHeroStat(label, valueHtml, subHtml) {
         + "</div>";
 }
 
-function companyBadge(pct) {
+function companyBadge(pct, label) {
     const badge = $("company-badge");
     if (pct == null) { badge.hidden = true; return; }
     badge.hidden = false;
@@ -793,7 +835,48 @@ function companyBadge(pct) {
     badge.className = "hero-badge "
         + (pct <= -10 ? "hb-critical" : pct < 0 ? "hb-attn" : "hb-good");
     badge.textContent =
-        `${COMPANY_UNIT_PREV[companyUnit]} 대비 ${pct > 0 ? "+" : ""}${pct}%`;
+        `${label || COMPANY_UNIT_PREV[companyUnit]} 대비 ${pct > 0 ? "+" : ""}${pct}%`;
+}
+
+// 진행 중인 마지막 연도·분기의 배지 값 — 부분 기간을 직전 완성 기간과
+// 통비교하면 연초엔 전년 대비 -90% 같은 오탐 배지가 뜹니다(H3 — 진행 중인
+// 달 오탐 방지와 같은 이유). 그래서 배지는 **완성된 달만 같은 자리끼리**
+// 견줍니다: 연도는 전년의 같은 달들(동기간), 분기는 전분기의 같은 순서
+// 달들. 마지막 기간이 이미 완성이면 표와 같은 직전 기간 통비교입니다.
+// 표는 인접 행 대비 그대로(매장 대시보드 분기 카드 전례 — 각주가 진행 중
+// 가능성을 말합니다).
+function companyLongBadge(latest, prev) {
+    const whole = { pct: companyPct(latest.amount, prev && prev.amount) };
+    const isYear = companyUnit === "year";
+    const byYm = new Map();
+    for (const r of companyAllMonthly) {
+        const ym = Number(r.ym);
+        byYm.set(ym, (byYm.get(ym) || 0) + (Number(r.amount) || 0));
+    }
+    const t = new Date();
+    const nowYm = t.getFullYear() * 100 + (t.getMonth() + 1);
+    const keyOf = (ym) => (isYear ? Math.floor(ym / 100)
+        : Math.floor(ym / 100) * 10 + Math.ceil((ym % 100) / 3));
+    // 마지막 기간의 완성된 달들(진행 중인 이번 달 제외, 오름차순).
+    const done = [...byYm.keys()]
+        .filter((ym) => keyOf(ym) === latest.key && ym < nowYm)
+        .sort((a, b) => a - b);
+    if (done.length === (isYear ? 12 : 3)) return whole;   // 이미 완성.
+    if (!done.length) return { pct: null };
+    let prevYms;
+    if (isYear) {
+        prevYms = done.map((ym) => ym - 100);
+    } else {
+        const prevQ = latest.key % 10 > 1 ? latest.key - 1
+            : (Math.floor(latest.key / 10) - 1) * 10 + 4;
+        const y = Math.floor(prevQ / 10);
+        const q = prevQ % 10;
+        prevYms = [q * 3 - 2, q * 3 - 1, q * 3]
+            .slice(0, done.length).map((m) => y * 100 + m);
+    }
+    const sum = (yms) => yms.reduce((a, ym) => a + (byYm.get(ym) || 0), 0);
+    return { pct: companyPct(sum(done), sum(prevYms)),
+             label: isYear ? "전년 동기간" : "전분기 동기간" };
 }
 
 function drawCompanyTrend() {
@@ -921,8 +1004,11 @@ function drawCompanyTrend() {
         return;
     }
 
-    // 연도·분기·월 — 전역 필터(기간·매장·채널) 기준의 api_monthly 접기.
-    if (!S.lastData) return empty("집계 중…");
+    // 연도·분기 — 전 기간 api_monthly 접기(위 캐시). 월 — 전역 필터
+    // (기간·매장·채널) 기준의 api_monthly 접기.
+    const isLong = companyUnit === "year" || companyUnit === "quarter";
+    if (isLong) ensureCompanyAllMonthly();
+    if (!S.lastData && !(isLong && companyAllMonthly)) return empty("집계 중…");
     const rows = companyMonthlyRows();
     if (!rows.length) return empty("데이터가 없습니다.");
     const latest = rows[rows.length - 1];
@@ -930,7 +1016,13 @@ function drawCompanyTrend() {
     const unitName = companyUnit === "year" ? "연도"
         : companyUnit === "quarter" ? "분기" : "월";
 
-    companyBadge(companyPct(latest.amount, prev && prev.amount));
+    if (isLong && companyAllMonthly) {
+        // 진행 중인 마지막 연도·분기는 동기간 비교(companyLongBadge 주석).
+        const b = companyLongBadge(latest, prev);
+        companyBadge(b.pct, b.label);
+    } else {
+        companyBadge(companyPct(latest.amount, prev && prev.amount));
+    }
     stats.innerHTML =
         companyHeroStat(`최근 ${unitName} 매출`, escape(won(latest.amount)),
             `${escape(latest.label)} · ${escape(wonFull(latest.amount))}`)
@@ -967,8 +1059,17 @@ function drawCompanyTrend() {
           export: { headers: [unitName, "매출", "홀", "배달", "수량"],
                     rows: desc.map((r) => [r.label, r.amount, r.hall,
                                            r.delivery, r.qty]) } });
-    note.textContent = "연도·분기·월은 위 기간·매장·채널 필터 기준 — "
-        + "주간·일별 단위만 전 매장 고정입니다.";
+    if (isLong && companyAllMonthly) {
+        note.textContent = "연도·분기는 전 기간·전 매장·전 채널 고정"
+            + `(위 필터와 무관) · 마지막 ${unitName}는 진행 중일 수 있음`;
+    } else if (isLong && companyAllLoading) {
+        note.textContent = "전체 기간 집계 중… (지금은 위 필터 기준)";
+    } else if (isLong) {
+        note.textContent = "전체 기간 조회 실패 — 위 기간·매장·채널 필터 기준";
+    } else {
+        note.textContent = "월만 위 기간·매장·채널 필터 기준 — "
+            + "다른 단위는 전 매장 고정입니다.";
+    }
 }
 
 // ---- 홈 (오늘 할 일 + 알아야 할 변화) ---------------------------------
@@ -1488,12 +1589,30 @@ function drawReviews(d, c) {
             ${(r.drafts || []).length
                 ? `<div class="rvopen-wrap"><button type="button" class="ghost rvopen"
                        data-review="${Number(r.id)}">AI 답변 시안 보기${r.drafts.length > 1 ? ` · ${r.drafts.length}건` : ""}</button></div>`
-                : ""}
+                : draftStateNote(r, replies)}
           </article>`;
     }).join("");
 
     listEl.scrollTop = rvListScroll;
     refreshDraftPanel();
+}
+
+// 초안이 없는 리뷰의 시안 상태 한 줄 (#143 — 담당자: "미답변인 모든 리뷰에서
+// 보여야 해"). 그전에는 r.drafts 가 없으면 아무것도 안 그려서, 생성기(자리 PC
+// Ollama)가 안 돌던 날 미답변 리뷰가 전부 침묵했습니다. 화면이 상태를 말합니다.
+// · 답글이 이미 있으면: 시안이 필요 없는 리뷰 — 그대로 아무것도 안 붙입니다.
+// · 미답변 + 기한 안(can_reply ≠ false): "AI 시안 준비 전" — 생성기가 아직
+//   안 만든 것. null 은 기한 정보를 안 주는 채널이라 준비 전으로 칩니다
+//   (14_reply_drafts.sql api_reply_candidates 의 coalesce(can_reply, true) 와
+//   같은 판정 — 생성기가 대상으로 삼는 리뷰와 정확히 같은 집합).
+// · 미답변 + 기한 지남(can_reply === false): 생성기 대상이 아니라 "준비 전" 은
+//   거짓말이 됩니다. "답글 기한 지남" 으로 갈라 적습니다.
+// 버튼이 아니라 글자(rvmeta 비활성 톤)입니다 — 여기서 눌러 생성을 요청하는
+// 길은 서버 rpc 가 없어 이번에는 안 만듭니다(보고서 '서버 측 후속').
+function draftStateNote(r, replies) {
+    if (replies.length) return "";
+    const text = r.can_reply === false ? "답글 기한 지남 · AI 시안 없음" : "AI 시안 준비 전";
+    return `<div class="rvopen-wrap"><span class="rvmeta">${text}</span></div>`;
 }
 
 // ---- AI 답글 초안 ------------------------------------------------------
@@ -1731,7 +1850,7 @@ function initDrafts() {
 // 크기를 색의 진하기로 보여줍니다. 파랑 한 가지만 씁니다 — 여러 색을 섞으면
 // 어느 쪽이 큰지 읽을 수 없습니다.
 
-// (HEAT_STEPS·heatColor·inkOn·renderHeat 는 charts.js 로 이동 — 위 import)
+// (renderHeat 는 charts.js — 단계 색·글자색은 styles.css 의 --heat-* 토큰)
 
 // ---- 수집 커버리지 ----------------------------------------------------
 //
@@ -1759,6 +1878,7 @@ function drawCoverage(d) {
             return (index.get(`${source}|${ym}`) || {}).store_count || 0;
         },
         label: (v) => String(v),
+        note: "칸 = 그 달 수집된 매장 수",
     });
 
     // 매장별은 표로. 99개 × 20개월이라 격자로 만들면 읽히지 않습니다.
@@ -1902,9 +2022,15 @@ function drawMenuMatrix(chartEl, tableEl, data, field, fixedOrder = null) {
     renderHeat(chartEl, {
         rows: rows.slice(0, 15),
         cols: buckets,
-        rowLabel: (r) => clip(r.menu, 14),
+        rowLabel: (r) => clip(r.menu, 18),
+        rowTitle: (r) => r.menu,          // 잘린 메뉴명은 title 로 전체 확인
         get: (row, bucket) => Number(row.buckets[bucket]) || 0,
         label: won,
+        // 행 순서(총매출순)의 기준을 오른쪽 요약 열로 보여줍니다.
+        summary: { label: "합계", get: (r) => r.total, format: won },
+        note: rows.length > 15
+            ? `총매출순 상위 15종 / 전체 ${rows.length}종 — 전체는 아래 표`
+            : "총매출순",
     });
 
     table(tableEl, ["메뉴", "분류", ...buckets, "합계"],

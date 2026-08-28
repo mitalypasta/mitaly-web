@@ -6,6 +6,10 @@
 //
 // 홈 화면 '진단 대상 N곳' 타일도 여기서 채웁니다 — 같은 응답(flagged)이라
 // 홈이 따로 조회하지 않습니다(nav.js 의 tk-waiting 거울과 같은 이유).
+//
+// 카드 #141(텍스트 다이어트): 본문 행은 훑는 표로 줄이고(배지 2개 + "+N" ·
+// 달성률·일평균 숫자 열 · 증상 관련 지표 · 조치 1개 + "외 N"), 원인→조치
+// 전문과 전체 수치는 매장 행의 ▸ 펼침으로 옮겼습니다. 서버 문구·SQL 무변.
 
 import { db } from "./client.js";
 import { won, int, ymLabel } from "./format.js";
@@ -38,6 +42,9 @@ function defaultYm() {
     return range.max;
 }
 
+// 전체 수치 한 줄 — 카드 #141 부터 본문 행이 아니라 ▸ 펼침 행에 들어갑니다.
+// 지표를 빼는 게 아니라 자리를 옮기는 것이라 구성은 그대로입니다(6개 +
+// 증상 조건부 2개). 본문 행에는 달성률·일평균(공통 열)과 증상 관련 지표만.
 function evidenceText(ev, symptoms) {
     const parts = [
         `달성률 ${rate(ev.achievement, 0)}`
@@ -60,6 +67,38 @@ function evidenceText(ev, symptoms) {
     }
     return parts.join(" · ");
 }
+
+// 증상 → 그 증상을 판정한 지표(시트 05 '함께 볼 지표'의 화면 대응).
+// 본문 행 '관련 지표' 칸에는 이것만 올립니다. 달성률·일평균은 전 매장 공통
+// 열(정렬 기준이기도 합니다)이라 여기 안 넣습니다 — 두 번 보일 이유가 없습니다.
+const SYMPTOM_METRICS = {
+    decline_2m:           ["decline"],
+    ach_low_daily_down:   [],            // 달성률·일평균 — 공통 열이 이미 보여줌
+    ach_low_days:         ["days"],
+    profit_down_delivery: ["profit", "delivery"],
+    productivity_low:     ["spp"],
+    food_cost_up:         ["food"],
+};
+
+const METRIC_TEXT = {
+    decline:  (ev) => `연속하락 ${int(ev.decline_months || 0)}개월`,
+    days:     (ev) => ev.days_cur == null ? null
+        : `영업일 ${int(ev.days_cur)}일`
+            + (ev.days_prev != null ? ` (전월 ${int(ev.days_prev)}일)` : ""),
+    delivery: (ev) => `배달비중 ${rate(ev.delivery_share)}`,
+    food:     (ev) => `원가율 ${rate(ev.food_rate)}`,
+    profit:   (ev) => `이익률 ${rate(ev.profit_rate)}`,
+    spp:      (ev) => ev.sales_per_person == null ? null
+        : `인당 ${won(ev.sales_per_person)} (${int(ev.staff_count)}명)`,
+};
+
+function relatedText(codes, ev) {
+    const keys = [...new Set(codes.flatMap((c) => SYMPTOM_METRICS[c] || []))];
+    return keys.map((k) => METRIC_TEXT[k](ev)).filter(Boolean).join(" · ") || "—";
+}
+
+// 펼쳐 둔 매장 — 필터·기준월을 바꿔 다시 그려도 펼침 상태를 잃지 않습니다.
+const diagOpen = new Set();
 
 function renderDiagnosis() {
     const d = diagData;
@@ -85,19 +124,69 @@ function renderDiagnosis() {
 
     // 서버가 이미 심각순(연속하락 > 달성률 미달 > 기준선 위반) → 달성률 낮은
     // 순으로 내려줍니다 — 여기서는 그대로 그립니다.
+    //
+    // 본문 행은 훑는 표(카드 #141 — "텍스트가 너무 많아"): 배지 최대 2개 +
+    // "+N", 조치는 가장 심각한 증상 것 하나 + "외 N", 수치는 공통 열 2개
+    // (달성률·일평균 — 정렬 기준)와 증상 관련 지표만. 원인→조치 전문과 전체
+    // 수치는 ▸ 펼침 행으로(급증·급감 카드의 .alerts-exp/.alerts-chrow 문법
+    // 그대로). 지운 정보는 없습니다 — 전부 펼침·title 로 옮겼을 뿐입니다.
+    const badgeOf = (code) => {
+        const r = rules.get(code);
+        const cls = SEV_CLASS[r ? r.severity : 3] || "tag";
+        return `<span class="${cls}" title="${escape(r ? r.cause : "")}">${escape(r ? r.symptom : code)}</span>`;
+    };
+    const symName = (code) => rules.get(code)?.symptom || code;
+
     const body = rows.map((s) => {
-        const badges = (s.symptoms || []).map((code) => {
+        const codes = s.symptoms || [];
+        const ev = s.evidence || {};
+        const open = diagOpen.has(s.store);
+
+        const badges = codes.length
+            ? codes.slice(0, 2).map(badgeOf).join(" ")
+                + (codes.length > 2
+                    ? ` <span class="tag" title="${escape(codes.slice(2).map(symName).join(" · "))}">+${codes.length - 2}</span>`
+                    : "")
+            : "—";
+
+        // 증상 배열이 심각순(규칙 표 순서)이라 첫 조치가 가장 급한 것입니다.
+        const actions = [...new Set(codes
+            .map((code) => rules.get(code)?.action).filter(Boolean))];
+        const actionCell = actions.length
+            ? escape(actions[0]) + (actions.length > 1
+                ? ` <span class="diag-more" title="${escape(actions.slice(1).join(" · "))}">외 ${actions.length - 1}</span>`
+                : "")
+            : "—";
+
+        const achTitle = ev.target != null
+            ? ` title="목표 ${escape(won(ev.target))} · 실적 ${escape(won(ev.actual))}"` : "";
+        const dailyCell = pct(ev.daily_mom_pct)
+            + (ev.daily_source === "monthly"
+                ? '<span class="diag-more" title="일 단위 집계가 없어 월 증감률 대용">*</span>' : "");
+
+        // 펼침 행 — 증상마다 원인 → 조치 전문 + 전체 수치 한 줄.
+        const symLines = codes.map((code) => {
             const r = rules.get(code);
-            const cls = SEV_CLASS[r ? r.severity : 3] || "tag";
-            return `<span class="${cls}" title="${escape(r ? r.cause : "")}">${escape(r ? r.symptom : code)}</span>`;
-        }).join(" ") || "—";
-        const actions = [...new Set((s.symptoms || [])
-            .map((code) => rules.get(code)?.action).filter(Boolean))].join(" · ") || "—";
+            if (!r) return `<div class="diag-detail-line">${escape(code)}</div>`;
+            return `<div class="diag-detail-line">${badgeOf(code)} `
+                + `${escape(r.cause)} → <strong>${escape(r.action)}</strong>`
+                + ` <span class="diag-detail-ind">함께 볼 지표: ${escape(r.indicators)}</span></div>`;
+        }).join("");
+
         return `<tr>
-            <td class="tl">${escape(s.store)}</td>
+            <td class="tl"><button type="button" class="alerts-exp${open ? " open" : ""}"
+                data-exp="${escape(s.store)}" aria-expanded="${open}"
+                aria-label="진단 상세 펼치기"></button>${escape(s.store)}</td>
             <td class="tl">${badges}</td>
-            <td class="tl">${escape(evidenceText(s.evidence || {}, s.symptoms))}</td>
-            <td class="tl">${escape(actions)}</td>
+            <td${achTitle}>${rate(ev.achievement, 0)}</td>
+            <td>${dailyCell}</td>
+            <td class="tl">${escape(relatedText(codes, ev))}</td>
+            <td class="tl">${actionCell}</td>
+        </tr>
+        <tr class="alerts-chrow diag-drow" data-parent="${escape(s.store)}"${open ? "" : " hidden"}>
+            <td class="tl" colspan="6"><div class="diag-detail">${symLines}
+                <div class="diag-detail-ev">${escape(evidenceText(ev, codes))}</div>
+            </div></td>
         </tr>`;
     }).join("");
 
@@ -105,8 +194,28 @@ function renderDiagnosis() {
     // 직접 씁니다(kpi.js 와 같은 이유 — 문자열 셀만 받는 함수라서).
     box.innerHTML =
         `<table><thead><tr><th class="tl">매장</th><th class="tl">증상</th>`
-        + `<th class="tl">근거 수치</th><th class="tl">조치 방향</th></tr></thead>`
+        + `<th>달성률</th><th>일평균</th><th class="tl">관련 지표</th>`
+        + `<th class="tl">조치 방향</th></tr></thead>`
         + `<tbody>${body}</tbody></table>`;
+
+    // 행은 다시 그려도 컨테이너(t-diag)는 그대로라 위임 클릭을 한 번만 겁니다
+    // (app.js drawAlerts 의 expWired 패턴).
+    if (!box.dataset.expWired) {
+        box.dataset.expWired = "1";
+        box.addEventListener("click", (event) => {
+            const button = event.target.closest(".alerts-exp");
+            if (!button) return;
+            const store = button.dataset.exp;
+            if (diagOpen.has(store)) diagOpen.delete(store);
+            else diagOpen.add(store);
+            const on = diagOpen.has(store);
+            button.classList.toggle("open", on);
+            button.setAttribute("aria-expanded", String(on));
+            box.querySelectorAll("tr.diag-drow").forEach((tr) => {
+                tr.hidden = !diagOpen.has(tr.dataset.parent);
+            });
+        });
+    }
 }
 
 async function refreshDiagnosis() {

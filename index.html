@@ -149,6 +149,11 @@
              (담당자 지시 2026-08-21) — 카드는 아래 data-area="settings" 구역에. -->
     </nav>
 
+    <!-- 탭 머리 — 지금 화면이 무엇을 보고 무엇을 하는 곳인지 한 줄(카드 #138,
+         담당자 지시). 상자는 이 하나뿐이고 문구는 nav.js 의 AREA_HEAD 가
+         탭 전환 때 채웁니다(매출은 서브탭별로 덮어씀 — showSalesSub). -->
+    <div id="area-head" hidden></div>
+
     <div class="grid">
 
         <!-- ============================================================
@@ -289,8 +294,10 @@
         <!-- ============================================================
              전체 매장 요약 (카드 #129) — 전 매장(전사) 단위 분석 화면.
              hero 는 이 전사 추이 카드 하나뿐입니다(화면당 hero 1 —
-             docs/web-hierarchy.md 1절). 연도·분기·월은 위 전역 필터(기간·
-             매장·채널)의 api_monthly 를 접고, 주간은 90(api_weekly_company)·
+             docs/web-hierarchy.md 1절). 월은 위 전역 필터(기간·매장·채널)의
+             api_monthly 를 접고, 연도·분기는 전 기간 api_monthly 를 따로
+             한 번 받아 접으며(카드 #139 — 필터가 최근 한 달이어도 전년 비교가
+             나오게), 주간은 90(api_weekly_company)·
              일별은 95(api_daily_company — 홀/배달 분해)를 씁니다. 출처가
              달라지는 단위는 카드 각주가 기준을 말합니다(위계 문서 5절).
              시간대별·요일별·품목별과 매장 카드들은 옛 품목·시간·요일·매장
@@ -629,7 +636,8 @@
             </header>
             <p class="hint">'AI 답변 시안 보기'를 누르면 오른쪽 패널에서 고치고
                 승인·전송할 수 있습니다. <b>승인해도 배달앱에는 아직 올라가지
-                않습니다</b> — 등록 기능은 담당자 확인을 거쳐 따로 켭니다.</p>
+                않습니다</b> — 등록 기능은 담당자 확인을 거쳐 따로 켭니다.
+                시안이 아직 없는 미답변 리뷰에는 'AI 시안 준비 전'이 표시됩니다.</p>
             <p class="hint" id="draft-note"></p>
             <p class="hint" id="review-sync-note"></p>
 
@@ -2234,18 +2242,20 @@
          (agg_month)로 계산한 예상치입니다 — 본사 청구·입금 원자료가 반입되면
          그 값(source=hq)이 우선하고 갱신해도 덮이지 않습니다. -->
 
-    <!-- 매장 보기 — 정산의 매장 단면 (카드 #131 · 담당자 지시 2026-08-21
-         "정산·광고 탭도 매장 대시보드처럼"). 매장 대시보드(sd-card)와 같은
-         문법: searchify 콤보로 매장을 고르면 그 매장 카드가 채워집니다.
+    <!-- 매장별 로열티(옛 '매장 보기') — 정산의 매장 단면 (카드 #131 · 담당자
+         지시 2026-08-21 "정산·광고 탭도 매장 대시보드처럼" · 제목·설명은
+         #142 명료화). 매장 대시보드(sd-card)와 같은 문법: searchify 콤보로
+         매장을 고르면 그 매장 카드가 채워집니다.
          원천은 전부 기존 rpc(api_royalty_month 를 달 단위로 캐시 +
          api_royalty_receivables + api_royalty_store_rates)라 새 SQL 없음 —
          settlement.js initSettlementStoreView. 아래 전체 보기 카드 3장은
          그대로입니다(삭제 0). -->
     <section data-area="settlement" class="card full" id="settlement-store-card">
         <header>
-            <h2>매장 보기</h2>
+            <h2>매장별 로열티</h2>
             <span class="meta" id="sts-meta"></span>
         </header>
+        <p class="hint">매장 하나를 골라 최근 12개월의 청구·입금·미수 흐름을 봅니다. 한 달을 전 매장으로 보려면 아래 '월별 로열티 청구'를 쓰세요.</p>
         <div class="reqform">
             <div class="field grow">
                 <label for="sts-store">매장</label>
@@ -2265,7 +2275,7 @@
             <h2>월별 로열티 청구</h2>
             <span class="meta" id="st-month-meta"></span>
         </header>
-        <p class="hint">'청구 생성·갱신'을 누르면 그 달 청구가 지금 매출 기준으로 다시 계산됩니다 — 본사 원자료로 들어온 청구는 바뀌지 않습니다.</p>
+        <p class="hint">달 하나를 골라 전 매장의 청구·입금 현황을 보고, 그 달 청구를 만드는 곳입니다. '청구 생성·갱신'은 없는 청구는 만들고 있는 청구는 지금 매출×요율로 다시 계산합니다 — 본사에서 받은 청구(표의 '본사 확정')는 바뀌지 않습니다.</p>
         <div class="cardsearch">
             <select id="st-ym"></select>
             <button type="button" id="st-generate">청구 생성·갱신</button>
@@ -2345,7 +2355,7 @@
             <h2>미수 목록</h2>
             <span class="meta" id="st-recv-meta"></span>
         </header>
-        <p class="hint">'발송 승인 요청'을 누르면 업무 영역의 승인 대기로 넘어가고, 실제 발송은 승인 뒤에 이뤄집니다. 지연이자는 참고 계산입니다.</p>
+        <p class="hint">납기가 지났는데 못 받은 청구를 달에 상관없이 다 모은 목록입니다. '발송 승인 요청'을 누르면 업무 영역의 승인 대기로 넘어가고, 실제 발송은 승인 뒤에 이뤄집니다. 지연이자는 참고 계산입니다.</p>
         <div class="tableview" id="t-receivables"></div>
     </section>
 

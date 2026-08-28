@@ -122,7 +122,7 @@ async function refreshSettlementMonth() {
     const drift = $("st-drift");
     drift.hidden = driftIds.size === 0;
     if (driftIds.size) {
-        drift.textContent = `갱신 필요 ${int(driftIds.size)}곳 — `
+        drift.textContent = `청구를 만든 뒤 매출이 바뀐 매장 ${int(driftIds.size)}곳 — `
             + "'청구 생성·갱신'을 누르면 지금 매출로 다시 계산됩니다.";
     }
 
@@ -132,9 +132,10 @@ async function refreshSettlementMonth() {
     unbilledWarn.hidden = !(t.unbilled_stores > 0);
     if (t.unbilled_stores > 0) {
         unbilledWarn.textContent = (t.billed_stores > 0
-                ? `청구 없는 매장 ${int(t.unbilled_stores)}곳`
+                ? `아직 청구가 없는 매장 ${int(t.unbilled_stores)}곳`
                 : "이 달 청구가 아직 없습니다")
-            + " — '청구 생성·갱신'을 누르면 만들어집니다.";
+            + " — '청구 생성·갱신'을 누르면 만들어집니다."
+            + " 청구가 없으면 미수 목록에도 안 잡힙니다.";
     }
 
     // 입금 폼의 매장 목록 = 이 달 청구가 있는 매장. 선택은 유지합니다.
@@ -511,7 +512,7 @@ async function saveRate(reset) {
         false);
     renderRateList();
     // 미청구 매장의 '예상 청구' 미리보기가 이 요율을 쓰므로 같이 새로 그립니다.
-    // 매장 보기의 실요율 타일도 같은 값을 보므로 캐시를 버립니다.
+    // 매장별 로열티의 실요율 타일도 같은 값을 보므로 캐시를 버립니다.
     stsInvalidate();
     await refreshSettlementMonth();
 }
@@ -531,7 +532,7 @@ function initRoyaltyRates() {
     $("rate-reset").addEventListener("click", () => saveRate(true));
 }
 
-// ---- 매장 보기 (카드 #131 · 담당자 지시 2026-08-21) ------------------------
+// ---- 매장별 로열티 — 옛 '매장 보기' (카드 #131 · 제목은 #142 명료화) -------
 //
 // 매장 대시보드와 같은 문법 — searchify 콤보로 매장을 고르면 그 매장의
 // 청구·입금·미수·실요율 타일 + 최근 12개월 정산 추이 표가 채워집니다.
@@ -698,8 +699,8 @@ async function refreshSettlementStore() {
         { html: true });
 
     $("sts-note").textContent =
-        "청구·입금은 위 월별 로열티 청구 표와 같은 원천입니다 — 청구가 없는 달은 "
-        + "'청구 없음'으로 보이고, '청구 생성·갱신'을 누르면 만들어집니다.";
+        "청구·입금은 아래 '월별 로열티 청구'와 같은 원천입니다 — 청구가 없는 달은 "
+        + "'청구 없음'으로 보이고, 그 달을 골라 '청구 생성·갱신'을 누르면 만들어집니다.";
 }
 
 async function initSettlementStoreView() {

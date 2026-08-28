@@ -41,6 +41,17 @@
     --attn-tint:       rgba(180, 83, 9, 0.10);
     --urgent-tint:     rgba(229, 72, 77, 0.10);
 
+    /* 히트맵 6단계 — 파랑 한 가지, 연함→진함(값 클수록 진함). 명도가 단조롭게
+       내려가는 것을 dataviz 검증기로 실측한 값이고(단계 간 ΔL ≥ 0.06),
+       글자색(--heat-ink-*)은 각 배경에서 4.5:1 이상을 계산해 짝지은 값입니다.
+       배경만 바꾸면 글자가 안 읽힙니다 — 바꿀 땐 짝으로. */
+    --heat-1:          #e2edfb;  --heat-ink-1: #495057;
+    --heat-2:          #c2daf7;  --heat-ink-2: #212529;
+    --heat-3:          #99c0f0;  --heat-ink-3: #212529;
+    --heat-4:          #6ba0e6;  --heat-ink-4: #14243d;
+    --heat-5:          #3873c5;  --heat-ink-5: #ffffff;
+    --heat-6:          #1d4f93;  --heat-ink-6: #ffffff;
+
     --radius:          14px;
     --radius-sm:       9px;       /* 버튼·입력 */
     --radius-pill:     999px;
@@ -93,6 +104,15 @@
         --attn-tint:       rgba(217, 138, 43, 0.16);
         --urgent-tint:     rgba(255, 99, 105, 0.16);
 
+        /* 히트맵 — 다크는 어두운 지면에서 시작해 값이 클수록 밝아집니다
+           (라이트의 단순 반전이 아니라 이 지면에서 따로 잡은 단계). */
+        --heat-1:          #232d40;  --heat-ink-1: #b9bdc9;
+        --heat-2:          #29466e;  --heat-ink-2: #f2f3f7;
+        --heat-3:          #30619c;  --heat-ink-3: #f2f3f7;
+        --heat-4:          #3577be;  --heat-ink-4: #ffffff;
+        --heat-5:          #74a9e8;  --heat-ink-5: #14243d;
+        --heat-6:          #b7d3f6;  --heat-ink-6: #14243d;
+
         --shadow-card:     0 1px 2px rgba(0, 0, 0, 0.3);
         --shadow-raise:    0 2px 4px rgba(0, 0, 0, 0.4),
                            0 10px 28px rgba(0, 0, 0, 0.4);
@@ -127,6 +147,14 @@
     --good-tint:       rgba(43, 214, 149, 0.16);
     --attn-tint:       rgba(217, 138, 43, 0.16);
     --urgent-tint:     rgba(255, 99, 105, 0.16);
+
+    /* 히트맵 — 위 다크 블록과 같은 값 (미디어쿼리/명시 선택의 이중 정의) */
+    --heat-1:          #232d40;  --heat-ink-1: #b9bdc9;
+    --heat-2:          #29466e;  --heat-ink-2: #f2f3f7;
+    --heat-3:          #30619c;  --heat-ink-3: #f2f3f7;
+    --heat-4:          #3577be;  --heat-ink-4: #ffffff;
+    --heat-5:          #74a9e8;  --heat-ink-5: #14243d;
+    --heat-6:          #b7d3f6;  --heat-ink-6: #14243d;
 
     --shadow-card:     0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-raise:    0 2px 4px rgba(0, 0, 0, 0.4),
@@ -173,6 +201,7 @@ body {
     .main-col > .filters,
     .main-col > .kpis,
     .main-col > .subnav,
+    .main-col > #area-head,
     .main-col > .grid { margin: 0; }
 }
 
@@ -969,6 +998,28 @@ header.top h1::before {
 
 .card.full { grid-column: 1 / -1; }
 
+/* ---- 탭 머리 설명 (카드 #138) ----------------------------------------
+   지금 화면이 무엇 하는 곳인지 한 줄. 본문 카드보다 무게를 낮춥니다 —
+   흰 표면·테두리 없이 지면 위 글자만 둡니다(상자를 입히면 카드와
+   경쟁합니다 — 경계는 선이 지는 디자인 언어 그대로). 문구는 nav.js
+   AREA_HEAD 가 탭 전환 때 채웁니다. */
+
+#area-head { margin: 0 0 16px; }
+
+#area-head .area-head-title {
+    margin: 0;
+    font-size: var(--fs-title);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+#area-head .area-head-desc {
+    margin: 4px 0 0;
+    font-size: var(--fs-body);
+    color: var(--text-secondary);
+    max-width: 76ch;
+}
+
 .card header {
     display: flex;
     flex-wrap: wrap;
@@ -1667,6 +1718,9 @@ button.ghost:focus-visible {
  *
  * 크기(매출·매장수)를 보여주는 격자입니다. 색은 파랑 한 가지로 연함→진함.
  * 여러 색을 쓰는 무지개 배색은 크기를 잘못 읽게 만들어서 쓰지 않습니다.
+ * 단계 색·글자색 짝은 :root 의 --heat-* 토큰(라이트·다크 각각) — charts.js
+ * 는 h1~h6 클래스 번호만 답니다. 값 크기의 1차 표기는 칸 안 숫자이고
+ * 색은 훑어 읽기용 보조라, 1단계가 지면과 옅게 갈리는 것은 의도입니다.
  */
 
 .heat {
@@ -1694,10 +1748,21 @@ button.ghost:focus-visible {
     font-size: var(--fs-meta);
     font-weight: 500;
     color: var(--text-muted);
-    text-align: center;
-    padding: 0 4px 4px;
+    /* 칸 안 숫자가 오른끝 정렬이라 머리글도 같은 끝에 맞춥니다 —
+       열을 세로로 훑을 때 눈이 한 선을 탑니다. */
+    text-align: right;
+    padding: 0 7px 4px;
     white-space: nowrap;
     position: static;
+}
+
+/* 가로 스크롤 때 행 머리글이 고정되므로 왼쪽 위 모서리도 같이 고정
+   (아니면 스크롤 중 머리글 줄만 흘러가 어긋나 보입니다). */
+.heat thead th:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--surface-1);
+    z-index: 2;
 }
 
 .heat tbody th {
@@ -1711,22 +1776,61 @@ button.ghost:focus-visible {
     left: 0;
     background: var(--surface-1);
     z-index: 1;
+    /* 스크롤로 칸이 밑으로 지나갈 때 경계가 보이도록 — 헤어라인. */
+    box-shadow: 1px 0 0 var(--border);
 }
 
 .heat td.cell {
-    width: 44px;
+    min-width: 52px;
     height: 26px;
     border-radius: 4px;
-    text-align: center;
+    /* 숫자는 오른끝 정렬 — 자릿수가 다른 값끼리 세로 비교가 됩니다. */
+    text-align: right;
+    padding: 0 7px;
     font-size: var(--fs-meta);
     font-variant-numeric: tabular-nums;
-    background: var(--gridline);
-    color: var(--text-secondary);
+}
+
+/* 6단계 — 배경·글자색은 항상 짝(토큰 정의 참조). */
+.heat td.cell.h1 { background: var(--heat-1); color: var(--heat-ink-1); }
+.heat td.cell.h2 { background: var(--heat-2); color: var(--heat-ink-2); }
+.heat td.cell.h3 { background: var(--heat-3); color: var(--heat-ink-3); }
+.heat td.cell.h4 { background: var(--heat-4); color: var(--heat-ink-4); }
+.heat td.cell.h5 { background: var(--heat-5); color: var(--heat-ink-5); }
+.heat td.cell.h6 { background: var(--heat-6); color: var(--heat-ink-6); }
+
+/* 행 최댓값 — "이 메뉴는 어디서 잘 팔리나"의 답 칸. 굵기 + 글자색 테두리. */
+.heat td.cell.peak {
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 55%, transparent);
 }
 
 .heat td.cell.empty {
     background: transparent;
     box-shadow: inset 0 0 0 1px var(--gridline);
+    color: var(--text-muted);
+    text-align: center;
+}
+
+/* 오른쪽 끝 요약 열(합계 등) — 색 없이 글자 토큰만. 정렬 기준을 보여줍니다. */
+.heat th.sum, .heat td.sum {
+    text-align: right;
+    padding: 0 0 0 12px;
+    font-size: var(--fs-meta);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.heat thead th.sum { padding-bottom: 4px; }   /* 다른 머리글과 밑선 맞춤 */
+
+.heat td.sum {
+    color: var(--text-secondary);
+    box-shadow: -1px 0 0 var(--border);   /* 격자와 요약을 가르는 헤어라인 */
+}
+
+.heat-note {
+    margin-top: 6px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
 }
 
@@ -1832,6 +1936,40 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
 /* 펼쳐진 홀/배달 채널 행 — 매장 행과 구분되게 들여 쓰고 살짝 가라앉힙니다. */
 tr.alerts-chrow td { background: var(--surface-2, rgba(127, 127, 127, 0.06)); }
 tr.alerts-chrow td:first-child { padding-left: 34px; }
+
+/* ---- 매장 진단 (카드 #141 — 텍스트 다이어트) --------------------------
+   본문 행은 훑는 표(배지 2개 + "+N" · 공통 수치 열 · 조치 1개 + "외 N")로
+   줄이고, 원인→조치 전문과 전체 수치는 위 .alerts-exp/.alerts-chrow 토글의
+   펼침 행에 둡니다. 정보를 지운 게 아니라 옮긴 것 — 접근 경로는 펼침입니다. */
+
+/* "외 N" · 일평균의 월 증감 대용 표식(*) — 본문에서 물러나는 보조 표기. */
+.diag-more {
+    margin-left: 2px;
+    color: var(--text-muted);
+    font-size: var(--fs-meta);
+}
+
+/* 펼침 행 — 문장이 들어가므로 전역 nowrap 을 풉니다. */
+tr.diag-drow td { white-space: normal; }
+
+.diag-detail {
+    display: grid;
+    gap: 6px;
+    padding: 2px 0 4px;
+    max-width: 72ch;    /* 근거 문장이 표 폭 전체로 퍼지면 오히려 안 읽힙니다 */
+}
+
+.diag-detail-ind {
+    color: var(--text-muted);
+    font-size: var(--fs-meta);
+}
+
+/* 전체 수치 한 줄 — 진단 근거 원본(구 '근거 수치' 열 전문). */
+.diag-detail-ev {
+    color: var(--text-secondary);
+    font-size: var(--fs-meta);
+    font-variant-numeric: tabular-nums;
+}
 
 /* ---------------------------------------------------------------- 리뷰 */
 
