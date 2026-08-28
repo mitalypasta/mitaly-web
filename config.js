@@ -22,10 +22,6 @@ const PROJECTS = {
         url: "https://nuzmuaonbotxcfezondy.supabase.co",
         anonKey: "sb_publishable_yH-84ZSF4IeqE0UD_HYSrg_BfPj6ELi",
     },
-    prod_old: {
-        url: "https://tqhdbuyrtcgknlpjainp.supabase.co",
-        anonKey: "sb_publishable_ixEizdPEWJ6142-izsSZCw_xov_aroy",
-    },
     dev: {
         url: "https://zzpwpzevcbxnqeeqyemn.supabase.co",
         anonKey: "sb_publishable_lqrL1Ea5GzzzX627Avs1-Q_BhJtNRBP",
