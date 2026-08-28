@@ -133,6 +133,18 @@ async function saveMapping() {
     if (!raw) return notice("원본표기를 입력하세요.", true);
     if (!std) return notice("표준명을 고르세요.", true);
 
+    // '제외' 는 음식매출·로열티 집계에서 빠집니다. 담당자 원칙(2026-08-26,
+    // 8/28 재확인): 매출이 찍히는 품목은 전부 표준 연결 또는 '비정규' —
+    // 이미 제외인 행을 다시 저장할 때만 확인 없이 지나갑니다.
+    if (std === "제외") {
+        const existing = mmRows.find((r) => r.raw === raw);
+        const already = existing && tabOf(existing.std) === "제외";
+        if (!already && !window.confirm(
+            "'제외'로 저장하면 이 품목은 매출 집계에서 빠집니다.\n"
+            + "매출이 찍히는 품목은 표준 연결이나 '비정규'로 둡니다."
+            + " 그래도 '제외'로 저장할까요?")) return;
+    }
+
     const button = $("mm-save");
     button.disabled = true;
     const { data, error } = await db.rpc("save_menu_mapping",
