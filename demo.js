@@ -1959,8 +1959,11 @@ const HANDLERS = {
             for (const ch of ["배민", "쿠팡이츠", "요기요"]) {
                 items.push({
                     store: s.name, trade_area: s.trade_area, channel: ch,
+                    // 첫 매장 쿠팡이츠는 비밀번호가 비어 온 부분 입력 계정 —
+                    // 통합 표(#145)의 '(없음)' 표시를 여기서 확인합니다.
                     login_id: `${ch === "배민" ? "bm" : ch === "쿠팡이츠" ? "ce" : "yg"}_${s.name}`,
-                    password: "demo!pw" + (s.name.length % 10),
+                    password: s === STORES[0] && ch === "쿠팡이츠"
+                        ? null : "demo!pw" + (s.name.length % 10),
                     note: ch === "요기요" ? "2단계 인증 없음" : "",
                     updated_at: "2026-07-28T10:12:00+09:00", updated_by: "demo@mitaly",
                 });

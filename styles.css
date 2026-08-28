@@ -1847,6 +1847,24 @@ button.ghost:focus-visible {
 /* 머리글 첫 칸은 위(thead sticky)와 왼쪽 둘 다 고정이라 한 겹 위에 둡니다. */
 #ct-table thead th:first-child { z-index: 2; }
 
+/* 채널별 계정 통합 표(카드 #145) — 6채널 열 × 100+ 행이라 연락처 표와 같은
+   이유로 매장 열을 왼쪽에 고정합니다. 스크롤·머리글 고정은 전역 표 규칙 몫. */
+#ap-table th:first-child,
+#ap-table td:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--surface-1);
+    z-index: 1;
+}
+
+#ap-table thead th:first-child { z-index: 2; }
+
+/* 게이트를 연 뒤의 체크 칸 — 아이디 1행 + 비밀번호 2행(account.js credCell).
+   비밀번호 줄은 가림(●●●●●●, 누르면 그 칸만 펼침)이 기본입니다. */
+.ap-cred { display: grid; gap: 2px; }
+.ap-cred .ap-id { min-height: 1.2em; }   /* 아이디가 비어 온 계정도 칸 높이 유지 */
+.ap-cred .ap-pw { color: var(--text-secondary); cursor: pointer; }
+
 /* 정렬 가능한 표 */
 .tableview.tall { max-height: 520px; }
 

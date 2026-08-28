@@ -918,13 +918,18 @@
         <p class="notice" id="sdb-n-notice" hidden></p>
     </section>
 
-    <!-- 계정 관리(기반) — 채널별 계정 '유무만' 봅니다(api_account_presence, 44 —
-         아이디·비밀번호는 읽지도 않는 함수). 게이트 뒤 상세(실계정·연락처)는
-         담당자 확인 3건(docs/store-db-design.md 2절)이 끝나면 붙습니다 —
-         지금은 카드 맨 아래 안내 한 줄이 그 자리입니다. -->
+    <!-- 매장 정보 · 채널별 계정 — 유무 표와 배달앱 계정 열람을 한 표로 합쳤습니다
+         (카드 #145, 담당자 지시). 평소에는 api_account_presence(44 — 아이디·
+         비밀번호는 읽지도 않는 함수)의 체크만 보입니다. 접근 암호를 열면
+         (29_store_credentials.sql 게이트, api_store_credentials) 체크된 칸이
+         아이디(1행)·비밀번호(2행)로 바뀝니다 — 자격증명은 게이트를 통과한 뒤에만
+         내려오고, 잠그면 메모리에서 버립니다(credentials.js).
+         웹 로그인만으로는 부족합니다 — 화면 켜 놓고 자리를 비우면 지나가는 사람이
+         94명 점주 계정을 봅니다. 비밀번호는 게이트 뒤에도 가려 두고 눌렀을 때만
+         그 칸을 펼칩니다. -->
     <section data-area="stores" class="card full" id="account-presence-card">
         <header>
-            <h2>계정 관리 · 채널별 계정 유무</h2>
+            <h2>매장 정보 · 채널별 계정</h2>
             <span class="meta" id="ap-summary"></span>
         </header>
         <div class="filters">
@@ -941,18 +946,6 @@
                 </select>
             </div>
         </div>
-        <div class="tableview" id="ap-table"></div>
-        <p class="hint">아이디·비밀번호 열람·수정은 매장 정보의 '배달앱 계정' 카드에서 합니다.</p>
-    </section>
-
-    <!-- 매장별 배달앱 계정. 들어올 때 암호를 한 번 더 받습니다(29_store_credentials.sql).
-         웹 로그인만으로는 부족합니다 — 화면 켜 놓고 자리를 비우면 지나가는 사람이
-         94명 점주 계정을 봅니다. 비밀번호는 가려 두고 눌렀을 때만 펼칩니다. -->
-    <section data-area="stores" class="card full" id="cred-card">
-        <header>
-            <h2>매장 정보 · 배달앱 계정</h2>
-            <span class="runner" id="cred-hint"></span>
-        </header>
 
         <div id="cred-gate">
             <!-- 비밀번호 칸은 제 폼 안에 둡니다(data-noop — 제출 없음). 폼 밖에 두면
@@ -965,22 +958,30 @@
                     <input type="password" id="cred-pass" autocomplete="off"
                            placeholder="담당자에게 받은 암호">
                 </div>
-                <button class="primary" id="cred-open" type="button">열기</button>
+                <button class="primary" id="cred-open" type="button">아이디·비밀번호 열기</button>
             </form>
             <p class="notice" id="cred-error" hidden></p>
         </div>
+        <div class="filters" id="cred-unlocked" hidden>
+            <span class="runner on" id="cred-hint"></span>
+            <button class="linkish" id="cred-lock" type="button">닫기(암호 다시 받기)</button>
+        </div>
+
+        <div class="tableview tall" id="ap-table"></div>
+        <p class="hint">체크된 칸의 아이디·비밀번호는 접근 암호를 열면 표에 나타납니다.
+            계정 추가·수정은 아래 카드에서 합니다.</p>
+    </section>
+
+    <!-- 배달앱 계정 추가·수정 — 위 표의 게이트를 그대로 씁니다. 열람은 위 통합
+         표로 흡수됐고(카드 #145), 여기는 쓰기(api_save_store_credential)와
+         수정 이력만 남습니다. 암호가 잠기면 폼도 같이 잠깁니다. -->
+    <section data-area="stores" class="card full" id="cred-card">
+        <header>
+            <h2>배달앱 계정 추가·수정</h2>
+            <span class="meta" id="cred-edit-hint">위 표에서 접근 암호를 열면 쓸 수 있습니다.</span>
+        </header>
 
         <div id="cred-body" hidden>
-            <div class="filters">
-                <div class="field">
-                    <label for="cred-store">매장</label>
-                    <select id="cred-store"></select>
-                </div>
-                <button class="linkish" id="cred-lock" type="button">닫기(암호 다시 받기)</button>
-            </div>
-            <div class="tableview" id="cred-table"></div>
-
-            <h3>계정 추가·수정</h3>
             <p class="note">
                 비밀번호 칸을 비우면 기존 비밀번호가 유지됩니다.
             </p>
@@ -991,10 +992,16 @@
                 </div>
                 <div class="field">
                     <label for="cred-f-channel">채널</label>
+                    <!-- 채널 목록은 36_new_channels.sql 의 CHECK · 위 표의 열과
+                         같아야 합니다. 한쪽만 늘리면 저장이 제약 위반으로 죽거나
+                         표에 있는 칸을 여기서 못 고칩니다. -->
                     <select id="cred-f-channel">
                         <option value="배민">배민</option>
                         <option value="쿠팡이츠">쿠팡이츠</option>
                         <option value="요기요">요기요</option>
+                        <option value="땡겨요">땡겨요</option>
+                        <option value="위메프오">위메프오</option>
+                        <option value="먹깨비">먹깨비</option>
                     </select>
                 </div>
                 <div class="field">

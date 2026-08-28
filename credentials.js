@@ -1,24 +1,24 @@
-// 매장 정보 · 배달앱 계정 — app.js 에서 뽑아낸 shell 분리 조각
+// 매장 정보 · 배달앱 계정 게이트 — app.js 에서 뽑아낸 shell 분리 조각
 // (docs/web-split-plan.md). 2차 암호(S.credPass)는 메모리 전용이며,
 // 영역을 떠날 때 nav 쪽이 credLock 으로 잠급니다.
+//
+// 카드 #145 에서 열람 표가 채널별 계정 유무 표(account.js)로 흡수됐습니다.
+// 이 모듈에 남은 것은 ① 게이트 열기/잠그기(자격증명을 받아 account.js 의
+// setCredentialRows 로 넘김) ② 추가·수정 폼 ③ 수정 이력입니다.
+//
+// 29_store_credentials.sql(+64)이 짝입니다. 이 화면만 2차 암호를 받습니다.
+//
+// [암호를 어디에 두는가]
+//   화면이 살아 있는 동안 **메모리에만** 둡니다. localStorage 에 넣지 않습니다 —
+//   그러면 브라우저를 닫아도 남아서 '자리 비울 때 잠긴다' 는 목적이 무너집니다.
+//   탭을 옮기거나 새로 고치면 다시 받습니다. 자격증명도 같은 규칙 — 게이트가
+//   잠기면 여기와 account.js 양쪽에서 버립니다.
 
 import { escape } from "./util.js";
 import { $, fillStoreSelect } from "./dom.js";
 import { db } from "./client.js";
 import { S } from "./state.js";
-
-// ---- 매장 정보 · 배달앱 계정 ---------------------------------------------
-//
-// 29_store_credentials.sql 이 짝입니다. 이 화면만 2차 암호를 받습니다.
-//
-// [암호를 어디에 두는가]
-//   화면이 살아 있는 동안 **메모리에만** 둡니다. localStorage 에 넣지 않습니다 —
-//   그러면 브라우저를 닫아도 남아서 '자리 비울 때 잠긴다' 는 목적이 무너집니다.
-//   탭을 옮기거나 새로 고치면 다시 받습니다.
-//
-// [비밀번호를 왜 가리는가]
-//   담당자 요구(2026-07-30). 열람 기록은 남기지 않기로 했으므로, 최소한
-//   화면에 그냥 떠 있지는 않게 합니다. 누르면 그 줄만 펼칩니다.
+import { setCredentialRows } from "./account.js";
 
 let credRows = [];
 
@@ -48,9 +48,11 @@ async function credOpen() {
         credRows = ((data || [])[0] || {}).items || [];
         $("cred-pass").value = "";
         $("cred-gate").hidden = true;
-        $("cred-body").hidden = false;
+        $("cred-unlocked").hidden = false;
         $("cred-hint").textContent = `계정 ${credRows.length}건`;
-        drawCredentials();
+        $("cred-body").hidden = false;
+        $("cred-edit-hint").hidden = true;
+        setCredentialRows(credRows);
         await loadCredChanges();
     } finally {
         $("cred-open").disabled = false;
@@ -60,43 +62,14 @@ async function credOpen() {
 export function credLock() {
     S.credPass = null;
     credRows = [];
-    $("cred-body").hidden = true;
-    $("cred-gate").hidden = false;
+    setCredentialRows(null);
+    $("cred-unlocked").hidden = true;
     $("cred-hint").textContent = "";
-    $("cred-table").innerHTML = "";
+    $("cred-gate").hidden = false;
+    $("cred-body").hidden = true;
+    $("cred-edit-hint").hidden = false;
+    $("cred-save-msg").hidden = true;
     $("cred-changes").innerHTML = "";
-}
-
-function drawCredentials() {
-    const only = $("cred-store").value;
-    const rows = only ? credRows.filter((r) => r.store === only) : credRows;
-    if (!rows.length) {
-        $("cred-table").innerHTML =
-            '<p class="note">등록된 계정이 없습니다. 아래에서 추가하세요.</p>';
-        return;
-    }
-    const body = rows.map((r, i) => `<tr>
-        <td>${escape(r.store)}</td>
-        <td>${escape(r.channel)}</td>
-        <td>${escape(r.login_id)}</td>
-        <td><button class="linkish cred-peek" data-i="${i}"
-                    type="button">●●●●●● 보기</button>
-            <span class="cred-pw" data-i="${i}" hidden>${escape(r.password || "(없음)")}</span></td>
-        <td>${escape(r.note || "")}</td>
-        <td>${escape((r.updated_at || "").slice(0, 10))} ${escape(r.updated_by || "")}</td>
-    </tr>`).join("");
-    $("cred-table").innerHTML = `<table><thead><tr>
-        <th>매장</th><th>채널</th><th>아이디</th><th>비밀번호</th><th>메모</th><th>마지막 수정</th>
-        </tr></thead><tbody>${body}</tbody></table>`;
-
-    for (const b of $("cred-table").querySelectorAll(".cred-peek")) {
-        b.addEventListener("click", () => {
-            const span = $("cred-table")
-                .querySelector(`.cred-pw[data-i="${b.dataset.i}"]`);
-            span.hidden = !span.hidden;
-            b.hidden = !span.hidden;
-        });
-    }
 }
 
 async function credSave() {
@@ -126,10 +99,11 @@ async function credSave() {
         msg.hidden = false;
         if (!error) {
             $("cred-f-pw").value = "";
-            // 저장한 값이 실제로 들어갔는지 다시 읽어 확인합니다.
+            // 저장한 값이 실제로 들어갔는지 다시 읽어 위 통합 표에 반영합니다.
             const re = await db.rpc("api_store_credentials", { p_passcode: S.credPass });
             credRows = ((re.data || [])[0] || {}).items || [];
-            drawCredentials();
+            $("cred-hint").textContent = `계정 ${credRows.length}건`;
+            setCredentialRows(credRows);
             await loadCredChanges();
         }
     } finally {
@@ -152,13 +126,11 @@ async function loadCredChanges() {
 }
 
 export function initCredentials(storeNames) {
-    fillStoreSelect($("cred-store"), storeNames, "전체 매장");
     fillStoreSelect($("cred-f-store"), storeNames, null);
     $("cred-open").addEventListener("click", credOpen);
     $("cred-pass").addEventListener("keydown", (e) => {
         if (e.key === "Enter") credOpen();
     });
     $("cred-lock").addEventListener("click", credLock);
-    $("cred-store").addEventListener("change", drawCredentials);
     $("cred-save").addEventListener("click", credSave);
 }

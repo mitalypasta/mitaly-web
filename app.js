@@ -213,7 +213,7 @@ async function initDashboard() {
     // 숨은 값의 원본으로 남으므로 각 영역 파일의 채우기·읽기 코드는 그대로
     // 동작합니다. 옵션이 나중에 채워지는 select 도 콤보가 알아서 따라갑니다.
     for (const id of ["f-store", "dmap-store", "oh-store", "iu-store",
-                      "cred-store", "cred-f-store", "ct-store", "ct-f-store",
+                      "cred-f-store", "ct-store", "ct-f-store",
                       "v-store", "vs-store", "la-store", "pm-store",
                       "dm-store", "tk-store", "tk-filter-store", "pay-invoice",
                       "rv-store"]) {
@@ -3057,11 +3057,11 @@ function shiftYm(ym, offset) {
 
 // (가맹점 DB 함수 initStoreDb 등은 store_db.js 로 이동 — 위 import)
 
-// ================================================================ 계정 관리 (기반)
+// ================================================================ 채널별 계정 (통합)
 //
-// 채널별 계정 '유무만' 그립니다 — api_account_presence(44)는 아이디·비밀번호를
-// 읽지도 않는 함수입니다. 게이트 뒤 상세(실계정·연락처)는 담당자 확인 3건이
-// 남아 있어 카드 아래 안내 한 줄이 그 자리를 대신합니다(index.html 주석).
+// 유무 표와 배달앱 계정 열람이 한 표입니다(카드 #145). 평소에는
+// api_account_presence(44)의 체크만 — 게이트(credentials.js)가 열리면
+// account.js 가 체크 자리에 아이디·비밀번호를 그립니다.
 
 // (initAccountPresence·drawAccountPresence 는 account.js 로 이동 — 위 import)
 
