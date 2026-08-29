@@ -18,6 +18,12 @@ import { db } from "./client.js";
 const DEMO = new URLSearchParams(location.search).get("demo") === "1";
 const WORKER_ANALYZE = "https://throbbing-bush-cf08.mitaly-pasta.workers.dev/analyze";
 
+// 카카오 지도 JavaScript 키(공개용) — 반경 원을 지도에 그려 지형(산·하천·
+// 단절)을 눈으로 확인하게 합니다(담당자 지시 2026-08-29). 카카오 developers
+// 콘솔의 같은 앱에서 나오는 키이며, '플랫폼 > Web' 에 이 사이트 도메인이
+// 등록되어 있어야 동작합니다. 비어 있으면 지도만 조용히 빠집니다.
+const KAKAO_JS_KEY = "";
+
 // ---------------------------------------------------------------- 모델 상수 (계산기 원본 그대로)
 
 // 지역별 미태리 실매출 분위수(만원) — 예상치가 지역 하한(q25) 아래로 내려가지
@@ -199,7 +205,7 @@ export function computeModel(raw, name) {
         : "복합";
 
     return {
-        v: 1,
+        v: 2,
         analyzedAt: new Date().toISOString(),
         geo: raw.geo || null,
         region, areaType,
@@ -210,8 +216,12 @@ export function computeModel(raw, name) {
         expected: {
             q75,
             sm: Math.round(q75 * 0.75),
-            q90: Math.round(q75 * 1.20),
-            q25: Math.round(q75 * 0.50),
+            // 화면에 내보내는 것은 이 범위 하나입니다(담당자 지시 2026-08-29 —
+            // 점 추정·등급 없이 범위만). 배수 0.55~1.05 는 실측 93개 매장
+            // 백테스트의 사분위(실제÷예측 25~75%)로, 실제 매장의 약 절반이
+            // 이 구간에 들었습니다. 바꾸려면 백테스트를 다시 돌려 근거를 남기세요.
+            lo: Math.round(q75 * 0.55),
+            hi: Math.round(q75 * 1.05),
         },
         brands,
         pop: raw.pop || null,
@@ -301,15 +311,19 @@ function render(r) {
     lastResult = r;
     $("ta-result").hidden = false;
 
-    // 머리 — 예상매출과 상권 요약
+    // 머리 — 예상매출 범위와 상권 요약. 옛 저장본(v1)은 lo/hi 가 없어
+    // q75 에서 같은 배수로 만들어 보입니다.
     const e = r.expected;
+    const lo = e.lo || Math.round(e.q75 * 0.55);
+    const hi = e.hi || Math.round(e.q75 * 1.05);
     $("ta-hero").innerHTML =
-        tile("예상 월매출 (상위 25% 운영 기준)", `${int(e.q75)}만원`,
-            `중앙값 ${int(e.sm)}만 · 상위 10% ${int(e.q90)}만`, "hero")
+        tile("예상 월매출 범위", `${int(lo)} ~ ${int(hi)}만원`,
+            `반경 ${r.radius}m · 실제 매장 절반이 드는 구간`)
         + tile("상권", `${escape(r.areaType)}`,
-            `${escape(r.region)} · 점수 ${r.areaScore}/100 · 반경 ${r.radius}m`)
+            `${escape(r.region)} · 점수 ${r.areaScore}/100`)
         + tile("주변 음식점", `${int(r.counts.stores)}곳`,
             `인식 브랜드 ${r.counts.brands}개 (${int(r.counts.brandStores)}곳)`);
+    drawMap(r);
     $("ta-meta").textContent = (r.geo && r.geo.address_name ? r.geo.address_name + " · " : "")
         + new Date(r.analyzedAt).toLocaleString("ko-KR");
 
@@ -365,6 +379,49 @@ function render(r) {
     } else {
         $("ta-pop-card").hidden = true;
     }
+}
+
+// 카카오 지도 SDK 는 이 탭에서 처음 지도를 그릴 때 한 번만 불러옵니다.
+let kakaoSdkPromise = null;
+function loadKakaoSdk() {
+    if (!KAKAO_JS_KEY) return Promise.resolve(null);
+    if (!kakaoSdkPromise) {
+        kakaoSdkPromise = new Promise((resolve) => {
+            const s = document.createElement("script");
+            s.src = "https://dapi.kakao.com/v2/maps/sdk.js?autoload=false&appkey=" + KAKAO_JS_KEY;
+            s.onload = () => window.kakao.maps.load(() => resolve(window.kakao));
+            s.onerror = () => resolve(null);
+            document.head.appendChild(s);
+        });
+    }
+    return kakaoSdkPromise;
+}
+
+// 분석 지점 + 반경 원. 원은 지형을 모르므로(산·하천이 반경을 먹는 자리,
+// 상권이 원 경계 밖에 걸친 자리) 사람 눈이 지도에서 그것을 확인하는 것이
+// 이 지도의 몫입니다.
+async function drawMap(r) {
+    const box = $("ta-map");
+    if (DEMO) {
+        box.hidden = false;
+        box.innerHTML = '<p class="hint" style="padding:16px">지도는 실서비스에서'
+            + " 표시됩니다 — 분석 지점과 반경 원을 그려 지형을 확인합니다.</p>";
+        return;
+    }
+    if (!r.geo || !r.geo.y || !r.geo.x || !KAKAO_JS_KEY) { box.hidden = true; return; }
+    const kakao = await loadKakaoSdk();
+    if (!kakao) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = "";
+    const center = new kakao.maps.LatLng(r.geo.y, r.geo.x);
+    const map = new kakao.maps.Map(box, { center, level: r.radius > 500 ? 7 : 6 });
+    new kakao.maps.Marker({ map, position: center });
+    const circle = new kakao.maps.Circle({
+        map, center, radius: r.radius,
+        strokeWeight: 2, strokeColor: "#4f46e5", strokeOpacity: 0.8,
+        fillColor: "#4f46e5", fillOpacity: 0.08,
+    });
+    map.setBounds(circle.getBounds(), 24, 24, 24, 24);
 }
 
 function drawBrands(r) {
@@ -431,7 +488,7 @@ async function loadHistory() {
             + `<td class="tl">${escape(h.name || "—")}</td>`
             + `<td class="tl">${escape(h.address)}</td>`
             + `<td>${h.radius}m</td>`
-            + `<td><b>${int(h.q75)}만</b></td>`
+            + `<td><b>${int(Math.round(h.q75 * 0.55))}~${int(Math.round(h.q75 * 1.05))}만</b></td>`
             + `<td class="tl">${escape(new Date(h.created_at).toLocaleDateString("ko-KR"))}</td>`
             + `<td><button type="button" class="ghost ta-del" data-id="${h.id}">지우기</button></td>`
             + `</tr>`).join("")

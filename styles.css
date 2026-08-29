@@ -2804,3 +2804,25 @@ tr.diag-drow td { white-space: normal; }
 /* 목록 쪽 열기 버튼 줄 */
 .rvopen-wrap { margin-top: 8px; }
 .rvopen { padding: 4px 12px; font-size: var(--fs-meta); }
+
+/* ---- 상권 분석 (tradearea, 2026-08-29) ------------------------------- */
+
+/* 반경 원 지도 — 지형 확인용. 카카오 SDK 가 이 상자를 채웁니다. */
+#ta-map {
+    height: 320px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin: 4px 0 16px;
+    overflow: hidden;
+    background: var(--surface-1);
+}
+
+/* 맨 하단 산출 근거·한계 고지 — 담당자 지시(2026-08-29)로 일부러 작게. */
+.ta-fine {
+    margin-top: 20px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--text-muted);
+}
