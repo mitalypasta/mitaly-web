@@ -22,7 +22,7 @@ const WORKER_ANALYZE = "https://throbbing-bush-cf08.mitaly-pasta.workers.dev/ana
 // 단절)을 눈으로 확인하게 합니다(담당자 지시 2026-08-29). 카카오 developers
 // 콘솔의 같은 앱에서 나오는 키이며, '플랫폼 > Web' 에 이 사이트 도메인이
 // 등록되어 있어야 동작합니다. 비어 있으면 지도만 조용히 빠집니다.
-const KAKAO_JS_KEY = "";
+const KAKAO_JS_KEY = "b32e0b4806e549ca7bfaeee1445f5291";
 
 // ---------------------------------------------------------------- 모델 상수 (계산기 원본 그대로)
 
