@@ -333,7 +333,8 @@ function render(r) {
 
     // 매출 비교
     const c = palette();
-    const compareRows = [{ label: "미태리 예상", value: e.q75 }];
+    // 비교 막대에도 점 추정을 남기지 않습니다 — 범위의 중앙값으로 표기.
+    const compareRows = [{ label: "미태리 예상(중앙)", value: Math.round((lo + hi) / 2) }];
     if (r.majorAvg > 0) compareRows.push({ label: "대형 프랜차이즈 평균", value: r.majorAvg });
     if (r.compAvg > 0) compareRows.push({ label: "전체 음식점 평균", value: r.compAvg });
     drawBars($("c-ta-compare"), { rows: compareRows, color: c.s1, horizontal: true,
