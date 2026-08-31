@@ -3277,6 +3277,36 @@ const HANDLERS = {
         return { ok: true, ym, store_count: rows.length, stores: rows };
     },
 
+    // ---- 배달매출 플랫폼별 (99_delivery_platform.sql) — 반환 모양 그대로 ----
+    // 매장 합계는 위 api_all_stores_kpi 의 배달매출(demoAmountAt '배달')과
+    // 같은 원천에서 갈라 씁니다 — 화면에서 3사+기타 합 = 배달매출이 맞는지
+    // 눈으로 확인할 수 있게. 땡겨요는 id 가 7의 배수인 매장에만 넣어
+    // '기타 배달' 열이 생기는 조건(합>0일 때만)도 데모로 확인됩니다.
+    api_delivery_by_platform: ({ p_ym }) => {
+        const ym = Number(p_ym);
+        if (!ym || ym < 202001 || ym > 209912 || ym % 100 < 1 || ym % 100 > 12) {
+            return { ok: false, reason: `기준월(YYYYMM)이 올바르지 않습니다: ${p_ym ?? "(빈 값)"}` };
+        }
+        const sources = new Set();
+        const rows = [];
+        for (const store of STORES) {
+            const delivery = demoAmountAt(ym, store, "배달") || 0;
+            if (delivery <= 0) continue;
+            const hasEtc = store.id % 7 === 0;
+            const etc = hasEtc ? Math.round(delivery * 0.06) : 0;
+            const baemin = Math.round(delivery * 0.55);
+            const coupang = Math.round(delivery * 0.3);
+            const yogiyo = delivery - baemin - coupang - etc;   // 합이 정확히 맞게
+            const platforms = { 배민: baemin, 쿠팡이츠: coupang, 요기요: yogiyo };
+            if (hasEtc) platforms["땡겨요"] = etc;
+            Object.keys(platforms).forEach((k) => sources.add(k));
+            rows.push({ store: store.name, platforms });
+        }
+        rows.sort((a, b) => a.store.localeCompare(b.store));
+        return { ok: true, ym, sources: [...sources].sort(),
+                 store_count: rows.length, stores: rows };
+    },
+
     // ---- 목표매출 (89_store_targets.sql) — 함수 반환 모양 그대로 ----
     api_store_targets: ({ p_ym }) => {
         const ym = Number(p_ym);

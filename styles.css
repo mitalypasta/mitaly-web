@@ -391,6 +391,34 @@ header.top h1::before {
     outline-offset: 1px;
 }
 
+/* 전매장 현황 카테고리 토글(#146 — [매출|매출파악|매출분석]).
+   aspf- 접두는 병렬 카드와의 id 충돌 방지용 카드 고유 접두입니다. */
+.aspf-seg {
+    display: inline-flex;
+    border: 1px solid var(--baseline);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--surface-1);
+}
+.aspf-seg button {
+    font: inherit;
+    border: 0;
+    background: transparent;
+    padding: 6px 14px;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.aspf-seg button + button { border-left: 1px solid var(--baseline); }
+.aspf-seg button.on {
+    background: var(--primary-soft);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+.aspf-seg button:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+}
+
 /* 배달 지도(6번) — 카카오맵이 이 컨테이너를 채웁니다. 높이가 0이면 지도가
    안 보이므로 고정 높이가 필요합니다. */
 #dmap-container {

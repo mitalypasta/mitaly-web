@@ -554,17 +554,29 @@
         </section>
 
         <!-- 전매장 현황 (카드 #113 — KPI 엑셀 04_전매장_현황 이식,
-             93_all_stores_kpi.sql · web/allstores.js). 전 매장 KPI+추정손익
-             한 표 — 달성률 내림차순이 기본(시트 04 그대로), 헤더 클릭으로
-             재정렬. 기준월·SV 는 카드 자체 고르개라 위 전역 필터와 무관합니다
-             (주차별 카드와 같은 방식). 열이 23개라 표는 카드 안(.tableview)
-             에서만 가로 스크롤됩니다. 폐점 매장도 행에 있고 배지가 붙습니다. -->
+             93_all_stores_kpi.sql · web/allstores.js · #146 카테고리 재편).
+             전 매장 KPI+추정손익 — 달성률 내림차순이 기본(시트 04 그대로),
+             헤더 클릭으로 재정렬. 기준월·SV 는 카드 자체 고르개라 위 전역
+             필터와 무관합니다(주차별 카드와 같은 방식). 열이 많아 표는 카드
+             안(.tableview)에서만 가로 스크롤됩니다. 폐점 매장도 행에 있고
+             배지가 붙습니다. 열은 [매출|매출파악|매출분석] 세 카테고리로
+             갈라 보이고(담당자 요청 2026-08-31), '매출' 에는 배달매출
+             플랫폼별 열(99_delivery_platform.sql)이 붙습니다. 토글의 새
+             DOM id 는 aspf- 접두 — 병렬 카드와의 id 충돌 방지. -->
         <section data-area="sales" data-sub="전체 매장 요약" class="card full" id="allstores-card">
             <header>
                 <h2>전매장 현황</h2>
                 <span class="meta" id="as-meta"></span>
             </header>
             <div class="reqform">
+                <div class="field">
+                    <label>보기</label>
+                    <div class="aspf-seg" id="aspf-cat" role="group" aria-label="표 구성">
+                        <button type="button" data-cat="sales" class="on">매출</button>
+                        <button type="button" data-cat="grasp">매출파악</button>
+                        <button type="button" data-cat="pnl">매출분석</button>
+                    </div>
+                </div>
                 <div class="field">
                     <label for="as-ym">기준월</label>
                     <input type="month" id="as-ym">

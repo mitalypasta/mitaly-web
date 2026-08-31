@@ -1,19 +1,34 @@
 // 전매장 현황 — 93_all_stores_kpi.sql(api_all_stores_kpi) 위의 화면
-// (카드 #113 — KPI 엑셀 04_전매장_현황 이식). 전 매장을 한 표로:
+// (카드 #113 — KPI 엑셀 04_전매장_현황 이식 · #146 카테고리 재편+플랫폼 분리).
 // KPI(총매출·목표·달성률·전월비·영업일수·일평균·인당생산성·홀/배달·배달비중)
-// + 추정 손익(91 mitaly_kpi_pnl — #112 와 같은 함수). db + foundation 만 import.
+// + 추정 손익(91 mitaly_kpi_pnl — #112 와 같은 함수)
+// + 배달매출 플랫폼별(99 api_delivery_by_platform). db + foundation 만 import.
 //
-// · 조회는 rpc 한 번(93 설계 [1]) — 기준월이 바뀔 때만 다시 부릅니다.
-//   SV 필터·클릭 정렬은 받은 배열 안에서만 움직입니다(재조회 없음).
+// · 조회는 rpc 두 개 병렬(93 + 99) — 기준월이 바뀔 때만 다시 부릅니다.
+//   99 는 실패해도 표를 죽이지 않습니다: 플랫폼 열만 '—' 로 두고 나머지는
+//   정상 렌더(#146 요구 — 기존 화면 보전). 조인 키는 매장명입니다.
+// · 실적·목표달성·원가추정이 한 표에 섞여 시선이 분산된다는 담당자 요청
+//   (2026-08-31)으로 열을 [매출 | 매출파악 | 매출분석] 3개 카테고리로
+//   나눴습니다. 기존 23열은 삭제 없이 재배치(0 삭제)이고, 엑셀 내보내기는
+//   카테고리와 무관하게 전체 열 + 플랫폼 열을 내립니다(기능 보전).
+// · 플랫폼 고정 3사(배달의민족=배민·쿠팡이츠·요기요) 밖 소스는 매출이 있을
+//   때만 '기타 배달' 한 열로 합산 — 0이면 열 자체를 만들지 않습니다.
+//   배달비·'순매출' 열은 일부러 없습니다: 배달비는 아직 어느 채널도 수집
+//   전(카드 #147)이고, 우리 금액은 할인 전 품목 금액이라 리드데이터 순매출과
+//   정의가 다릅니다(99 머리주석).
+// · SV 필터·클릭 정렬은 받은 배열 안에서만 움직입니다(재조회 없음).
 // · 기본 정렬 = 달성률 내림차순 · null(목표 없음)은 뒤 — 시트 04 그대로.
-//   클릭 정렬은 매장 비교 카드(app.js drawStoreMetrics)와 같은 방식입니다.
+//   달성률 열이 없는 카테고리에서도 이 순서가 유지되고, 헤더를 누르면 그
+//   열 기준으로 바뀝니다. 카테고리를 옮겨 정렬 열이 사라지면 기본으로 복귀.
 // · 증감 색은 KPI 시트 관례(상승 빨강·하락 파랑) — weekly.js 와 같은
 //   wk-up/wk-down 을 씁니다(기존 pct-up/down 은 '좋음/나쁨' 색이라 반대로 읽힘).
 // · 폐점 매장도 행에 있고 배지가 붙습니다(시트 07 — 폐점 과거실적 열람).
 // · 열이 많아 표는 카드 안(.tableview)에서만 가로 스크롤됩니다.
+// · 추정치 각주(as-note)는 손익 열이 보이는 '매출분석' 에서만 표시합니다.
+// · 새 DOM id 는 aspf- 접두(병렬 카드와의 id 충돌 방지 — 기존 as-* 와 구분).
 
 import { db } from "./client.js";
-import { won, wonFull, int, ymLabel } from "./format.js";
+import { wonFull, int } from "./format.js";
 import { escape } from "./util.js";
 import { S } from "./state.js";
 import { $, monthPicker, table } from "./dom.js";
@@ -29,57 +44,132 @@ function diffCell(pct) {
     return cls ? `<span class="${cls}">${text}</span>` : text;
 }
 
-let stores = [];                       // 마지막 응답의 매장 배열(서버 정렬 순서)
-// 정렬 상태 — key 는 아래 HEADERS 인덱스. 기본 = 달성률(6) 내림차순(시트 04).
-let sort = { key: 6, asc: false };
+let stores = [];                 // 마지막 응답의 매장 배열(서버 정렬 순서)
+let platByStore = null;          // 매장명 → {소스명: 금액}. 99 실패 시 null
+let platSources = [];            // 그 달 배달매출이 실재한 소스 이름들(99)
+let category = "sales";          // 'sales' | 'grasp' | 'pnl' — 기본 '매출'
 
-const HEADERS = [
-    "순번", "매장", "담당 SV", "근무인원",
-    "총매출", "목표", "달성률", "전월비", "영업일수", "일평균", "인당 생산성",
-    "홀매출", "배달매출", "배달비중",
-    "식자재비", "인건비", "임차료", "배달수수료", "로열티·광고", "공과금·기타",
-    "영업이익", "영업이익률", "원가율",
+// 고정 3사 열이 집는 소스 이름. DB 실값은 '배민'(schema.sql 씨드)이고 열
+// 이름만 정식 명칭 '배달의민족' 입니다 — 소스명이 바뀌어도 잡히게 둘 다.
+const PLATFORM_MAIN = [
+    { label: "배달의민족", keys: ["배민", "배달의민족"] },
+    { label: "쿠팡이츠",   keys: ["쿠팡이츠"] },
+    { label: "요기요",     keys: ["요기요"] },
 ];
+const MAIN_KEYS = new Set(PLATFORM_MAIN.flatMap((p) => p.keys));
 
-// 열 인덱스 → 정렬용 원시 값. 순번(0)은 정렬 의미가 없어 매장명으로 대신합니다.
-function sortValue(r, key) {
-    const p = r.pnl || {};
-    switch (key) {
-        case 0: case 1: return r.name;
-        case 2: return r.sv_name || "";
-        case 3: return num(r.staff_count);
-        case 4: return num(r.sales);
-        case 5: return num(r.target);
-        case 6: return num(r.achievement);
-        case 7: return num(r.mom_pct);
-        case 8: return num(r.business_days);
-        case 9: return num(r.daily_avg);
-        case 10: return num(r.per_person);
-        case 11: return num(r.hall_sales);
-        case 12: return num(r.delivery_sales);
-        case 13: return num(r.delivery_share);
-        case 14: return num(p.food?.amount);
-        case 15: return num(p.labor?.amount);
-        case 16: return num(p.rent?.amount);
-        case 17: return num(p.delivery_fee?.amount);
-        case 18: return num(p.royalty?.amount);
-        case 19: return num(p.utility?.amount);
-        case 20: return num(p.profit);
-        case 21: return num(p.profit_rate);
-        case 22: return num(p.food_cost_rate);
-        default: return null;
-    }
+// 매장 한 곳의 플랫폼 금액. 99 실패(platByStore null)면 null → 화면 '—'.
+// 데이터는 왔는데 그 매장·그 소스 매출이 없으면 0 (배달 0원 매장과 같은 표기).
+function platAmount(r, keys) {
+    if (!platByStore) return null;
+    const p = platByStore.get(r.name);
+    if (!p) return 0;
+    return keys.reduce((acc, k) => acc + (Number(p[k]) || 0), 0);
 }
+
+// '기타 배달' = 고정 3사 밖 소스 전부의 합(땡겨요·먹깨비·신규 채널 대비).
+function platEtc(r) {
+    if (!platByStore) return null;
+    const p = platByStore.get(r.name);
+    if (!p) return 0;
+    return Object.entries(p)
+        .filter(([k]) => !MAIN_KEYS.has(k))
+        .reduce((acc, [, v]) => acc + (Number(v) || 0), 0);
+}
+
+// '기타 배달' 열은 그 달 3사 밖 매출이 실재할 때만 만듭니다(0이면 생략).
+const etcExists = () =>
+    platByStore != null
+    && platSources.some((s) => !MAIN_KEYS.has(s))
+    && stores.some((r) => (platEtc(r) || 0) > 0);
+
+// ------------------------------------------------------------------ 열 정의
+// 기존 23열 전부 + 플랫폼 열. 카테고리는 이 목록에서 고르기만 합니다(삭제 0).
+// value: 정렬·엑셀용 원시 값 / cell: 화면 표기(html 허용).
+const COLS = {
+    name:    { label: "매장",       text: true, value: (r) => r.name, cell: nameCell },
+    sv:      { label: "담당 SV",    text: true, value: (r) => r.sv_name || "",
+               cell: (r) => (r.sv_name ? escape(r.sv_name) : "—") },
+    staff:   { label: "근무인원",   value: (r) => num(r.staff_count),
+               cell: (r) => (r.staff_count != null ? escape(String(r.staff_count)) : "—") },
+    sales:   { label: "총매출",     value: (r) => num(r.sales),
+               cell: (r) => escape(wonFull(r.sales)) },
+    target:  { label: "목표",       value: (r) => num(r.target),
+               cell: (r) => (r.target != null ? escape(wonFull(r.target)) : "—") },
+    achievement: { label: "달성률", value: (r) => num(r.achievement),
+               cell: (r) => (r.achievement != null ? escape(pctText(r.achievement, 1)) : "—") },
+    mom:     { label: "전월비",     value: (r) => num(r.mom_pct),
+               cell: (r) => diffCell(r.mom_pct) },
+    bizdays: { label: "영업일수",   value: (r) => num(r.business_days),
+               cell: (r) => (r.business_days ? escape(int(r.business_days)) : "—") },
+    davg:    { label: "일평균",     value: (r) => num(r.daily_avg),
+               cell: (r) => (r.daily_avg != null ? escape(wonFull(r.daily_avg)) : "—") },
+    perperson: { label: "인당 생산성", value: (r) => num(r.per_person),
+               cell: (r) => (r.per_person != null ? escape(wonFull(r.per_person)) : "—") },
+    hall:    { label: "홀매출",     value: (r) => num(r.hall_sales),
+               cell: (r) => escape(wonFull(r.hall_sales)) },
+    delivery: { label: "배달매출",  value: (r) => num(r.delivery_sales),
+               cell: (r) => escape(wonFull(r.delivery_sales)) },
+    dshare:  { label: "배달비중",   value: (r) => num(r.delivery_share),
+               cell: (r) => escape(pctText(r.delivery_share, 1)) },
+    pfEtc:   { label: "기타 배달",  value: (r) => platEtc(r),
+               cell: (r) => moneyCell(platEtc(r)) },
+    food:    { label: "식자재비",   value: (r) => num(r.pnl?.food?.amount),
+               cell: (r) => escape(wonFull(r.pnl?.food?.amount)) },
+    labor:   { label: "인건비",     value: (r) => num(r.pnl?.labor?.amount),
+               cell: (r) => escape(wonFull(r.pnl?.labor?.amount)) },
+    rent:    { label: "임차료",     value: (r) => num(r.pnl?.rent?.amount),
+               cell: (r) => escape(wonFull(r.pnl?.rent?.amount)) },
+    dfee:    { label: "배달수수료", value: (r) => num(r.pnl?.delivery_fee?.amount),
+               cell: (r) => escape(wonFull(r.pnl?.delivery_fee?.amount)) },
+    royalty: { label: "로열티·광고", value: (r) => num(r.pnl?.royalty?.amount),
+               cell: (r) => escape(wonFull(r.pnl?.royalty?.amount)) },
+    utility: { label: "공과금·기타", value: (r) => num(r.pnl?.utility?.amount),
+               cell: (r) => escape(wonFull(r.pnl?.utility?.amount)) },
+    profit:  { label: "영업이익",   value: (r) => num(r.pnl?.profit),
+               cell: (r) => escape(wonFull(r.pnl?.profit)) },
+    profitRate: { label: "영업이익률", value: (r) => num(r.pnl?.profit_rate),
+               cell: (r) => escape(pctText(r.pnl?.profit_rate, 1)) },
+    foodRate: { label: "원가율",    value: (r) => num(r.pnl?.food_cost_rate),
+               cell: (r) => escape(pctText(r.pnl?.food_cost_rate, 1)) },
+};
+for (const p of PLATFORM_MAIN) {
+    COLS[`pf:${p.label}`] = {
+        label: p.label,
+        value: (r) => platAmount(r, p.keys),
+        cell: (r) => moneyCell(platAmount(r, p.keys)),
+    };
+}
+
+// 카테고리 → 열 키 목록. 순번은 render 가 항상 맨 앞에 붙입니다.
+// 기존 열 재배치(삭제 0): 근무인원·목표·달성률·영업일수·일평균·인당 생산성은
+// '매출파악' 으로, 손익 9열은 '매출분석' 으로 갔습니다.
+const CATEGORIES = {
+    sales: () => ["name", "sv", "sales", "mom", "hall", "delivery", "dshare",
+        ...PLATFORM_MAIN.map((p) => `pf:${p.label}`),
+        ...(etcExists() ? ["pfEtc"] : [])],
+    grasp: () => ["name", "sv", "staff", "sales", "target", "achievement",
+        "mom", "bizdays", "davg", "perperson"],
+    pnl: () => ["name", "sv", "sales", "food", "labor", "rent", "dfee",
+        "royalty", "utility", "profit", "profitRate", "foodRate"],
+};
+
+// 정렬 상태 — key 는 COLS 의 키. 기본 = 달성률 내림차순(시트 04, 93 설계 [4]).
+const DEFAULT_SORT = () => ({ key: "achievement", asc: false });
+let sort = DEFAULT_SORT();
 
 // null 은 정렬 방향과 무관하게 뒤로 — '목표 없음' 이 내림차순 맨 위로
 // 튀어 오르지 않게(시트 04 의 달성률 정렬과 같은 규칙, 93 설계 [4]).
 const num = (v) => (v == null ? null : Number(v));
 
+const moneyCell = (v) => (v == null ? "—" : escape(wonFull(v)));
+
 function sortedRows() {
     const sv = $("as-sv").value;
     const filtered = sv ? stores.filter((r) => r.sv_name === sv) : stores;
+    const col = COLS[sort.key] || COLS.achievement;
     return [...filtered].sort((a, b) => {
-        const [x, y] = [sortValue(a, sort.key), sortValue(b, sort.key)];
+        const [x, y] = [col.value(a), col.value(b)];
         if (x == null && y == null) return num(b.sales) - num(a.sales);
         if (x == null) return 1;
         if (y == null) return -1;
@@ -97,73 +187,78 @@ function nameCell(r) {
     return escape(r.name) + badge;
 }
 
-function render() {
-    const rows = sortedRows();
-    const view = rows.map((r, i) => {
-        const p = r.pnl || {};
-        return [
-            int(i + 1),
-            nameCell(r),
-            r.sv_name ? escape(r.sv_name) : "—",
-            r.staff_count != null ? escape(String(r.staff_count)) : "—",
-            escape(wonFull(r.sales)),
-            r.target != null ? escape(wonFull(r.target)) : "—",
-            r.achievement != null ? escape(pctText(r.achievement, 1)) : "—",
-            diffCell(r.mom_pct),
-            r.business_days ? escape(int(r.business_days)) : "—",
-            r.daily_avg != null ? escape(wonFull(r.daily_avg)) : "—",
-            r.per_person != null ? escape(wonFull(r.per_person)) : "—",
-            escape(wonFull(r.hall_sales)),
-            escape(wonFull(r.delivery_sales)),
-            escape(pctText(r.delivery_share, 1)),
-            escape(wonFull(p.food?.amount)),
-            escape(wonFull(p.labor?.amount)),
-            escape(wonFull(p.rent?.amount)),
-            escape(wonFull(p.delivery_fee?.amount)),
-            escape(wonFull(p.royalty?.amount)),
-            escape(wonFull(p.utility?.amount)),
-            escape(wonFull(p.profit)),
-            escape(pctText(p.profit_rate, 1)),
-            escape(pctText(p.food_cost_rate, 1)),
-        ];
-    });
+// 엑셀 내보내기 — 카테고리와 무관하게 전체 열(기존 24열 + 플랫폼 열)을 원시
+// 숫자로 내립니다. 화면의 '1.2억'류·배지 없이 바로 계산되게(기존 동작 유지).
+function exportSpec(rows) {
+    const withEtc = etcExists();
+    const headers = ["순번", "매장", "상태", "담당 SV", "근무인원",
+        "총매출", "목표", "달성률", "전월비(%)", "영업일수", "일평균",
+        "인당 생산성", "홀매출", "배달매출", "배달비중",
+        ...PLATFORM_MAIN.map((p) => p.label), ...(withEtc ? ["기타 배달"] : []),
+        "식자재비", "인건비", "임차료", "배달수수료", "로열티·광고",
+        "공과금·기타", "영업이익", "영업이익률", "원가율"];
+    return {
+        headers,
+        rows: rows.map((r, i) => {
+            const p = r.pnl || {};
+            return [i + 1, r.name, r.status === "close" ? "폐점" : "",
+                r.sv_name, r.staff_count,
+                r.sales, r.target, r.achievement, r.mom_pct,
+                r.business_days, r.daily_avg, r.per_person,
+                r.hall_sales, r.delivery_sales, r.delivery_share,
+                ...PLATFORM_MAIN.map((pf) => platAmount(r, pf.keys)),
+                ...(withEtc ? [platEtc(r)] : []),
+                p.food?.amount, p.labor?.amount, p.rent?.amount,
+                p.delivery_fee?.amount, p.royalty?.amount, p.utility?.amount,
+                p.profit, p.profit_rate, p.food_cost_rate];
+        }),
+    };
+}
 
-    table($("t-allstores"), HEADERS, view, {
-        html: true, sortable: true, sortState: sort,
-        // 엑셀에는 원시 숫자로 — 화면의 '1.2억'류·배지 없이 바로 계산되게.
-        export: {
-            headers: ["순번", "매장", "상태", "담당 SV", "근무인원",
-                "총매출", "목표", "달성률", "전월비(%)", "영업일수", "일평균",
-                "인당 생산성", "홀매출", "배달매출", "배달비중",
-                "식자재비", "인건비", "임차료", "배달수수료", "로열티·광고",
-                "공과금·기타", "영업이익", "영업이익률", "원가율"],
-            rows: rows.map((r, i) => {
-                const p = r.pnl || {};
-                return [i + 1, r.name, r.status === "close" ? "폐점" : "",
-                    r.sv_name, r.staff_count,
-                    r.sales, r.target, r.achievement, r.mom_pct,
-                    r.business_days, r.daily_avg, r.per_person,
-                    r.hall_sales, r.delivery_sales, r.delivery_share,
-                    p.food?.amount, p.labor?.amount, p.rent?.amount,
-                    p.delivery_fee?.amount, p.royalty?.amount, p.utility?.amount,
-                    p.profit, p.profit_rate, p.food_cost_rate];
-            }),
-        },
+function render() {
+    const keys = CATEGORIES[category]();
+    // 정렬 열이 이 카테고리에 없으면 기본(달성률 — 서버 정렬 순서)으로 복귀.
+    if (!keys.includes(sort.key) && sort.key !== "achievement") sort = DEFAULT_SORT();
+
+    const rows = sortedRows();
+    const headers = ["순번", ...keys.map((k) => COLS[k].label)];
+    const view = rows.map((r, i) =>
+        [int(i + 1), ...keys.map((k) => COLS[k].cell(r))]);
+
+    // 헤더 표식용 정렬 상태 — table() 은 열 인덱스를 쓰므로 키를 변환합니다.
+    const sortIdx = keys.indexOf(sort.key);
+    const sortState = sortIdx >= 0 ? { key: sortIdx + 1, asc: sort.asc } : null;
+
+    table($("t-allstores"), headers, view, {
+        html: true, sortable: true, sortState,
+        export: exportSpec(rows),
     });
 
     $("t-allstores").querySelectorAll("th.sortable").forEach((th, i) => {
         th.addEventListener("click", () => {
-            sort = sort.key === i
-                ? { key: i, asc: !sort.asc }
-                : { key: i, asc: i <= 2 };   // 이름·SV 는 오름차순이 자연스러움
+            const key = i === 0 ? "name" : keys[i - 1];   // 순번 클릭 = 매장명
+            sort = sort.key === key
+                ? { key, asc: !sort.asc }
+                : { key, asc: !!COLS[key].text };   // 이름·SV 는 오름차순이 자연스러움
             render();
         });
     });
 
     const withTarget = rows.filter((r) => r.achievement != null).length;
+    const platNote = (category === "sales" && !platByStore && stores.length)
+        ? " · 플랫폼별 배달매출을 불러오지 못했습니다" : "";
     $("as-meta").textContent = stores.length
         ? `${int(rows.length)}곳${rows.length !== stores.length ? ` / 전체 ${int(stores.length)}곳` : ""}`
-          + ` · 목표 있는 매장 ${int(withTarget)}곳 — 위 필터와 무관`
+          + ` · 목표 있는 매장 ${int(withTarget)}곳 — 위 필터와 무관` + platNote
+        : "";
+
+    // 손익 라벨 + 금액 기준 각주(kpi-sheet-adoption.md 6절) — 추정 손익 열이
+    // 보이는 '매출분석' 에서만 답니다(#146 — 다른 카테고리는 각주 대상이 없음).
+    $("as-note").textContent = category === "pnl"
+        ? "식자재비부터 원가율까지는 가정값 기반 추정치입니다 — 실측(아워홈 발주 "
+          + "· 근무인원 · 임차료 · 로열티 실요율)이 있는 매장은 그 값이 우선. "
+          + "영업일수·일평균은 일 단위 집계 기준(소급 진행 중), 금액은 메뉴 매출 "
+          + "기준이라 KPI 시트 과거 연도(배달비 포함)와 1:1로 일치하지 않습니다."
         : "";
 }
 
@@ -183,24 +278,47 @@ async function refresh() {
     const ym = Number($("as-ym").value);
     if (!ym) return;
     $("as-meta").textContent = "불러오는 중…";
-    const { data, error } = await db.rpc("api_all_stores_kpi", { p_ym: ym });
-    if (error || !data || data.ok === false) {
+
+    // 93 + 99 병렬. 99 는 실패해도 표를 못 죽입니다 — 플랫폼 열만 '—'(머리주석).
+    const [kpi, plat] = await Promise.all([
+        db.rpc("api_all_stores_kpi", { p_ym: ym }),
+        Promise.resolve(db.rpc("api_delivery_by_platform", { p_ym: ym }))
+            .catch(() => ({ data: null, error: true })),
+    ]);
+
+    if (kpi.error || !kpi.data || kpi.data.ok === false) {
         $("as-meta").textContent = "";
         $("t-allstores").innerHTML = '<p class="hint">불러오지 못했습니다: '
-            + escape(error ? error.message : (data && data.reason) || "알 수 없는 오류")
+            + escape(kpi.error ? kpi.error.message : (kpi.data && kpi.data.reason) || "알 수 없는 오류")
             + "</p>";
         return;
     }
-    stores = Array.isArray(data.stores) ? data.stores : [];
+    stores = Array.isArray(kpi.data.stores) ? kpi.data.stores : [];
+
+    if (!plat.error && plat.data && plat.data.ok !== false
+            && Array.isArray(plat.data.stores)) {
+        platByStore = new Map(plat.data.stores.map((s) => [s.store, s.platforms || {}]));
+        platSources = Array.isArray(plat.data.sources) ? plat.data.sources : [];
+    } else {
+        platByStore = null;
+        platSources = [];
+    }
+
     fillSv();
     render();
+}
 
-    // 손익 라벨 + 금액 기준 각주(kpi-sheet-adoption.md 6절).
-    $("as-note").textContent =
-        "식자재비부터 원가율까지는 가정값 기반 추정치입니다 — 실측(아워홈 발주 "
-        + "· 근무인원 · 임차료 · 로열티 실요율)이 있는 매장은 그 값이 우선. "
-        + "영업일수·일평균은 일 단위 집계 기준(소급 진행 중), 금액은 메뉴 매출 "
-        + "기준이라 KPI 시트 과거 연도(배달비 포함)와 1:1로 일치하지 않습니다.";
+function initCategoryToggle() {
+    const seg = $("aspf-cat");
+    seg.querySelectorAll("button[data-cat]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            if (btn.dataset.cat === category) return;
+            category = btn.dataset.cat;
+            seg.querySelectorAll("button[data-cat]").forEach((b) =>
+                b.classList.toggle("on", b === btn));
+            render();   // 재조회 없음 — 받은 배열로 열만 다시 그립니다
+        });
+    });
 }
 
 export async function initAllStores() {
@@ -219,6 +337,7 @@ export async function initAllStores() {
         $("as-ym").value = String(ym);
     }
 
+    initCategoryToggle();
     $("as-ym").addEventListener("change", refresh);
     $("as-sv").addEventListener("change", render);
     await refresh();
