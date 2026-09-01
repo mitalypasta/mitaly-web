@@ -82,17 +82,25 @@ const AREA_HEAD = {
 };
 
 const SALES_HEAD = {
-    "매장 대시보드": ["매출 · 매장 대시보드",
-        "매장 한 곳을 골라 KPI·추정 손익과 연도·분기·주간·일간 추이, 메뉴 " +
-        "판매를 봅니다. 기준일을 정하면 모든 카드가 그 날짜 기준으로 바뀌고, " +
-        "카드별 시트를 담은 엑셀로 내려받을 수 있습니다."],
-    "전체 매장 요약": ["매출 · 전체 매장 요약",
-        "전사 매출 추이(연도~일별)와 시간대·요일·메뉴·상권별 분해, 전매장 " +
-        "현황·매장 비교·급증급감·매장 진단을 봅니다. 기간·매장·채널은 맨 위 " +
-        "필터로 좁힙니다."],
+    "선택 매장 매출": ["매출 · 선택 매장 매출",
+        "매장 한 곳을 골라 KPI·추정 손익과 연도/분기/월/주간/일/시간대/요일 " +
+        "추이, 메뉴 판매를 봅니다. 기준일을 정하면 모든 카드가 그 날짜 기준으로 " +
+        "바뀌고, 카드별 시트를 담은 엑셀로 내려받을 수 있습니다."],
+    "전체 매장 매출": ["매출 · 전체 매장 매출",
+        "전사 매출 추이(연도/분기/월/주간/일/시간대/요일)와 메뉴·상권별 분해, " +
+        "전매장 현황·매장 비교·급증급감·매장 진단을 봅니다. 기간·매장·채널은 " +
+        "맨 위 필터로 좁힙니다."],
     "보고서": ["매출 · 보고서",
         "SV에게 보내는 월간 보고서를 화면에서 확인하고 PDF로 저장합니다. " +
         "기간은 맨 위 필터를 따릅니다."],
+};
+
+// 서브탭 개명 별칭(카드 #149 — '매장 대시보드' → '선택 매장 매출' ·
+// '전체 매장 요약' → '전체 매장 매출'). 옛 이름이 저장값·옛 코드 경로·
+// 딥링크로 들어오면 기본값으로 떨어뜨리지 않고 제 새 이름으로 받습니다.
+const SALES_SUB_ALIAS = {
+    "매장 대시보드": "선택 매장 매출",
+    "전체 매장 요약": "전체 매장 매출",
 };
 
 function setAreaHead(entry) {
@@ -112,15 +120,18 @@ function setAreaHead(entry) {
 }
 
 // 매출 안의 두 번째 단. 같은 방식으로 보이기만 바꿉니다.
-// 첫 화면은 매장 대시보드입니다(2026-08-21 담당자 지시 — 요약 서브탭 폐지).
-let salesSub = "매장 대시보드";
+// 첫 화면은 선택 매장 매출입니다(2026-08-21 담당자 지시 — 요약 서브탭 폐지.
+// 이름은 #149 에서 '매장 대시보드' → '선택 매장 매출').
+let salesSub = "선택 매장 매출";
 
 export function showSalesSub(sub) {
+    // 개명 별칭 먼저(#149) — 옛 이름은 새 이름으로 받습니다.
+    sub = SALES_SUB_ALIAS[sub] || sub;
     // 없는 서브탭 방어 — 서브탭 이름이 바뀐 뒤(#129: 품목·시간·요일·매장 →
     // '전체 매장 요약') 옛 이름이 저장값·옛 코드 경로로 들어오면 빈 화면이
     // 됩니다. 버튼이 없는 이름이면 기본값(첫 화면)으로 받습니다.
     if (!document.querySelector(`.subitem[data-sub-go="${sub}"]`)) {
-        sub = "매장 대시보드";
+        sub = "선택 매장 매출";
     }
     salesSub = sub;
     for (const el of document.querySelectorAll('[data-area="sales"][data-sub]')) {
@@ -130,11 +141,11 @@ export function showSalesSub(sub) {
         b.classList.toggle("is-on", b.dataset.subGo === sub);
         b.setAttribute("aria-current", b.dataset.subGo === sub ? "true" : "false");
     }
-    // 맨 위 필터 블록(기간·매장·채널·엑셀·기간 타일)은 매장 대시보드에서
-    // 숨깁니다(담당자 지시 — 대시보드가 자체 고르개를 가져 중복). 전체 매장
-    // 요약(시간대·요일·품목별 카드와 전사 추이의 연도·분기·월 단위)·보고서·
+    // 맨 위 필터 블록(기간·매장·채널·엑셀·기간 타일)은 선택 매장 매출에서
+    // 숨깁니다(담당자 지시 — 화면이 자체 고르개를 가져 중복). 전체 매장
+    // 매출(시간대·요일·품목별 카드와 전사 추이의 연도·분기·월 단위)·보고서·
     // 수집은 이 필터로 기간을 정하므로 그대로 보입니다.
-    const wantFilters = sub !== "매장 대시보드";
+    const wantFilters = sub !== "선택 매장 매출";
     const filters = document.querySelector(".filters");
     const exportField = $("sales-export-field");
     if (filters) filters.hidden = !wantFilters;
@@ -286,9 +297,9 @@ export function initHomeTiles() {
                 $("iq-filter").dispatchEvent(new Event("change"));
             }
             if (tileId === "home-tile-diagnosis") {
-                // 진단 카드는 매출의 '전체 매장 요약' 서브탭에 있습니다(#129
+                // 진단 카드는 매출의 '전체 매장 매출' 서브탭에 있습니다(#129
                 // 재편) — 스크롤 대상이 숨어 있지 않게 서브탭부터 맞춥니다.
-                showSalesSub("전체 매장 요약");
+                showSalesSub("전체 매장 매출");
             }
             requestAnimationFrame(() => {
                 document.getElementById(cardId)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -313,8 +324,8 @@ export function initHomeTiles() {
                 $("rv-rating").value = "low";
             }
             if (row.dataset.kind === "alert") {
-                // 급증·급감 카드도 '전체 매장 요약' 서브탭에 있습니다(#129).
-                showSalesSub("전체 매장 요약");
+                // 급증·급감 카드도 '전체 매장 매출' 서브탭에 있습니다(#129).
+                showSalesSub("전체 매장 매출");
                 $("alerts-only").checked = true;
                 $("alerts-only").dispatchEvent(new Event("change"));
             }

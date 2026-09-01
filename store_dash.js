@@ -60,6 +60,7 @@ async function refresh() {
         $("sd-info").textContent = "";
         $("sd-kpis").innerHTML =
             '<div class="sd-empty">매장을 선택하세요 — 위 매장 칸에 이름을 치면 검색됩니다.</div>';
+        drawSvt();   // 추이 단위 줄에도 같은 안내가 자리를 잡습니다(#149).
         return;
     }
     // 매장을 바꿨으면 연도 선택은 기준월의 연도로 되돌립니다 — 옛 매장에서
@@ -98,9 +99,18 @@ function render(d) {
     // 분기·시간대·메뉴 카드는 조회가 더 붙는 비동기 렌더입니다 — 엑셀 추출이
     // 진행 중인 조회를 기다릴 수 있게 promise 를 잡아 둡니다(카드 #128).
     quarterLoading = renderQuarterly((d.store || {}).name);
+    // 추이 단위 줄(#149)의 연도·분기·월은 분기 카드와 같은 api_monthly 캐시를
+    // 씁니다 — 그 조회가 끝나면 보고 있는 단위를 채웁니다(promise 는 그대로
+    // 둡니다 — 엑셀 추출이 기다리는 원본).
+    quarterLoading.then(() => {
+        if (svtUnit === "year" || svtUnit === "quarter" || svtUnit === "month") {
+            drawSvt();
+        }
+    });
     menuLoading = renderMenuCards(d);
     renderWeekly(d);
     renderDaily(d);
+    drawSvt();
 
     // 금액 기준 각주(adoption 6절) — 시트와 1:1로 안 맞는 것이 정상.
     $("sd-note").textContent =
@@ -573,17 +583,20 @@ async function renderMenuCards(d) {
         $(id).textContent = "불러오는 중…";
     }
     const args = { p_ym_from: d.ym, p_ym_to: d.ym, p_store: storeName, p_channel: null };
-    const [hour, menu, mweek, mpart] = await rpcBatch([
+    // 요일(api_by_weekday)은 추이 단위 줄(#149)의 '요일' 몫입니다 — 시간대와
+    // 같은 매장×기준월 묶음이라 같은 배치·같은 캐시 키에 태웁니다.
+    const [hour, menu, mweek, mpart, wday] = await rpcBatch([
         () => db.rpc("api_by_hour", args),
         () => db.rpc("api_by_menu", args),
         () => db.rpc("api_menu_matrix", { p_field: "weekday", ...args }),
         () => db.rpc("api_menu_matrix", { p_field: "daypart", ...args }),
+        () => db.rpc("api_by_weekday", args),
     ]);
     // 조회 중에 매장·기준일이 또 바뀌었으면 이 응답은 버립니다(app.js 의
     // stillMine 과 같은 이유 — 늦게 온 옛 결과가 화면을 덮으면 조용히 틀립니다).
     if (!last || `${(last.store || {}).name}|${last.ym}` !== key) return;
 
-    const bad = [hour, menu, mweek, mpart].find((r) => r.error);
+    const bad = [hour, menu, mweek, mpart, wday].find((r) => r.error);
     if (bad) {
         menuCacheKey = null;
         menuCards = null;
@@ -602,8 +615,11 @@ async function renderMenuCards(d) {
         menus: menu.data || [],
         mweek: mweek.data || [],
         mpart: mpart.data || [],
+        weekdays: wday.data || [],
     };
     drawMenuCards(d.ym);
+    // 추이 단위 줄이 시간대·요일을 보고 있으면 방금 온 재료로 채웁니다(#149).
+    if (svtUnit === "hour" || svtUnit === "dow") drawSvt();
 }
 
 // api_menu_matrix 응답(메뉴마다 {menu, category, total, buckets} 한 줄 —
@@ -650,6 +666,209 @@ function drawMenuCards(ym) {
     table($("t-sd-mpart"), ["메뉴", "분류", ...mp.buckets, "합계"],
         mp.rows.map((r) => [r.menu, r.category,
             ...mp.buckets.map((b) => wonFull(r.buckets[b] || 0)), wonFull(r.total)]));
+}
+
+// ---- ⓘ 매출 추이 단위 줄 (카드 #149) --------------------------------------
+//
+// 선택 매장 1곳의 [연도|분기|월|주간|일별|시간대|요일] 7단위 추이 — 전체 매장
+// 매출 hero(app.js drawCompanyTrend)와 같은 unitbtn 문법입니다. 재료는 전부
+// 이 화면이 이미 받는 것의 재사용(새 SQL 없음):
+//   · 연도·분기·월 — 분기 카드의 api_monthly(매장 필터·전체 기간) 캐시
+//     (quarterRows). 조회가 끝나면 render() 의 then 이 다시 그립니다.
+//   · 주간(13주)·일별(28일) — 91(api_store_dashboard)의 weekly·daily(기준일 닻).
+//   · 시간대·요일 — 시간대 카드 묶음(api_by_hour·api_by_weekday, 매장×기준월).
+// fact_daily 가 비어 있으면(소급 백필 전) 주간·일별은 표를 죽이지 않고
+// '일 단위 집계 소급 중' 한 줄(hint)로 그립니다.
+
+let svtUnit = "month";
+
+function svtEmpty(text) {
+    $("svt-legend").innerHTML = "";
+    $("svt-chart").hidden = true;
+    $("svt-table").innerHTML = `<p class="hint">${escape(text)}</p>`;
+    $("svt-note").textContent = "";
+}
+
+function svtBars(rows) {   // rows: [{label, value}]
+    const svg = $("svt-chart");
+    svg.hidden = false;
+    const c = palette();
+    drawBars(svg, { rows, color: c.s1, colors: c });
+}
+
+// api_monthly(매장 필터·전체 기간) 행을 연·분기·월 묶음으로 접습니다 —
+// app.js foldCompanyMonthly 와 같은 규칙(표기는 1분기~4분기, Q1 금지).
+function svtFoldMonthly() {
+    const isYear = svtUnit === "year";
+    const isQuarter = svtUnit === "quarter";
+    const keyOf = isYear ? (ym) => Math.floor(ym / 100)
+        : isQuarter ? (ym) => Math.floor(ym / 100) * 10 + Math.ceil((ym % 100) / 3)
+        : (ym) => ym;
+    const labelOf = isYear ? (k) => `${k}년`
+        : isQuarter ? (k) => `${Math.floor(k / 10)}년 ${k % 10}분기`
+        : (k) => `${Math.floor(k / 100)}년 ${k % 100}월`;
+    const chartLabelOf = isYear || isQuarter ? labelOf : (k) => ymLabel(k);
+    const map = new Map();
+    for (const r of quarterRows || []) {
+        const key = keyOf(Number(r.ym));
+        const slot = map.get(key) || { key, hall: 0, delivery: 0, total: 0 };
+        const amt = Number(r.amount) || 0;
+        if (r.channel === "홀") slot.hall += amt;
+        else slot.delivery += amt;
+        slot.total += amt;
+        map.set(key, slot);
+    }
+    return [...map.values()]
+        .sort((a, b) => a.key - b.key)
+        .map((s) => ({ ...s, label: labelOf(s.key), chartLabel: chartLabelOf(s.key) }));
+}
+
+function drawSvt() {
+    if (!$("svt-card")) return;
+    const meta = $("svt-meta");
+    const note = $("svt-note");
+    $("svt-legend").innerHTML = "";
+
+    if (!last || !(last.store || {}).name) {
+        meta.textContent = "";
+        svtEmpty("매장을 선택하면 단위별 추이가 그려집니다.");
+        return;
+    }
+    const storeName = last.store.name;
+
+    // 연도·분기·월 — 전체 기간 api_monthly(분기 카드 캐시) 접기.
+    if (svtUnit === "year" || svtUnit === "quarter" || svtUnit === "month") {
+        if (quarterCacheName !== storeName || !quarterRows) {
+            meta.textContent = "";
+            svtEmpty("집계 중…");
+            return;
+        }
+        const rows = svtFoldMonthly();
+        if (!rows.length) { meta.textContent = ""; svtEmpty("데이터가 없습니다."); return; }
+        rows.forEach((r, i) => {
+            const prev = i > 0 ? rows[i - 1].total : 0;
+            r.diff = i > 0 && prev > 0
+                ? Math.round((r.total - prev) / prev * 1000) / 10 : null;
+        });
+        const unitName = svtUnit === "year" ? "연도"
+            : svtUnit === "quarter" ? "분기" : "월";
+        const prevName = svtUnit === "year" ? "전년비"
+            : svtUnit === "quarter" ? "전분기비" : "전월비";
+        meta.textContent =
+            `전체 기간 · ${rows[0].label} ~ ${rows[rows.length - 1].label}`;
+        svtBars(rows.map((r) => ({ label: r.chartLabel, value: r.total })));
+        table($("svt-table"), [unitName, "매출", prevName, "홀", "배달"],
+            [...rows].reverse().map((r) => [
+                escape(r.label), escape(wonFull(r.total)), diffCell(r.diff),
+                escape(wonFull(r.hall)), escape(wonFull(r.delivery))]),
+            { html: true,
+              export: { headers: [unitName, "매출", `${prevName}(%)`, "홀", "배달"],
+                        rows: [...rows].reverse().map((r) =>
+                            [r.label, r.total, r.diff, r.hall, r.delivery]) } });
+        note.textContent = "이 매장의 전체 기간(홀+배달) 기준 · "
+            + `마지막 ${unitName}는 진행 중일 수 있음`;
+        return;
+    }
+
+    // 주간 — 91 의 weekly(기준일부터 13주, 최신 주 먼저).
+    if (svtUnit === "week") {
+        const weeks = Array.isArray(last.weekly) ? last.weekly : [];
+        if (!weeks.length) {
+            meta.textContent = "";
+            svtEmpty("일 단위 집계 소급 중 — 자료가 들어오면 주간 추이가 그려집니다.");
+            return;
+        }
+        const asc = [...weeks].sort((a, b) =>
+            String(a.week_start).localeCompare(String(b.week_start)));
+        meta.textContent = `기준일부터 최근 ${weeks.length}주 · 일 단위 집계 기준`;
+        svtBars(asc.map((w) => ({ label: md(w.week_start), value: Number(w.amount) || 0 })));
+        table($("svt-table"), ["주차", "매출", "전주비", "주문수"],
+            [...asc].reverse().map((w) => [
+                `${escape(weekLabel(w.week_start))} (${escape(md(w.week_start))}~${escape(md(w.week_end))})`,
+                escape(wonFull(w.amount)), diffCell(w.wow_pct), escape(int(w.orders))]),
+            { html: true,
+              export: { headers: ["주 시작일", "주 종료일", "매출", "전주비(%)", "주문수"],
+                        rows: [...asc].reverse().map((w) =>
+                            [w.week_start, w.week_end, w.amount, w.wow_pct, w.orders]) } });
+        note.textContent = "주간 매출 추이 카드와 같은 재료(기준일 닻)입니다.";
+        return;
+    }
+
+    // 일별 — 91 의 daily(최근 28일, 오래된 날 먼저 · null = 미영업).
+    if (svtUnit === "day") {
+        const days = Array.isArray(last.daily) ? last.daily : [];
+        if (!days.length) {
+            meta.textContent = "";
+            svtEmpty("일 단위 집계 소급 중 — 자료가 들어오면 일별 추이가 그려집니다.");
+            return;
+        }
+        meta.textContent =
+            `${days[0].day} ~ ${days[days.length - 1].day} · 빈칸 = 미영업`;
+        svtBars(days.map((x) => ({ label: md(x.day), value: Number(x.amount) || 0 })));
+        // 전일비 — 미영업일이 끼면 비교하지 않습니다(일간 카드와 같은 규칙).
+        const desc = [...days].reverse();
+        const diffOf = (x, i) => {
+            const prev = i + 1 < desc.length ? desc[i + 1].amount : null;
+            if (x.amount == null || prev == null || Number(prev) === 0) return null;
+            return Math.round((Number(x.amount) - Number(prev)) / Number(prev) * 1000) / 10;
+        };
+        table($("svt-table"), ["일자", "요일", "매출", "전일비"],
+            desc.map((x, i) => [
+                escape(x.day), escape(DOW_KO[x.dow] || ""),
+                x.amount == null ? "" : escape(wonFull(x.amount)),
+                diffCell(diffOf(x, i))]),
+            { html: true,
+              export: { headers: ["일자", "요일", "매출"],
+                        rows: desc.map((x) => [x.day, DOW_KO[x.dow] || "",
+                            x.amount == null ? "" : Number(x.amount)]) } });
+        note.textContent = "일간 매출 카드와 같은 재료(기준일 닻) · 빈칸 = 미영업";
+        return;
+    }
+
+    // 시간대·요일 — 시간대 카드 묶음(매장×기준월)의 재사용.
+    const isHour = svtUnit === "hour";
+    const key = `${storeName}|${last.ym}`;
+    if (menuCacheKey !== key || !menuCards) {
+        meta.textContent = "";
+        svtEmpty("집계 중…");
+        return;
+    }
+    const src = (isHour ? menuCards.hours : menuCards.weekdays) || [];
+    if (!src.length) { meta.textContent = ""; svtEmpty("데이터가 없습니다."); return; }
+    const rows = isHour
+        ? Array.from({ length: 24 }, (_, h) => {
+            const found = src.find((r) => Number(r.hour) === h) || {};
+            return { label: `${h}시`, short: `${h}`,
+                     amount: Number(found.amount) || 0,
+                     qty: Number(found.qty) || 0 };
+        })
+        : WEEKDAY_ORDER.map((w) => {
+            const found = src.find((r) => r.weekday === w) || {};
+            return { label: `${w}요일`, short: w,
+                     amount: Number(found.amount) || 0,
+                     qty: Number(found.qty) || 0 };
+        });
+    const total = rows.reduce((a, r) => a + r.amount, 0);
+    meta.textContent = `기준월 ${ymLabel(last.ym)} — 기준일을 바꾸면 함께 바뀝니다`;
+    svtBars(rows.map((r) => ({ label: r.short, value: r.amount })));
+    table($("svt-table"), [isHour ? "시간대" : "요일", "매출", "수량", "비중"],
+        rows.map((r) => [r.label, wonFull(r.amount), int(r.qty),
+            total > 0 ? `${(r.amount / total * 100).toFixed(1)}%` : "—"]));
+    note.textContent = isHour
+        ? "시간대별 매출 카드와 같은 재료(매장×기준월)입니다."
+        : "매장×기준월의 요일별 매출입니다.";
+}
+
+function initSvt() {
+    for (const b of document.querySelectorAll("#svt-units .unitbtn")) {
+        b.addEventListener("click", () => {
+            svtUnit = b.dataset.unit;
+            for (const x of document.querySelectorAll("#svt-units .unitbtn")) {
+                x.classList.toggle("is-on", x === b);
+            }
+            drawSvt();
+        });
+    }
 }
 
 // ---- ⓗ 선택 매장 엑셀 추출 (카드 #128) ------------------------------------
@@ -877,13 +1096,19 @@ export async function initStoreDash() {
     // 숨긴 채 그려진 차트는 fallback 폭으로 굳습니다(H2) — 서브탭이 보이게 된
     // 순간 폭이 어긋났으면 다시 그립니다(app.js 의 area-shown 처리와 같은 이유).
     document.addEventListener("mitaly:area-shown", (e) => {
-        if (!last || !e.detail || e.detail.sub !== "매장 대시보드") return;
+        if (!last || !e.detail || e.detail.sub !== "선택 매장 매출") return;
         const svg = $("c-sd-year");
         if (svg.clientWidth > 0
             && Math.abs(svg.clientWidth - svg.viewBox.baseVal.width) > 2) {
             drawYearCharts(last);
         }
+        const svt = $("svt-chart");
+        if (svt && !svt.hidden && svt.clientWidth > 0
+            && Math.abs(svt.clientWidth - svt.viewBox.baseVal.width) > 2) {
+            drawSvt();
+        }
     });
 
+    initSvt();
     refresh();   // 매장 미선택이면 '매장을 선택하세요' 안내가 자리를 잡습니다.
 }

@@ -142,9 +142,14 @@
          시간·요일·매장 세 서브탭은 '전체 매장 요약' 하나로 합쳤습니다 —
          카드는 전부 이동(삭제 0), 전사 시계열 hero(연도~일별 단위 선택)가
          새 화면의 답입니다. 수집 현황의 설정 탭 이전은 별도 카드(#130). -->
+    <!-- 서브탭 이름은 카드 #149(담당자 요청 2026-09-01)에서 바꿨습니다 —
+         '매장 대시보드' → '선택 매장 매출' · '전체 매장 요약' → '전체 매장
+         매출'. 카드 구성은 그대로이고(삭제 0), 두 탭 모두 연도/분기/월/주간/
+         일/시간대/요일 7단위 추이 줄을 갖습니다. 옛 이름으로 들어오는 코드
+         경로는 nav.js 의 별칭표가 새 이름으로 받습니다. -->
     <nav class="subnav" data-area="sales" id="salesnav" aria-label="매출 보기">
-        <button class="subitem is-on" data-sub-go="매장 대시보드" type="button">매장 대시보드</button>
-        <button class="subitem" data-sub-go="전체 매장 요약" type="button">전체 매장 요약</button>
+        <button class="subitem is-on" data-sub-go="선택 매장 매출" type="button">선택 매장 매출</button>
+        <button class="subitem" data-sub-go="전체 매장 매출" type="button">전체 매장 매출</button>
         <button class="subitem" data-sub-go="보고서" type="button">보고서</button>
         <!-- '수집 현황' 서브탭은 카드 #130 에서 설정 탭으로 옮겼습니다
              (담당자 지시 2026-08-21) — 카드는 아래 data-area="settings" 구역에. -->
@@ -164,7 +169,7 @@
              카드가 자체 고르개(매장·기준월·기준일)를 갖습니다(지도 카드와
              같은 방식). 폐점 매장도 고를 수 있고 배지가 붙습니다(시트 07).
              ============================================================ -->
-        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-card">
             <header>
                 <h2>매장 대시보드</h2>
                 <!-- 선택 매장 엑셀 추출(카드 #128) — 이 화면의 구성 요소(KPI·손익·
@@ -202,7 +207,34 @@
             <p class="hint" id="sd-note"></p>
         </section>
 
-        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-pnl-card">
+        <!-- 매출 추이 단위 줄 (카드 #149) — 선택 매장 1곳의 연도/분기/월/주간/
+             일/시간대/요일 7단위 추이. 전체 매장 매출 hero 의 unitbar 와 같은
+             모양입니다. 재료는 전부 재사용: 연도·분기·월은 분기 카드의
+             api_monthly(매장 필터·전체 기간) 캐시, 주간·일별은 91
+             (api_store_dashboard)의 weekly·daily, 시간대·요일은 시간대 카드
+             묶음(api_by_hour·api_by_weekday, 기준월) — 새 SQL 없음
+             (store_dash.js drawSvt). 아래 개별 카드들은 그대로 둡니다. -->
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="svt-card">
+            <header>
+                <h2>매출 추이</h2>
+                <span class="meta" id="svt-meta"></span>
+                <div class="unitbar" id="svt-units" role="group" aria-label="추이 단위">
+                    <button class="unitbtn" data-unit="year" type="button">연도</button>
+                    <button class="unitbtn" data-unit="quarter" type="button">분기</button>
+                    <button class="unitbtn is-on" data-unit="month" type="button">월</button>
+                    <button class="unitbtn" data-unit="week" type="button">주간</button>
+                    <button class="unitbtn" data-unit="day" type="button">일별</button>
+                    <button class="unitbtn" data-unit="hour" type="button">시간대</button>
+                    <button class="unitbtn" data-unit="dow" type="button">요일</button>
+                </div>
+            </header>
+            <div class="legend" id="svt-legend"></div>
+            <svg class="plot" id="svt-chart" role="img" aria-label="선택 매장 매출 추이"></svg>
+            <div class="tableview" id="svt-table"></div>
+            <p class="hint" id="svt-note"></p>
+        </section>
+
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-pnl-card">
             <header>
                 <h2>기준월 추정 손익</h2>
                 <span class="meta" id="sd-pnl-meta"></span>
@@ -211,7 +243,7 @@
             <p class="hint" id="sd-pnl-note"></p>
         </section>
 
-        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-year-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-year-card">
             <header>
                 <h2>연도별 월간 추이</h2>
                 <select id="sd-year"></select>
@@ -227,7 +259,7 @@
         <!-- 분기별 매출 (2026-08-21 담당자 지시) — 이 매장의 전체 기간을
              분기로 접습니다. 원천은 api_monthly(매장 필터)라 새 SQL 없음
              (store_dash.js renderQuarterly). 표기는 1분기~4분기(담당자 지시). -->
-        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-quarter-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-quarter-card">
             <header>
                 <h2>분기별 매출</h2>
                 <span class="meta" id="sd-q-meta"></span>
@@ -235,7 +267,7 @@
             <div class="tableview" id="t-sd-quarter"></div>
         </section>
 
-        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-weekly-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-weekly-card">
             <header>
                 <h2>주간 매출 추이</h2>
                 <span class="meta" id="sd-wk-meta"></span>
@@ -243,7 +275,7 @@
             <div class="tableview" id="t-sd-weekly"></div>
         </section>
 
-        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-daily-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-daily-card">
             <header>
                 <h2>일간 매출 — 최근 28일</h2>
                 <span class="meta" id="sd-daily-meta"></span>
@@ -260,7 +292,7 @@
              f-store 가 이미 받는 인자 — 새 SQL 없음, store_dash.js).
              기준일이 바뀌면 기준월이 따라 바뀌므로 이 카드들도 닻과 같이
              움직입니다. 표 기본(탭 정리 라운드 관례). ================== -->
-        <section data-area="sales" data-sub="매장 대시보드" class="card" id="sd-hour-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card" id="sd-hour-card">
             <header>
                 <h2>시간대별 매출</h2>
                 <span class="meta" id="sd-hour-meta"></span>
@@ -268,7 +300,7 @@
             <div class="tableview" id="t-sd-hour"></div>
         </section>
 
-        <section data-area="sales" data-sub="매장 대시보드" class="card" id="sd-menu-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card" id="sd-menu-card">
             <header>
                 <h2>메뉴 판매량</h2>
                 <span class="meta" id="sd-menu-meta"></span>
@@ -276,7 +308,7 @@
             <div class="tableview tall" id="t-sd-menu"></div>
         </section>
 
-        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-mweek-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-mweek-card">
             <header>
                 <h2>메뉴 × 요일</h2>
                 <span class="meta" id="sd-mweek-meta"></span>
@@ -284,7 +316,7 @@
             <div class="tableview tall" id="t-sd-mweek"></div>
         </section>
 
-        <section data-area="sales" data-sub="매장 대시보드" class="card full" id="sd-mpart-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-mpart-card">
             <header>
                 <h2>메뉴 × 시간대</h2>
                 <span class="meta" id="sd-mpart-meta"></span>
@@ -293,7 +325,8 @@
         </section>
 
         <!-- ============================================================
-             전체 매장 요약 (카드 #129) — 전 매장(전사) 단위 분석 화면.
+             전체 매장 매출 (카드 #129 신설 · #149 에서 '전체 매장 요약' 에서
+             개명) — 전 매장(전사) 단위 분석 화면.
              hero 는 이 전사 추이 카드 하나뿐입니다(화면당 hero 1 —
              docs/web-hierarchy.md 1절). 월은 위 전역 필터(기간·매장·채널)의
              api_monthly 를 접고, 연도·분기는 전 기간 api_monthly 를 따로
@@ -304,18 +337,22 @@
              시간대별·요일별·품목별과 매장 카드들은 옛 품목·시간·요일·매장
              서브탭에서 전부 이동해 온 것입니다(삭제 0).
              ============================================================ -->
-        <section data-area="sales" data-sub="전체 매장 요약" class="card hero-card" id="company-card">
+        <section data-area="sales" data-sub="전체 매장 매출" class="card hero-card" id="company-card">
             <header class="hero-head">
                 <div class="hero-q">전사 매출은 어떻게 가고 있나?</div>
                 <span class="hero-badge" id="company-badge" hidden></span>
                 <!-- 추이 단위 선택(위계 문서 5절 unitbtn 문법) — 연도·분기·
-                     월·주간·일별 다섯 단위를 카드 하나가 받습니다. -->
+                     월·주간·일별에 시간대·요일을 더해 일곱 단위를 카드 하나가
+                     받습니다(#149). 시간대·요일은 아래 '시간대별 매출'·'요일별
+                     매출' 카드와 같은 재료(전역 필터 기준)를 hero 로 그립니다. -->
                 <div class="unitbar" id="company-units" role="group" aria-label="추이 단위">
                     <button class="unitbtn" data-unit="year" type="button">연도</button>
                     <button class="unitbtn" data-unit="quarter" type="button">분기</button>
                     <button class="unitbtn is-on" data-unit="month" type="button">월</button>
                     <button class="unitbtn" data-unit="week" type="button">주간</button>
                     <button class="unitbtn" data-unit="day" type="button">일별</button>
+                    <button class="unitbtn" data-unit="hour" type="button">시간대</button>
+                    <button class="unitbtn" data-unit="dow" type="button">요일</button>
                 </div>
             </header>
             <div class="hero-stats" id="company-stats"></div>
@@ -325,7 +362,7 @@
             <p class="hint" id="company-note"></p>
         </section>
 
-        <section data-area="sales" data-sub="전체 매장 요약" class="card">
+        <section data-area="sales" data-sub="전체 매장 매출" class="card">
             <header>
                 <h2>시간대별 매출</h2>
                 <button class="linkish" data-toggle="c-hour-wrap"
@@ -337,7 +374,7 @@
             </div>
         </section>
 
-        <section data-area="sales" data-sub="전체 매장 요약" class="card">
+        <section data-area="sales" data-sub="전체 매장 매출" class="card">
             <header>
                 <h2>요일별 매출</h2>
                 <button class="linkish" data-toggle="c-weekday-wrap"
@@ -349,7 +386,7 @@
             </div>
         </section>
 
-        <section data-area="sales" data-sub="전체 매장 요약" class="card">
+        <section data-area="sales" data-sub="전체 매장 매출" class="card">
             <header>
                 <h2>메뉴 × 요일</h2>
                 <button class="linkish" data-toggle="t-mweek">표로 보기</button>
@@ -358,7 +395,7 @@
             <div class="tableview" id="t-mweek" hidden></div>
         </section>
 
-        <section data-area="sales" data-sub="전체 매장 요약" class="card">
+        <section data-area="sales" data-sub="전체 매장 매출" class="card">
             <header>
                 <h2>메뉴 × 시간대</h2>
                 <button class="linkish" data-toggle="t-mpart">표로 보기</button>
@@ -370,7 +407,7 @@
 
         <!-- 표가 기본입니다(2026-08-21 담당자 지시 — 탭 데이터 정리 라운드).
              표는 전 메뉴 순위(순위·비중 열 포함), 차트는 상위 15 토글. -->
-        <section data-area="sales" data-sub="전체 매장 요약" class="card full">
+        <section data-area="sales" data-sub="전체 매장 매출" class="card full">
             <header>
                 <h2>메뉴별 매출 순위</h2>
                 <button class="linkish" data-toggle="c-menu-wrap"
@@ -382,7 +419,7 @@
             </div>
         </section>
 
-        <section data-area="sales" data-sub="전체 매장 요약" class="card full">
+        <section data-area="sales" data-sub="전체 매장 매출" class="card full">
             <header>
                 <h2>분류별 비중</h2>
                 <button class="linkish" data-toggle="t-category">표로 보기</button>
@@ -391,7 +428,7 @@
             <div class="tableview" id="t-category" hidden></div>
         </section>
 
-        <section data-area="sales" data-sub="전체 매장 요약" class="card full">
+        <section data-area="sales" data-sub="전체 매장 매출" class="card full">
             <header>
                 <h2>메뉴 × 상권</h2>
                 <button class="linkish" data-toggle="t-area">표로 보기</button>
@@ -563,7 +600,7 @@
              갈라 보이고(담당자 요청 2026-08-31), '매출' 에는 배달매출
              플랫폼별 열(99_delivery_platform.sql)이 붙습니다. 토글의 새
              DOM id 는 aspf- 접두 — 병렬 카드와의 id 충돌 방지. -->
-        <section data-area="sales" data-sub="전체 매장 요약" class="card full" id="allstores-card">
+        <section data-area="sales" data-sub="전체 매장 매출" class="card full" id="allstores-card">
             <header>
                 <h2>전매장 현황</h2>
                 <span class="meta" id="as-meta"></span>
@@ -590,7 +627,7 @@
             <p class="hint" id="as-note"></p>
         </section>
 
-        <section data-area="sales" data-sub="전체 매장 요약" class="card full">
+        <section data-area="sales" data-sub="전체 매장 매출" class="card full">
             <header>
                 <h2>매장 비교</h2>
                 <button class="linkish" data-toggle="t-stores">표 접기</button>
@@ -598,7 +635,7 @@
             <div class="tableview tall" id="t-stores"></div>
         </section>
 
-        <section data-area="sales" data-sub="전체 매장 요약" class="card full" id="alerts-card">
+        <section data-area="sales" data-sub="전체 매장 매출" class="card full" id="alerts-card">
             <header>
                 <h2>급증·급감 매장 · 기간 대비</h2>
                 <span class="meta" id="alerts-summary"></span>
@@ -634,7 +671,7 @@
              매장을 심각순(연속하락 > 달성률 미달 > 기준선 위반)으로 올립니다.
              증상·원인·조치 문구는 서버 규칙 표(kpi_diagnosis_rules)가 원본
              (web/diagnosis.js). 위 필터(기간·매장)와 무관합니다. -->
-        <section data-area="sales" data-sub="전체 매장 요약" class="card full" id="diagnosis-card">
+        <section data-area="sales" data-sub="전체 매장 매출" class="card full" id="diagnosis-card">
             <header>
                 <h2>매장 진단</h2>
                 <span class="meta" id="diag-meta"></span>
@@ -652,7 +689,7 @@
                 일평균은 일 단위 집계 기준(없는 매장은 월 증감률 대용)</p>
         </section>
 
-        <section data-area="sales" data-sub="전체 매장 요약" class="card full">
+        <section data-area="sales" data-sub="전체 매장 매출" class="card full">
             <header>
                 <h2>비정규 메뉴 현황</h2>
                 <button class="linkish" data-toggle="t-nonstd">전체 매장 표</button>
@@ -668,7 +705,7 @@
              4절 그대로(web/kpi.js). -->
         <!-- 원장 계급(카드 #118) — 매일 보는 값이 아니라 기준표라 기본 접힘.
              내용·기능은 그대로입니다(내용 삭제 0). -->
-        <details data-area="sales" data-sub="전체 매장 요약" class="card ledger" id="kpi-settings-card">
+        <details data-area="sales" data-sub="전체 매장 매출" class="card ledger" id="kpi-settings-card">
             <summary>
                 <h2>KPI 기준 설정</h2>
                 <span class="meta" id="kpi-set-meta"></span>
@@ -819,7 +856,7 @@
             <div class="tableview" id="t-consents"></div>
         </section>
 
-        <details data-area="sales" data-sub="전체 매장 요약" class="card ledger" id="unmapped-card">
+        <details data-area="sales" data-sub="전체 매장 매출" class="card ledger" id="unmapped-card">
             <summary>
                 <h2>미매핑 품목</h2>
                 <span class="meta" id="unmapped-count"></span>

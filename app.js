@@ -679,10 +679,15 @@ function draw(d) {
     drawUnmapped(d);
 }
 
-// ---- 전사 매출 추이 (카드 #129 — '전체 매장 요약' hero) -----------------
+// ---- 전사 매출 추이 (카드 #129 — '전체 매장 매출' hero) -----------------
 //
-// 옛 품목·시간·요일·매장 서브탭을 합친 '전체 매장 요약' 화면의 답 카드.
-// 단위 다섯(연도·분기·월·주간·일별)을 unitbtn 한 줄이 고릅니다
+// 옛 품목·시간·요일·매장 서브탭을 합친 '전체 매장 매출'(#149 에서
+// '전체 매장 요약' 에서 개명) 화면의 답 카드.
+// 단위 일곱(연도·분기·월·주간·일별·시간대·요일 — #149)을 unitbtn 한 줄이
+// 고릅니다. 시간대·요일은 같은 탭의 '시간대별 매출'·'요일별 매출' 카드와
+// 같은 재료(load() 의 api_by_hour·api_by_weekday, 전역 필터 기준)를 그대로
+// 접습니다 — 그 카드들은 그대로 두고(#149 지시), 필터가 바뀌면 draw() 가
+// 이 hero 도 다시 그려 함께 움직입니다.
 // (docs/web-hierarchy.md 5절). 월은 load() 가 이미 받는 api_monthly
 // (전역 필터 기준)를 여기서 접고 — 새 조회 없음(report.js 의 연월 접기와
 // 같은 규칙) —, 주간은 90(api_weekly_company)·일별은 95(api_daily_company
@@ -903,9 +908,55 @@ function drawCompanyTrend() {
             + `<span><i style="background:${c.s2}"></i>배달</span>`;
     };
 
+    // 시간대·요일(#149) — 전역 필터 기준의 api_by_hour·api_by_weekday 재료
+    // (S.lastData.hours / weekdays — 아래 개별 카드와 같은 것)를 hero 로.
+    // 기간 흐름이 아니라 분포라 전기 대비 배지는 없습니다.
+    if (companyUnit === "hour" || companyUnit === "dow") {
+        if (!S.lastData) return empty("집계 중…");
+        const isHour = companyUnit === "hour";
+        const src = (isHour ? S.lastData.hours : S.lastData.weekdays) || [];
+        if (!src.length) return empty("데이터가 없습니다.");
+        const rows = isHour
+            ? Array.from({ length: 24 }, (_, h) => {
+                const found = src.find((r) => Number(r.hour) === h) || {};
+                return { label: `${h}시`, short: `${h}`,
+                         amount: Number(found.amount) || 0,
+                         qty: Number(found.qty) || 0 };
+            })
+            : WEEKDAY_ORDER.map((w) => {
+                const found = src.find((r) => r.weekday === w) || {};
+                return { label: `${w}요일`, short: w,
+                         amount: Number(found.amount) || 0,
+                         qty: Number(found.qty) || 0 };
+            });
+        const total = rows.reduce((a, r) => a + r.amount, 0);
+        const peak = rows.reduce((a, r) => (r.amount > a.amount ? r : a), rows[0]);
+        companyBadge(null);
+        stats.innerHTML =
+            companyHeroStat("선택 기간 매출 합계", escape(won(total)),
+                escape(wonFull(total)))
+            + companyHeroStat(isHour ? "피크 시간대" : "최고 요일",
+                escape(peak.label),
+                escape(wonFull(peak.amount))
+                + (total > 0 ? ` · 비중 ${(peak.amount / total * 100).toFixed(1)}%` : ""))
+            + companyHeroStat("판매 수량",
+                escape(int(rows.reduce((a, r) => a + r.qty, 0))), "");
+        legendEl.innerHTML = "";
+        svg.hidden = false;
+        drawBars(svg, { rows: rows.map((r) => ({ label: r.short, value: r.amount })),
+                        color: c.s1, colors: c, unit: isHour ? "시" : "" });
+        table(tv, [isHour ? "시간대" : "요일", "매출", "수량", "비중"],
+            rows.map((r) => [r.label, wonFull(r.amount), int(r.qty),
+                total > 0 ? `${(r.amount / total * 100).toFixed(1)}%` : "—"]));
+        note.textContent = "위 기간·매장·채널 필터 기준 — 아래 "
+            + (isHour ? "'시간대별 매출'" : "'요일별 매출'")
+            + " 카드와 같은 집계입니다.";
+        return;
+    }
+
     if (companyUnit === "week") {
         const weeks = ((companyWeekly || {}).weeks) || [];
-        if (!weeks.length) return empty("아직 주 단위 집계가 없습니다.");
+        if (!weeks.length) return empty("일 단위 집계 소급 중 — 자료가 들어오면 주간 추이가 그려집니다.");
         const latest = weeks[0];                    // 서버가 최신 주 먼저.
         const asc = [...weeks].reverse();
         const dowStart = COMPANY_DOW_KO[(companyWeekly || {}).week_start_dow] || "?";
@@ -952,7 +1003,7 @@ function drawCompanyTrend() {
 
     if (companyUnit === "day") {
         const rows = ((companyDaily || {}).rows) || [];   // 오래된 날 먼저.
-        if (!rows.length) return empty("아직 일 단위 집계가 없습니다.");
+        if (!rows.length) return empty("일 단위 집계 소급 중 — 자료가 들어오면 일별 추이가 그려집니다.");
         const latest = rows[rows.length - 1];
         const prev = rows.length > 1 ? rows[rows.length - 2] : null;
 
