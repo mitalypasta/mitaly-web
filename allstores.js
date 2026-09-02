@@ -2,11 +2,16 @@
 // (카드 #113 — KPI 엑셀 04_전매장_현황 이식 · #146 카테고리 재편+플랫폼 분리).
 // KPI(총매출·목표·달성률·전월비·영업일수·일평균·인당생산성·홀/배달·배달비중)
 // + 추정 손익(91 mitaly_kpi_pnl — #112 와 같은 함수)
-// + 배달매출 플랫폼별(99 api_delivery_by_platform). db + foundation 만 import.
+// + 배달매출 플랫폼별(99 api_delivery_by_platform)
+// + 배달비(100 api_delivery_fees · 카드 #150A). db + foundation 만 import.
 //
-// · 조회는 rpc 두 개 병렬(93 + 99) — 기준월이 바뀔 때만 다시 부릅니다.
-//   99 는 실패해도 표를 죽이지 않습니다: 플랫폼 열만 '—' 로 두고 나머지는
-//   정상 렌더(#146 요구 — 기존 화면 보전). 조인 키는 매장명입니다.
+// · 조회는 rpc 세 개 병렬(93 + 99 + 100) — 기준월이 바뀔 때만 다시 부릅니다.
+//   99·100 은 실패해도 표를 죽이지 않습니다: 플랫폼·배달비 열만 '—' 로 두고
+//   나머지는 정상 렌더(#146 요구 — 기존 화면 보전). 조인 키는 매장명입니다.
+// · '매출' 카테고리에서 3사(배달의민족·쿠팡이츠·요기요)+기타 배달은 각각
+//   [매출 | 배달비] 두 열입니다(리드데이터식 · 카드 #150A). 배달비는 실측
+//   원천(channel_fee_day)이 있는 칸만 숫자(0이면 '0원'), 미확보는 '—'.
+//   쿠팡이츠·기타 배달은 아직 배달비 원천이 없어 자연히 '—' 입니다.
 // · 실적·목표달성·원가추정이 한 표에 섞여 시선이 분산된다는 담당자 요청
 //   (2026-08-31)으로 열을 [매출 | 매출파악 | 매출분석] 3개 카테고리로
 //   나눴습니다. 기존 23열은 삭제 없이 재배치(0 삭제)이고, 엑셀 내보내기는
@@ -47,6 +52,7 @@ function diffCell(pct) {
 let stores = [];                 // 마지막 응답의 매장 배열(서버 정렬 순서)
 let platByStore = null;          // 매장명 → {소스명: 금액}. 99 실패 시 null
 let platSources = [];            // 그 달 배달매출이 실재한 소스 이름들(99)
+let feeByStore = null;           // 매장명 → {소스명: 배달비합}. 100 실패 시 null
 let category = "sales";          // 'sales' | 'grasp' | 'pnl' — 기본 '매출'
 
 // 고정 3사 열이 집는 소스 이름. DB 실값은 '배민'(schema.sql 씨드)이고 열
@@ -82,6 +88,37 @@ const etcExists = () =>
     platByStore != null
     && platSources.some((s) => !MAIN_KEYS.has(s))
     && stores.some((r) => (platEtc(r) || 0) > 0);
+
+// 배달비(100). 미확보는 null → 화면 '—' / 0 은 확보된 '배달비 0원' → '0원'.
+//   · 100 실패(feeByStore null)                → null (열 전체 '—')
+//   · 그 매장·그 소스에 배달비 행이 없음        → null ('—', 미확보)
+//   · 숫자(0 포함)                              → 그대로 (0 은 '0원')
+// 원천 없는 소스(쿠팡이츠·기타 배달)는 자연히 전부 null 이 됩니다(문서 8절).
+function feeAmount(r, keys) {
+    if (!feeByStore) return null;
+    const f = feeByStore.get(r.name);
+    if (!f) return null;
+    for (const k of keys) {
+        if (f[k] != null) return Number(f[k]);   // 0 도 확보값 — 그대로
+    }
+    return null;
+}
+
+// '기타 배달' 배달비 = 고정 3사 밖 소스 배달비 합. 하나도 없으면 null('—').
+function feeEtc(r) {
+    if (!feeByStore) return null;
+    const f = feeByStore.get(r.name);
+    if (!f) return null;
+    let sum = null;
+    for (const [k, v] of Object.entries(f)) {
+        if (MAIN_KEYS.has(k) || v == null) continue;
+        sum = (sum || 0) + Number(v);
+    }
+    return sum;
+}
+
+// 배달비 셀 — 미확보(null)는 '—', 확보(0 포함)는 원단위 표기.
+const feeCell = (v) => (v == null ? "—" : escape(wonFull(v)));
 
 // ------------------------------------------------------------------ 열 정의
 // 기존 23열 전부 + 플랫폼 열. 카테고리는 이 목록에서 고르기만 합니다(삭제 0).
@@ -139,15 +176,27 @@ for (const p of PLATFORM_MAIN) {
         value: (r) => platAmount(r, p.keys),
         cell: (r) => moneyCell(platAmount(r, p.keys)),
     };
+    // 각 플랫폼 '매출' 열 옆에 붙는 '배달비' 열(리드데이터식 · 카드 #150A).
+    COLS[`fee:${p.label}`] = {
+        label: "배달비",
+        value: (r) => feeAmount(r, p.keys),
+        cell: (r) => feeCell(feeAmount(r, p.keys)),
+    };
 }
+COLS.feeEtc = {
+    label: "배달비",
+    value: (r) => feeEtc(r),
+    cell: (r) => feeCell(feeEtc(r)),
+};
 
 // 카테고리 → 열 키 목록. 순번은 render 가 항상 맨 앞에 붙입니다.
 // 기존 열 재배치(삭제 0): 근무인원·목표·달성률·영업일수·일평균·인당 생산성은
 // '매출파악' 으로, 손익 9열은 '매출분석' 으로 갔습니다.
 const CATEGORIES = {
     sales: () => ["name", "sv", "sales", "mom", "hall", "delivery", "dshare",
-        ...PLATFORM_MAIN.map((p) => `pf:${p.label}`),
-        ...(etcExists() ? ["pfEtc"] : [])],
+        // 플랫폼마다 [매출 | 배달비] 두 열이 나란히(리드데이터식 · #150A).
+        ...PLATFORM_MAIN.flatMap((p) => [`pf:${p.label}`, `fee:${p.label}`]),
+        ...(etcExists() ? ["pfEtc", "feeEtc"] : [])],
     grasp: () => ["name", "sv", "staff", "sales", "target", "achievement",
         "mom", "bizdays", "davg", "perperson"],
     pnl: () => ["name", "sv", "sales", "food", "labor", "rent", "dfee",
@@ -194,7 +243,9 @@ function exportSpec(rows) {
     const headers = ["순번", "매장", "상태", "담당 SV", "근무인원",
         "총매출", "목표", "달성률", "전월비(%)", "영업일수", "일평균",
         "인당 생산성", "홀매출", "배달매출", "배달비중",
-        ...PLATFORM_MAIN.map((p) => p.label), ...(withEtc ? ["기타 배달"] : []),
+        // 플랫폼마다 [매출, 배달비] 두 열 — 화면과 같은 짝. 배달비 원시 숫자.
+        ...PLATFORM_MAIN.flatMap((p) => [p.label, `${p.label} 배달비`]),
+        ...(withEtc ? ["기타 배달", "기타 배달 배달비"] : []),
         "식자재비", "인건비", "임차료", "배달수수료", "로열티·광고",
         "공과금·기타", "영업이익", "영업이익률", "원가율"];
     return {
@@ -206,8 +257,8 @@ function exportSpec(rows) {
                 r.sales, r.target, r.achievement, r.mom_pct,
                 r.business_days, r.daily_avg, r.per_person,
                 r.hall_sales, r.delivery_sales, r.delivery_share,
-                ...PLATFORM_MAIN.map((pf) => platAmount(r, pf.keys)),
-                ...(withEtc ? [platEtc(r)] : []),
+                ...PLATFORM_MAIN.flatMap((pf) => [platAmount(r, pf.keys), feeAmount(r, pf.keys)]),
+                ...(withEtc ? [platEtc(r), feeEtc(r)] : []),
                 p.food?.amount, p.labor?.amount, p.rent?.amount,
                 p.delivery_fee?.amount, p.royalty?.amount, p.utility?.amount,
                 p.profit, p.profit_rate, p.food_cost_rate];
@@ -260,6 +311,12 @@ function render() {
           + "영업일수·일평균은 일 단위 집계 기준(소급 진행 중), 금액은 메뉴 매출 "
           + "기준이라 KPI 시트 과거 연도(배달비 포함)와 1:1로 일치하지 않습니다."
         : "";
+
+    // 배달비 각주 — '매출' 카테고리에서만(그 열이 보이는 곳). 미확보 '—' 의
+    // 뜻만 알려 주는 표기 안내입니다(안전·보안 안내문 아님 — CLAUDE.md 문구 규칙).
+    $("cfee-note").textContent = category === "sales"
+        ? "배달비는 실측 원천을 확보한 채널·기간만 표시합니다 — 미확보 칸은 —."
+        : "";
 }
 
 // SV 목록은 응답에 실려 온 값으로 만듭니다(가맹점 DB 반입분 store_profiles.sv_name
@@ -279,10 +336,13 @@ async function refresh() {
     if (!ym) return;
     $("as-meta").textContent = "불러오는 중…";
 
-    // 93 + 99 병렬. 99 는 실패해도 표를 못 죽입니다 — 플랫폼 열만 '—'(머리주석).
-    const [kpi, plat] = await Promise.all([
+    // 93 + 99 + 100 병렬. 99·100 은 실패해도 표를 못 죽입니다 — 플랫폼·배달비
+    // 열만 '—'(머리주석). 93(KPI)만 실패하면 표 자체를 못 그립니다.
+    const [kpi, plat, fees] = await Promise.all([
         db.rpc("api_all_stores_kpi", { p_ym: ym }),
         Promise.resolve(db.rpc("api_delivery_by_platform", { p_ym: ym }))
+            .catch(() => ({ data: null, error: true })),
+        Promise.resolve(db.rpc("api_delivery_fees", { p_ym: ym }))
             .catch(() => ({ data: null, error: true })),
     ]);
 
@@ -302,6 +362,13 @@ async function refresh() {
     } else {
         platByStore = null;
         platSources = [];
+    }
+
+    if (!fees.error && fees.data && fees.data.ok !== false
+            && Array.isArray(fees.data.stores)) {
+        feeByStore = new Map(fees.data.stores.map((s) => [s.store, s.fees || {}]));
+    } else {
+        feeByStore = null;
     }
 
     fillSv();

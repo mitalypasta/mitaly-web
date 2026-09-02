@@ -3307,6 +3307,40 @@ const HANDLERS = {
                  store_count: rows.length, stores: rows };
     },
 
+    // ---- 배달비 (100_channel_fee.sql · 카드 #150A) — 반환 모양 그대로 ----
+    // 실측 원천이 채워진 칸만 숫자로 내려가고, 미확보는 소스 키 자체가
+    // 빠집니다(웹 '—'). 데모로 세 경로를 다 보여 줍니다:
+    //   · 요기요 = 확보 채널(문서 실측 확정) → 배달 매장마다 값. 5의 배수
+    //     매장은 0원(확보된 '배달비 0원' 이 '—' 와 다르게 그려지는지 확인).
+    //   · 배민 = 일부만 확보(짝수 id) → 홀수 id 매장은 키 없음 → 웹 '—'
+    //     (미확보 경로가 데모에도 보이게).
+    //   · 쿠팡이츠·기타 배달(땡겨요) = 배달비 원천 없음 → 키 없음 → 자연히 '—'.
+    api_delivery_fees: ({ p_ym }) => {
+        const ym = Number(p_ym);
+        if (!ym || ym < 202001 || ym > 209912 || ym % 100 < 1 || ym % 100 > 12) {
+            return { ok: false, reason: `기준월(YYYYMM)이 올바르지 않습니다: ${p_ym ?? "(빈 값)"}` };
+        }
+        const sources = new Set();
+        const rows = [];
+        for (const store of STORES) {
+            const delivery = demoAmountAt(ym, store, "배달") || 0;
+            if (delivery <= 0) continue;
+            const fees = {};
+            // 요기요 배달비 — 요기요 매출 몫(99 데모와 같은 배분)의 소액.
+            const yogiyoSales = delivery - Math.round(delivery * 0.55)
+                - Math.round(delivery * 0.3)
+                - (store.id % 7 === 0 ? Math.round(delivery * 0.06) : 0);
+            fees["요기요"] = store.id % 5 === 0 ? 0 : Math.round(yogiyoSales * 0.08);
+            // 배민 배달비 — 짝수 id 매장만 확보. 홀수는 키를 넣지 않습니다('—').
+            if (store.id % 2 === 0) fees["배민"] = Math.round(delivery * 0.55 * 0.09);
+            Object.keys(fees).forEach((k) => sources.add(k));
+            rows.push({ store: store.name, fees });
+        }
+        rows.sort((a, b) => a.store.localeCompare(b.store));
+        return { ok: true, ym, sources: [...sources].sort(),
+                 store_count: rows.length, stores: rows };
+    },
+
     // ---- 목표매출 (89_store_targets.sql) — 함수 반환 모양 그대로 ----
     api_store_targets: ({ p_ym }) => {
         const ym = Number(p_ym);

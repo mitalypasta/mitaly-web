@@ -598,8 +598,10 @@
              안(.tableview)에서만 가로 스크롤됩니다. 폐점 매장도 행에 있고
              배지가 붙습니다. 열은 [매출|매출파악|매출분석] 세 카테고리로
              갈라 보이고(담당자 요청 2026-08-31), '매출' 에는 배달매출
-             플랫폼별 열(99_delivery_platform.sql)이 붙습니다. 토글의 새
-             DOM id 는 aspf- 접두 — 병렬 카드와의 id 충돌 방지. -->
+             플랫폼별 [매출 | 배달비] 두 열(99_delivery_platform.sql +
+             100_channel_fee.sql · 카드 #150A)이 붙습니다. 배달비는 실측
+             원천이 있는 칸만 숫자, 미확보는 —. 토글의 새 DOM id 는 aspf-
+             접두, 배달비 각주는 cfee- 접두 — 병렬 카드와의 id 충돌 방지. -->
         <section data-area="sales" data-sub="전체 매장 매출" class="card full" id="allstores-card">
             <header>
                 <h2>전매장 현황</h2>
@@ -624,6 +626,7 @@
                 </div>
             </div>
             <div class="tableview tall" id="t-allstores"></div>
+            <p class="hint" id="cfee-note"></p>
             <p class="hint" id="as-note"></p>
         </section>
 
