@@ -1444,9 +1444,19 @@
                 <label for="vs-special">5. 특이사항</label>
                 <textarea id="vs-special" rows="3" placeholder="- 점주와 지속 소통하여 승인 후 담당 SV 적용 관리 예정"></textarea>
             </div>
+            <!-- 사진 첨부(카드 #155, 101_visit_photos.sql). capture 속성은 일부러
+                 없습니다 — iOS 에서 카메라·앨범 둘 다 고를 수 있게. 여러 장 가능.
+                 올릴 때 긴 변 1600px JPEG 로 줄입니다(app.js vpShrinkImage).
+                 데모(db.storage 없음)에서는 골라도 저장 때 건너뜁니다. -->
+            <div class="field grow" id="vp-field">
+                <label for="vp-files">사진 (여러 장 가능)</label>
+                <input type="file" id="vp-files" accept="image/*" multiple>
+                <small class="hint">촬영·앨범 어느 쪽이든 됩니다. 올릴 때 자동으로 줄여 저장합니다.</small>
+                <div class="vp-thumbs" id="vp-preview" hidden></div>
+            </div>
             <div class="field">
                 <label>&nbsp;</label>
-                <button type="button" id="vs-submit">방문 기록 추가</button>
+                <button type="button" id="vs-submit" class="primary">방문 기록 추가</button>
             </div>
             <div class="field" id="vs-cancel-field" hidden>
                 <label>&nbsp;</label>
@@ -1477,6 +1487,10 @@
             <h2>방문 이력</h2>
             <span class="meta" id="visit-summary"></span>
         </header>
+        <!-- 사진 열(카드 #155): 썸네일은 서명 URL 로 새 창. '보고 복사' 는
+             글만 복사되므로(카카오톡 단톡방 붙여넣기) 사진이 안 실린다는
+             안내를 여기 한 줄로 둡니다. -->
+        <p class="hint" id="vp-hint">사진은 썸네일을 누르면 새 창에서 열립니다. '보고 복사' 는 글만 복사됩니다 — 사진은 단톡방에 따로 올려 주세요.</p>
         <div class="tableview" id="t-visits"></div>
     </section>
 
@@ -1506,6 +1520,23 @@
                 <div class="value" id="ls-closes">—</div>
                 <div class="sub" id="ls-closes-baseline"></div>
             </div>
+            <!-- 103_store_status.sql(카드 #159) — 예정·기록 없음은 연도와 무관한
+                 '지금' 의 매장 수라 아래 매장 상태 표에서 셉니다. -->
+            <div class="tile">
+                <div class="label">오픈 예정</div>
+                <div class="value" id="lc159-planned-opens">—</div>
+                <div class="sub">마지막 기록이 오픈 예정인 매장</div>
+            </div>
+            <div class="tile">
+                <div class="label">폐점 예정</div>
+                <div class="value" id="lc159-planned-closes">—</div>
+                <div class="sub">마지막 기록이 폐점 예정인 매장</div>
+            </div>
+            <div class="tile">
+                <div class="label">기록 없음</div>
+                <div class="value" id="lc159-unknown">—</div>
+                <div class="sub" id="lc159-unknown-sub">오픈·폐점 기록이 없는 매장</div>
+            </div>
         </div>
     </section>
 
@@ -1514,7 +1545,7 @@
             <h2>오픈·폐점 기록 추가</h2>
             <span class="meta">기록하면 아래 현재 상태·이력 표에 바로 반영됩니다</span>
         </header>
-        <p class="hint">잘못 기록했으면 반대 이벤트(예: 폐점을 다시 오픈)를 새로 남겨 바로잡으세요 — 이 표는 수정·삭제 기능이 없습니다.</p>
+        <p class="hint">잘못 기록했으면 반대 이벤트(예: 폐점을 다시 오픈)를 새로 남겨 바로잡으세요 — 이 표는 수정·삭제 기능이 없습니다. 오픈 예정·폐점 예정은 예정일로 남기고, 실제로 오픈·폐점하면 오픈/폐점을 새로 기록해 확정합니다(예정일이 지나도 저절로 바뀌지 않습니다).</p>
         <div class="reqform">
             <div class="field">
                 <label for="la-store">매장</label>
@@ -1525,6 +1556,8 @@
                 <select id="la-type">
                     <option value="open">오픈</option>
                     <option value="close">폐점</option>
+                    <option value="planned_open">오픈 예정</option>
+                    <option value="planned_close">폐점 예정</option>
                 </select>
             </div>
             <div class="field">
@@ -1545,9 +1578,28 @@
 
     <section data-area="lifecycle" class="card full" id="lifecycle-status-card">
         <header>
-            <h2>현재 상태</h2>
+            <h2>매장 상태</h2>
             <span class="meta" id="lifecycle-status-summary"></span>
         </header>
+        <!-- 103_store_status.sql(카드 #159): 전 매장 + 상태 5값. 기록 없는 매장은
+             '기록 없음' 으로만 보여 주고 운영/폐점을 판정하지 않습니다 — 확정은
+             담당자(#158 대조표), 반입은 #161. -->
+        <p class="hint">전 매장이 나옵니다. 상태는 마지막 기록(오픈·폐점·오픈 예정·폐점 예정) 하나로 정하고, 기록이 없는 매장은 <b>기록 없음</b>으로 둡니다 — 운영 중인지 폐점인지 판정하지 않습니다. 마지막 매출월이 자료 최신월보다 앞이면 '매출 끊김'으로 표시합니다.</p>
+        <div class="filters">
+            <div class="field">
+                <label for="lc159-filter">상태</label>
+                <select id="lc159-filter">
+                    <option value="">전체</option>
+                    <option value="operating">운영</option>
+                    <option value="planned_open">오픈 예정</option>
+                    <option value="planned_close">폐점 예정</option>
+                    <option value="closed">폐점</option>
+                    <option value="unknown">기록 없음</option>
+                    <option value="gap">매출 끊김 (폐점 기록 없음)</option>
+                </select>
+            </div>
+        </div>
+        <p class="notice" id="lc159-gap-hint" hidden></p>
         <div class="tableview" id="t-lifecycle-status"></div>
     </section>
 

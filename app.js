@@ -897,7 +897,7 @@ function drawCompanyTrend() {
     const empty = (text) => {
         stats.innerHTML = "";
         legendEl.innerHTML = "";
-        svg.hidden = true;
+        svg.setAttribute("hidden", "");  // SVGElement 에는 hidden 프로퍼티가 없음 — 속성으로
         companyBadge(null);
         tv.innerHTML = `<p class="hint">${escape(text)}</p>`;
         note.textContent = "";
@@ -942,7 +942,7 @@ function drawCompanyTrend() {
             + companyHeroStat("판매 수량",
                 escape(int(rows.reduce((a, r) => a + r.qty, 0))), "");
         legendEl.innerHTML = "";
-        svg.hidden = false;
+        svg.removeAttribute("hidden");
         drawBars(svg, { rows: rows.map((r) => ({ label: r.short, value: r.amount })),
                         color: c.s1, colors: c, unit: isHour ? "시" : "" });
         table(tv, [isHour ? "시간대" : "요일", "매출", "수량", "비중"],
@@ -973,7 +973,7 @@ function drawCompanyTrend() {
                 "전사 매출 ÷ 운영 매장수");
 
         legendEl.innerHTML = "";
-        svg.hidden = false;
+        svg.removeAttribute("hidden");
         drawLine(svg, {
             xLabels: asc.map((w) => companyMd(w.week_start)),
             series: [{ name: "전사 매출", color: c.s1,
@@ -1020,7 +1020,7 @@ function drawCompanyTrend() {
                 `운영 ${escape(int(latest.store_count))}곳`);
 
         channelLegend();
-        svg.hidden = false;
+        svg.removeAttribute("hidden");
         drawLine(svg, {
             xLabels: rows.map((r) => companyMd(r.day)),
             series: [
@@ -1085,7 +1085,7 @@ function drawCompanyTrend() {
             `${escape(latest.label)} 기준`);
 
     channelLegend();
-    svg.hidden = false;
+    svg.removeAttribute("hidden");
     drawLine(svg, {
         xLabels: rows.map((r) => r.label),
         series: [
@@ -1428,6 +1428,11 @@ async function loadHomeHealth() {
 // 답글은 이 화면에서 달지 않습니다. 지금은 무엇이 와 있는지 보는 단계입니다.
 
 // 요약 함수(api_review_summary)가 받는 것만 추립니다.
+// p_platform 은 일부러 남깁니다(#152 결정): 요약이 주는 건수·평균·미답변·별점
+// 분포는 바로 아래 목록(api_reviews, 같은 p_platform)과 같은 필터를 따라야
+// 읽는 사람이 헷갈리지 않습니다. 대신 by_platform 이 고른 플랫폼 하나로
+// 좁아지므로, 플랫폼 드롭다운은 drawReviews 에서 '모든 플랫폼' 상태의
+// 요약으로만 새로 만들고 그 뒤에는 보태기만 합니다(줄어들지 않게).
 function summaryArgs() {
     const { p_ym_from, p_ym_to, p_store, p_platform } = reviewArgs();
     return { p_ym_from, p_ym_to, p_store, p_platform };
@@ -1547,14 +1552,27 @@ function drawReviews(d, c) {
         : "이 기간에 받아온 리뷰가 없습니다";
 
     // 플랫폼 목록은 요약이 알려주는 대로 채웁니다(수집된 것만 보이게).
+    // load() 는 두 단계로 그립니다(FIRST 4칸 → 나머지). 1차 때는 요약이 아직
+    // 안 와 by_platform 이 비는데, 그때 select 를 다시 만들면 고른 값이 사라지고
+    // 2차에서는 select.value 가 "" 라 복구할 수 없습니다(#152 — 요기요를 골라도
+    // '모든 플랫폼' 으로 되돌아가던 결함). 비어 있으면 건드리지 않습니다.
+    // 또 요약은 p_platform 으로 걸려 오므로(summaryArgs 주석) 플랫폼을 고른
+    // 뒤의 by_platform 은 그 하나뿐입니다 — 그대로 다시 만들면 다른 플랫폼이
+    // 드롭다운에서 사라집니다. '모든 플랫폼' 상태의 요약(전 플랫폼)으로만
+    // 새로 만들고, 걸린 요약에서는 새 이름을 보태기만 하며 현재 선택값은 항상
+    // option 으로 남겨 value 를 보존합니다.
     const select = $("rv-platform");
     const chosen = select.value;
     const names = (summary.by_platform || []).map((p) => p.platform);
-    if (names.join("|") !== select.dataset.names) {
-        select.dataset.names = names.join("|");
-        select.innerHTML = '<option value="">모든 플랫폼</option>'
-            + names.map((n) => `<option value="${escape(n)}">${escape(n)}</option>`).join("");
-        select.value = names.includes(chosen) ? chosen : "";
+    if (names.length) {
+        const have = [...select.options].map((o) => o.value).filter(Boolean);
+        const next = chosen ? [...new Set([...have, ...names, chosen])] : names;
+        if (next.join("|") !== select.dataset.names) {
+            select.dataset.names = next.join("|");
+            select.innerHTML = '<option value="">모든 플랫폼</option>'
+                + next.map((n) => `<option value="${escape(n)}">${escape(n)}</option>`).join("");
+            select.value = chosen;
+        }
     }
 
     // 별점 분포
@@ -2610,6 +2628,162 @@ let visitEditId = null;               // 수정 중인 visit_id (null 이면 새
 // 표의 기한 초과 판정에 씁니다.
 const VISIT_CYCLE_DAYS = 60;
 
+// ─── 방문 사진 첨부 (101_visit_photos.sql, 카드 #155, id 접두 vp-) ──────────
+//
+// 바이트는 비공개 버킷 visit-photos, 메타는 visit_photos 표 — 78 위반 첨부
+// (notices.js)와 같은 모양. 어떤 원본이든(HEIC 포함) 긴 변 1600px JPEG 로 다시
+// 인코딩해 올립니다 — 90매장 × 연 6회 × 5장 규모에서 원본 그대로면 연 10GB
+// 를 넘깁니다. db.storage 가 없는 데모 모드에서는 파일 처리를 통째로
+// 건너뜁니다(콘솔 0). 서명 URL 은 이력 표를 그릴 때 한 번에 발급합니다.
+const VP_BUCKET = "visit-photos";
+const VP_MAX_EDGE = 1600;                 // 긴 변 px
+const VP_JPEG_QUALITY = 0.82;
+const VP_MAX_BYTES = 10 * 1024 * 1024;   // 서버 file_size_limit 과 같은 10MB
+const VP_SIGNED_SECONDS = 3600;           // 이력 표 썸네일 서명 URL 수명
+let visitPhotosByVisit = new Map();       // visit_id(string) → [{...meta, url}] — 삭제·복사 재료
+let vpSignedAt = 0;                       // 마지막 일괄 서명 시각(ms) — 만료 판정
+let vpPreviewUrls = [];                   // 미리보기 object URL — 되돌려 놓을 목록
+
+// 원본 → 긴 변 VP_MAX_EDGE 이하 JPEG. createImageBitmap 에 EXIF 회전 반영을
+// 요청하고, 그것이 없는(또는 형식을 못 푸는) 브라우저는 <img> 로 디코드합니다.
+// 둘 다 실패하면 null — 호출자가 그 파일만 실패로 안내합니다.
+async function vpShrinkImage(file) {
+    let source = null;
+    try {
+        source = await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch {
+        source = await new Promise((resolve) => {
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+            img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+            img.src = url;
+        });
+    }
+    if (!source) return null;
+    const sw = source.naturalWidth || source.width;
+    const sh = source.naturalHeight || source.height;
+    if (!sw || !sh) return null;
+    const scale = Math.min(1, VP_MAX_EDGE / Math.max(sw, sh));
+    const width = Math.max(1, Math.round(sw * scale));
+    const height = Math.max(1, Math.round(sh * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";              // png 투명 → 흰 배경(JPEG 는 알파가 없음)
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(source, 0, 0, width, height);
+    if (source.close) source.close();
+    const blob = await new Promise((resolve) =>
+        canvas.toBlob(resolve, "image/jpeg", VP_JPEG_QUALITY));
+    return blob ? { blob, width, height } : null;
+}
+
+// 폼의 파일 미리보기. 브라우저가 못 그리는 원본(데스크톱 HEIC 등)은 이름
+// 칩으로 대신합니다 — 올릴 때는 vpShrinkImage 가 다시 시도합니다.
+function vpClearPreview() {
+    for (const url of vpPreviewUrls) URL.revokeObjectURL(url);
+    vpPreviewUrls = [];
+    const box = $("vp-preview");
+    box.innerHTML = "";
+    box.hidden = true;
+}
+
+function vpRenderPreview() {
+    vpClearPreview();
+    const files = Array.from($("vp-files").files || []);
+    if (!files.length) return;
+    const box = $("vp-preview");
+    for (const f of files) {
+        const url = URL.createObjectURL(f);
+        vpPreviewUrls.push(url);
+        const img = document.createElement("img");
+        img.alt = f.name;
+        img.title = f.name;
+        img.onerror = () => {
+            const chip = document.createElement("span");
+            chip.className = "vp-chip";
+            chip.textContent = f.name;
+            img.replaceWith(chip);
+        };
+        img.src = url;
+        box.append(img);
+    }
+    box.hidden = false;
+}
+
+// 방문 id 가 정해진 뒤 파일들을 차례로 올립니다. 실패한 파일 이름을 돌려줍니다
+// — 기록 자체는 이미 저장돼 있어 되돌리지 않고 안내만 합니다(78 과 같은 처리).
+// 버킷 키는 {visit_id}/{uuid}.jpg(원본 이름은 표에만). 메타 insert 가 실패하면
+// 화면에 안 보이는 바이트만 남으므로 그 자리에서 지웁니다.
+async function vpUploadAll(visitId, files, uid) {
+    const failed = [];
+    for (const f of files) {
+        const shrunk = await vpShrinkImage(f);
+        if (!shrunk || shrunk.blob.size > VP_MAX_BYTES) { failed.push(f.name); continue; }
+        const objectPath = `${visitId}/${crypto.randomUUID()}.jpg`;
+        const up = await db.storage.from(VP_BUCKET)
+            .upload(objectPath, shrunk.blob, { contentType: "image/jpeg", upsert: false });
+        if (up.error) { failed.push(f.name); continue; }
+        const meta = await db.from("visit_photos").insert({
+            visit_id: visitId,
+            object_path: objectPath,
+            file_name: f.name,
+            mime_type: "image/jpeg",
+            byte_size: shrunk.blob.size,
+            width: shrunk.width,
+            height: shrunk.height,
+            uploaded_by: uid,
+        });
+        if (meta.error) {
+            await db.storage.from(VP_BUCKET).remove([objectPath]);
+            failed.push(f.name);
+        }
+    }
+    return failed;
+}
+
+// 이력 표가 보여 주는 방문 id 묶음의 사진 메타를 받고, 서명 URL 을 한 번에
+// 발급해 visit_id → [사진] 으로 묶습니다. 데모(db.storage 없음)·101 미적용
+// (rpc 오류)에서는 빈 Map — 사진 열은 '—' 로 그려집니다.
+async function fetchVisitPhotos(ids) {
+    const map = new Map();
+    if (!db.storage || !ids.length) return map;
+    const { data, error } = await db.rpc("api_visit_photos", { p_visit_ids: ids });
+    if (error || !Array.isArray(data) || !data.length) return map;
+    const paths = data.map((p) => p.object_path);
+    const signed = await db.storage.from(VP_BUCKET)
+        .createSignedUrls(paths, VP_SIGNED_SECONDS);
+    const urlByPath = new Map();
+    if (!signed.error && Array.isArray(signed.data)) {
+        for (const s of signed.data) {
+            if (s.signedUrl && !s.error) urlByPath.set(s.path, s.signedUrl);
+        }
+    }
+    vpSignedAt = Date.now();
+    for (const p of data) {
+        const key = String(p.visit_id);
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push({ ...p, url: urlByPath.get(p.object_path) || null });
+    }
+    return map;
+}
+
+// 이력 표의 사진 칸 — 썸네일 링크(새 창). 서명이 안 된 사진은 이름 칩.
+function vpThumbCell(photos) {
+    if (!photos || !photos.length) return "—";
+    return '<span class="vp-thumbs">' + photos.map((p) => {
+        const name = escape(p.file_name);
+        const href = p.url ? escape(p.url) : "#";
+        const inner = p.url
+            ? `<img src="${href}" alt="${name}" loading="lazy" width="48" height="48">`
+            : `<span class="vp-chip">${name}</span>`;
+        return `<a class="vp-thumb" href="${href}" target="_blank" rel="noopener"`
+            + ` data-vp-path="${escape(p.object_path)}" title="${name}">${inner}</a>`;
+    }).join("") + "</span>";
+}
+
 async function initVisits() {
     const storeSelect = $("vs-store");
     const { data: stores, error: storeErr } = await fetchStores();
@@ -2661,6 +2835,26 @@ async function initVisits() {
     $("vs-submit").addEventListener("click", submitVisit);
     $("vs-cancel-edit").addEventListener("click", cancelVisitEdit);
     $("vd-all").addEventListener("change", refreshVisitDue);
+    $("vp-files").addEventListener("change", vpRenderPreview);
+
+    // 사진 썸네일 — 서명 URL 이 살아 있으면 링크 기본 동작(새 창)을 그대로
+    // 두고, 만료됐거나 서명이 없던 사진만 다시 서명해 엽니다. 터치 제스처
+    // 밖의 window.open 을 막는 브라우저(iOS)가 있어 살아 있는 동안은 <a> 가
+    // 직접 엽니다.
+    $("t-visits").addEventListener("click", async (event) => {
+        const link = event.target.closest("a[data-vp-path]");
+        if (!link || !db.storage) return;
+        const fresh = Date.now() - vpSignedAt < (VP_SIGNED_SECONDS - 30) * 1000;
+        if (fresh && link.getAttribute("href") !== "#") return;
+        event.preventDefault();
+        const { data, error } = await db.storage.from(VP_BUCKET)
+            .createSignedUrl(link.dataset.vpPath, 60);
+        if (error || !data) {
+            window.alert("사진을 열지 못했습니다: " + (error ? error.message : ""));
+            return;
+        }
+        window.open(data.signedUrl, "_blank", "noopener");
+    });
 
     // '방문 대상 매장' 표의 '기록' 버튼 — 그 매장을 폼에 골라 주고 위로 올립니다.
     $("t-visit-due").addEventListener("click", async (event) => {
@@ -2681,8 +2875,11 @@ async function initVisits() {
         if (!row) return;
         if (button.dataset.act === "visit-report") {
             const ok = await copyTextToClipboard(buildVisitReport(row));
-            button.textContent = ok ? "복사됨 ✓" : "복사 실패";
-            setTimeout(() => { button.textContent = "보고 복사"; }, 1500);
+            // 사진이 있는 기록은 글만 복사됐음을 버튼 글씨로도 알립니다
+            // (표 위 vp-hint 와 같은 뜻 — 사진은 단톡방에 따로).
+            const withPhotos = (visitPhotosByVisit.get(String(row.visit_id)) || []).length > 0;
+            button.textContent = ok ? (withPhotos ? "복사됨 ✓ (사진 제외)" : "복사됨 ✓") : "복사 실패";
+            setTimeout(() => { button.textContent = "보고 복사"; }, withPhotos ? 2500 : 1500);
         } else if (button.dataset.act === "visit-edit") {
             startVisitEdit(row);
         } else if (button.dataset.act === "visit-del") {
@@ -2726,6 +2923,18 @@ async function submitVisit() {
         return;
     }
 
+    // 사진은 db.storage 가 있을 때만 다룹니다(데모 모드는 건너뜀). 형식은
+    // 올릴 때 JPEG 로 통일하므로 여기서는 '이미지인가' 만 봅니다 — 크기는
+    // 재인코딩 뒤에 서버 상한(10MB)과 비교합니다(vpUploadAll).
+    const files = db.storage ? Array.from($("vp-files").files || []) : [];
+    for (const f of files) {
+        if (f.type && !f.type.startsWith("image/")) {
+            notice.className = "notice error";
+            notice.textContent = `'${f.name}' 는 사진 파일이 아닙니다.`;
+            return;
+        }
+    }
+
     button.disabled = true;
     notice.className = "notice";
     notice.textContent = "저장하는 중…";
@@ -2743,25 +2952,45 @@ async function submitVisit() {
 
     // 수정 모드면 update, 아니면 insert. created_by 는 만들 때만 남깁니다
     // (수정해도 기록 주인은 그대로 — 79 의 update 정책 축).
+    // 사진을 붙이려면 방문 id 가 필요하므로 그때만 .select("id") 로 돌려받습니다
+    // — 데모 builder 는 select 체이닝을 안 받지만 files 가 데모에서 항상 비어
+    // 있어 그 갈래로 안 옵니다(notices.js 와 같은 처리).
+    const { data: { session } } = await db.auth.getSession();
+    const uid = session?.user?.id;
     let error;
+    let visitId = visitEditId !== null ? Number(visitEditId) : null;
     if (visitEditId !== null) {
-        ({ error } = await db.from("store_visits").update(fields)
-            .eq("id", Number(visitEditId)));
+        ({ error } = await db.from("store_visits").update(fields).eq("id", visitId));
+    } else if (files.length) {
+        const res = await db.from("store_visits")
+            .insert({ ...fields, created_by: uid }).select("id").single();
+        error = res.error;
+        visitId = res.data?.id ?? null;
     } else {
-        const { data: { session } } = await db.auth.getSession();
         ({ error } = await db.from("store_visits")
-            .insert({ ...fields, created_by: session?.user?.id }));
+            .insert({ ...fields, created_by: uid }));
     }
 
-    button.disabled = false;
     if (error) {
+        button.disabled = false;
         notice.className = "notice error";
         notice.textContent = "저장하지 못했습니다: " + error.message;
         return;
     }
 
-    notice.className = "notice";
-    notice.textContent = visitEditId !== null ? "수정했습니다." : "저장했습니다.";
+    // 사진 올리기 — 새 기록·수정 모두(수정은 추가만, 기존 사진은 그대로).
+    let failed = [];
+    if (files.length && visitId !== null) {
+        notice.textContent = `저장했습니다. 사진 ${files.length}장 올리는 중…`;
+        failed = await vpUploadAll(visitId, files, uid);
+    }
+
+    button.disabled = false;
+    const base = visitEditId !== null ? "수정했습니다." : "저장했습니다.";
+    notice.className = failed.length ? "notice error" : "notice";
+    notice.textContent = failed.length
+        ? `${base} 다만 사진 ${failed.length}장은 올리지 못했습니다: ${failed.join(", ")}`
+        : (files.length ? `${base} 사진 ${files.length}장 올림.` : base);
     // 방문자 칸은 비우지 않습니다 — 같은 SV 가 여러 매장을 연달아 입력할 때
     // 매번 이름을 다시 치지 않게(진단 [D]).
     for (const id of ["vs-hygiene", "vs-self-purchase",
@@ -2799,7 +3028,9 @@ function startVisitEdit(row) {
     $("vs-cancel-field").hidden = false;
     const notice = $("vs-notice");
     notice.className = "notice";
-    notice.textContent = `${row.store_name} · ${row.visited_on} 기록을 수정하는 중입니다.`;
+    const photoCount = (visitPhotosByVisit.get(String(row.visit_id)) || []).length;
+    notice.textContent = `${row.store_name} · ${row.visited_on} 기록을 수정하는 중입니다.`
+        + (db.storage ? ` 사진은 추가만 됩니다(지금 ${photoCount}장).` : "");
     $("visit-form-card").scrollIntoView({ behavior: "smooth" });
 }
 
@@ -2818,11 +3049,29 @@ function exitVisitEditMode() {
     visitEditId = null;
     $("vs-submit").textContent = "방문 기록 추가";
     $("vs-cancel-field").hidden = true;
+    // 저장·취소·삭제 어느 길로 나가든 고른 사진은 비웁니다(다음 기록에
+    // 딸려 올라가지 않게).
+    $("vp-files").value = "";
+    vpClearPreview();
 }
 
 async function deleteVisit(row, button) {
-    if (!confirm(`${row.store_name} · ${row.visited_on} 방문 기록을 삭제할까요?`)) return;
+    const photos = visitPhotosByVisit.get(String(row.visit_id)) || [];
+    const ask = `${row.store_name} · ${row.visited_on} 방문 기록을 삭제할까요?`
+        + (photos.length ? ` 사진 ${photos.length}장도 같이 지워집니다.` : "");
+    if (!confirm(ask)) return;
     button.disabled = true;
+
+    // 바이트를 **먼저** 지웁니다 — 행 삭제의 cascade 는 메타(visit_photos)만
+    // 지우고 Storage 는 외래키가 없어 남기 때문입니다(101 [3]). 여기서 실패해도
+    // 기록 삭제는 진행합니다(남는 바이트는 참조 없는 조각 — 안내만).
+    let leftover = 0;
+    if (photos.length && db.storage) {
+        const rm = await db.storage.from(VP_BUCKET)
+            .remove(photos.map((p) => p.object_path));
+        if (rm.error) leftover = photos.length;
+    }
+
     const { error } = await db.from("store_visits").delete()
         .eq("id", Number(row.visit_id));
     button.disabled = false;
@@ -2833,8 +3082,10 @@ async function deleteVisit(row, button) {
         notice.textContent = "삭제하지 못했습니다: " + error.message;
         return;
     }
-    notice.className = "notice";
-    notice.textContent = "삭제했습니다.";
+    notice.className = leftover ? "notice error" : "notice";
+    notice.textContent = leftover
+        ? `삭제했습니다. 다만 사진 파일 ${leftover}장은 지우지 못했습니다(기록에서는 사라짐).`
+        : "삭제했습니다.";
     if (visitEditId === String(row.visit_id)) exitVisitEditMode();
     await refreshVisits();
     await refreshVisitDue();
@@ -2954,6 +3205,7 @@ async function refreshVisits() {
             : `전 매장 최근 ${int(list.length)}건`);
 
     if (!list.length) {
+        visitPhotosByVisit = new Map();
         $("t-visits").innerHTML =
             '<p class="hint">방문 기록이 없습니다. 위 폼에서 추가하면 여기 나타납니다.</p>';
         return;
@@ -2961,6 +3213,8 @@ async function refreshVisits() {
 
     // '보고 복사' 버튼이 원본 행(줄바꿈 포함)을 되찾을 수 있게 담아 둡니다.
     visitRowsCache = new Map(list.map((v) => [String(v.visit_id), v]));
+    // 사진 메타 + 서명 URL 을 한 번에(101). 데모·미적용에서는 빈 Map.
+    visitPhotosByVisit = await fetchVisitPhotos(list.map((v) => v.visit_id));
 
     // 절 안의 항목("- …" / "ㄴ …")이 여러 줄이라 줄바꿈을 살려 그립니다.
     const multiline = (t) => (t ? escape(t).replaceAll("\n", "<br>") : "—");
@@ -2976,7 +3230,7 @@ async function refreshVisits() {
         return html;
     };
     table($("t-visits"),
-        ["매장", "방문일", "방문자", "위생점검", "자점매입", "조리점검", "점주미팅", "특이사항", "동작"],
+        ["매장", "방문일", "방문자", "위생점검", "자점매입", "조리점검", "점주미팅", "특이사항", "사진", "동작"],
         list.map((v) => [
             escape(v.store_name),
             escape(v.visited_on),
@@ -2986,6 +3240,7 @@ async function refreshVisits() {
             multiline(v.cooking_note),
             multiline(v.owner_meeting_note),
             multiline(v.special_note),
+            vpThumbCell(visitPhotosByVisit.get(String(v.visit_id))),
             actions(v),
         ]),
         { html: true });

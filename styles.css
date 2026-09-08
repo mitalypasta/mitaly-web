@@ -682,6 +682,45 @@ header.top h1::before {
     outline-offset: 1px;
 }
 
+/* 방문·점검 사진 첨부(카드 #155, id 접두 vp-). 폼 미리보기와 이력 표 썸네일이
+   같은 옷을 입습니다 — 정사각 잘라내기(object-fit: cover)라 세로·가로 사진이
+   섞여도 줄이 고릅니다. 표 안에서는 한 단계 작게. */
+/* 사진 칸은 제 줄을 통째로 씁니다 — 특이사항 옆에 끼우면 미리보기 높이만큼
+   두 칸의 바닥선이 어긋나 보였습니다. 저장 버튼은 그 아래 줄로 내려갑니다. */
+#vp-field { flex: 1 1 100%; }
+#vp-files {
+    font: inherit;
+    font-size: var(--fs-meta);
+    color: var(--text-secondary);
+}
+.vp-thumbs { display: flex; flex-wrap: wrap; gap: 6px; }
+.vp-thumbs img {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border: 1px solid var(--baseline);
+    border-radius: 6px;
+    background: var(--surface-1);
+}
+/* 표 안에서는 한 줄로(칸이 좁아 세로로 쌓이는 것 방지 — 표는 어차피 가로 스크롤). */
+.tableview .vp-thumbs { gap: 4px; flex-wrap: nowrap; }
+.tableview .vp-thumbs img { width: 48px; height: 48px; }
+.vp-thumb { display: inline-block; line-height: 0; }
+/* 브라우저가 못 그리는 원본(데스크톱의 HEIC 등)은 이름 칩으로 대신합니다. */
+.vp-chip {
+    display: inline-block;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--fs-meta);
+    line-height: 1.3;
+    color: var(--text-secondary);
+    border: 1px dashed var(--baseline);
+    border-radius: 6px;
+    padding: 4px 6px;
+}
+
 /* 식자재·발주(10번) — 발주 상품 검색 입력. .field select 와 같은 옷.
    카드 한정으로 입혀 다른 영역의 텍스트 입력 모양은 그대로 둡니다. */
 #supply-card .field input[type="text"] {
@@ -2351,6 +2390,55 @@ tr.diag-drow td { white-space: normal; }
 @media (max-width: 620px) {
     .grid { grid-template-columns: 1fr; }
     .tile.hero .value { font-size: 36px; }
+
+    /* ---- 모바일 1차(카드 #156, 2026-09-08 실측 375/360px) ----------------
+       ① 메뉴 15개가 5줄로 접혀(232px) 헤더와 함께 첫 화면의 40% 를 먹고,
+          스크롤하면 사라졌습니다 → 한 줄 가로 스크롤 + 화면 위에 고정(sticky).
+          배경은 지면색으로 불투명하게 — 뒤 본문이 비치면 글자가 겹쳐 보입니다.
+       ② 폼 컨트롤이 14px 이하라 iOS 가 포커스 때 화면을 자동 확대합니다
+          → 16px 이상 + 손가락 최소 높이 44px. 방문 폼의 방문자 입력·추가
+          버튼은 스타일이 없는 브라우저 기본형(13.3px·22px)이었습니다.
+       ③ 폼 칸은 한 줄에 하나씩(flex-basis 100%) — 120px 짜리 칸이 두세 개
+          한 줄에 끼어 좁게 찢기던 것을 폅니다.
+       ④ 방문 예정 매장 KPI 4타일이 세로로 쌓여 특이사항 칸이 600px 아래로
+          밀렸습니다 → 2열. 표(9열 nowrap)는 CSS 로 부족해 #157 몫입니다. */
+    /* ①의 메뉴 규칙은 아래 '왼쪽 업무 영역 메뉴' 절 끝에 있습니다 — 기본
+       .sidenav 규칙이 이 블록보다 뒤에 있어 여기 두면 소스 순서로 덮입니다. */
+
+    .field select,
+    .field textarea,
+    .field .combo,
+    .field input[type="month"],
+    .reqform input[type="date"],
+    .reqform input[type="text"],
+    .reqform button {
+        font-size: 16px;
+        min-height: 44px;
+    }
+    /* 방문자 입력처럼 옷이 없던 텍스트 입력도 select 와 같은 옷 — 모바일 한정 */
+    .reqform input[type="text"] {
+        font-family: inherit;
+        padding: 6px 10px;
+        color: var(--text-primary);
+        background: var(--surface-1);
+        border: 1px solid var(--baseline);
+        border-radius: 6px;
+    }
+    .reqform input[type="text"]:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 1px;
+    }
+    .reqform .field { flex: 1 1 100%; }
+    .reqform .field select,
+    .reqform .field .combo,
+    .reqform .field input,
+    .reqform .field textarea,
+    .reqform .field button {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    #visit-store-kpis { grid-template-columns: 1fr 1fr; }
 }
 
 /* 개발 데이터 표시 — 운영이 아닐 때만 나옵니다 (config.js 가 붙입니다).
@@ -2487,6 +2575,26 @@ tr.diag-drow td { white-space: normal; }
 
 @media (prefers-reduced-motion: reduce) {
     .navitem { transition: none; }
+}
+
+/* 모바일(카드 #156) — 메뉴 15개를 한 줄 가로 스크롤로 눕히고 화면 위에
+   고정합니다. 기본 .sidenav 규칙 뒤에 있어야 같은 특이도로 이깁니다. */
+@media (max-width: 620px) {
+    .sidenav {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        background: var(--page);
+        padding-top: 8px;
+        padding-bottom: 10px;
+        margin-bottom: 14px;
+    }
+    .sidenav::-webkit-scrollbar { display: none; }
+    .navitem { flex: none; white-space: nowrap; }
 }
 
 

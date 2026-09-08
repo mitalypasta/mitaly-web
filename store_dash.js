@@ -9,6 +9,10 @@
 // · 폐점 매장도 목록에 있고 배지가 붙습니다(시트 07 — 폐점 과거실적 열람).
 // · 일간 표의 빈칸 = 미영업(자료 없음) · 0 = 0원 기록 — 서버가 null/0 으로
 //   구분해 주는 것을 그대로 그립니다(adoption 6절).
+// · fact_daily 가 비어 있으면(소급 백필 전 — #151) 서버는 그래도 달력 기반
+//   주간 13행(0원)·일간 28행(null)을 돌려줍니다. 행 수로는 못 가리므로
+//   dailyBackfilling() 으로 판정해 전사 hero 와 같은 '일 단위 집계 소급 중'
+//   안내를 그립니다 — 월 총매출(agg_month)은 확정 축이라 그대로.
 
 import { db, fetchStores } from "./client.js";
 import { won, wonFull, int, ymLabel, ymDash, catLabel } from "./format.js";
@@ -27,6 +31,21 @@ let lastStoreId = null;
 
 const pctText = (v, digits = 1) =>
     v == null ? "—" : `${(v * 100).toFixed(digits)}%`;
+
+// 일 단위 집계(fact_daily)가 아직 비어 있는가 — 소급 백필 전(#151).
+// 91 은 fact_daily 가 0행이어도 weekly 13행(amount 0)·daily 28행(amount null)
+// 을 항상 돌려주므로 length 로는 판정이 안 됩니다. 이 매장의 마지막 자료일
+// (last_data_day)이 없거나, 창 안 주간·일간 값이 전부 null·0 이면 빈 것으로
+// 봅니다 — 그때 영업일수 0·일평균 null·주문건수 0 도 '0' 이 아니라 소급 중.
+function dailyBackfilling(d) {
+    if (!d || !d.last_data_day) return true;
+    const weeks = Array.isArray(d.weekly) ? d.weekly : [];
+    const days = Array.isArray(d.daily) ? d.daily : [];
+    const any = (rows) => rows.some((r) =>
+        (r.amount != null && Number(r.amount) !== 0) || Number(r.orders) > 0);
+    return !any(weeks) && !any(days);
+}
+const BACKFILL_HINT = "일 단위 집계 소급 중";
 
 // 증감 셀 — 시트 관례 색(상승 빨강 · 하락 파랑). weekly.js 의 wowCell 과 동일.
 function diffCell(pct) {
@@ -84,15 +103,16 @@ async function refresh() {
 }
 
 function render(d) {
+    const backfilling = dailyBackfilling(d);
     $("sd-meta").textContent =
         `${ymLabel(d.ym)} · 기준일 ${d.anchor_day}`
-        + (d.last_data_day ? ` · 일 단위 자료 ~${d.last_data_day}` : "");
+        + (d.last_data_day ? ` · 일 단위 자료 ~${d.last_data_day}` : ` · ${BACKFILL_HINT}`);
 
     // 기준일 칸에 실제 닻을 되비칩니다(비워 보냈으면 서버 기본값).
     if (!$("sd-day").value) $("sd-day").value = d.anchor_day;
 
     renderInfo(d);
-    renderKpis(d.kpi, d.store);
+    renderKpis(d.kpi, d.store, backfilling);
     renderPnl(d.pnl);
     renderYearSelect(d);
     renderYearly(d);
@@ -116,7 +136,14 @@ function render(d) {
     $("sd-note").textContent =
         "금액은 메뉴 매출 기준(배달 할인 전 · 홀 할인 후)이라 KPI 시트의 "
         + "과거 연도(배달비 포함 총액)와 1:1로 일치하지 않습니다. "
-        + "영업일수·주문건수·주간/일간 추이는 일 단위 집계 기준입니다.";
+        + "영업일수·주문건수·주간/일간 추이는 일 단위 집계 기준입니다. "
+        // #151 — 월 총매출과 일 단위 지표는 축이 다릅니다(소급 백필이 채널별로
+        // 진행돼 일부만 들어온 달이 있을 수 있음 — rpc 에 소스 수가 없어 문구로).
+        + "월 총매출은 확정 축, 일 단위 지표는 소급 진행분입니다."
+        + (backfilling
+            ? ` 지금은 ${BACKFILL_HINT} — 영업일수·일평균·주문건수·주간/일간은 `
+              + "자료가 들어오면 채워집니다."
+            : "");
 }
 
 // ---- ⓐ 매장 기본 정보 ---------------------------------------------------
@@ -163,7 +190,7 @@ const TARGET_BASIS_KO = {
 
 // 금액은 전부 원 단위 그대로 보입니다 — "~~만" 축약만으로 끝내지 않기
 // (2026-08-21 담당자 지시: "정확한 숫자가 필요해").
-function renderKpis(k, store) {
+function renderKpis(k, store, backfilling) {
     const tiles = [];
     // hero(34px) 크기면 원 단위 전체 숫자가 타일 폭을 넘습니다 — 표준 크기로
     // 두고 타일 최소 폭을 넓힙니다(#sd-kpis, styles.css).
@@ -181,17 +208,25 @@ function renderKpis(k, store) {
 
     tiles.push(tile("전월 대비", diffCell(k.mom_pct),
         `전월 ${escape(wonFull(k.prev_sales))}`));
-    tiles.push(tile("영업일수", escape(int(k.business_days)) + "일",
-        "매출이 있는 날 수"));
-    tiles.push(tile("일평균 매출",
-        k.daily_avg != null ? escape(wonFull(k.daily_avg)) : "—", ""));
+    // 소급 중(#151)이면 영업일수 0·일평균 null·주문건수 0 은 '0' 이 아니라
+    // '아직 없음' — 값 자리에 '—' 와 소급 안내를 둡니다.
+    const pending = (value) => backfilling && !(Number(value) > 0);
+    tiles.push(pending(k.business_days)
+        ? tile("영업일수", "—", BACKFILL_HINT)
+        : tile("영업일수", escape(int(k.business_days)) + "일", "매출이 있는 날 수"));
+    tiles.push(pending(k.daily_avg)
+        ? tile("일평균 매출", "—", BACKFILL_HINT)
+        : tile("일평균 매출",
+            k.daily_avg != null ? escape(wonFull(k.daily_avg)) : "—", ""));
     tiles.push(tile("인당 생산성",
         k.per_person != null ? escape(wonFull(k.per_person)) : "—",
         k.per_person == null ? "근무인원 미입력" : ""));
     tiles.push(tile("배달 비중", escape(pctText(k.delivery_share, 1)),
         `홀 ${escape(wonFull(k.hall_sales))} · 배달 ${escape(wonFull(k.delivery_sales))}`));
-    tiles.push(tile("주문 건수", escape(int(k.orders_total)) + "건",
-        `홀 ${escape(int(k.orders_hall))} · 배달 ${escape(int(k.orders_delivery))}`));
+    tiles.push(pending(k.orders_total)
+        ? tile("주문 건수", "—", BACKFILL_HINT)
+        : tile("주문 건수", escape(int(k.orders_total)) + "건",
+            `홀 ${escape(int(k.orders_hall))} · 배달 ${escape(int(k.orders_delivery))}`));
 
     $("sd-kpis").innerHTML = tiles.join("");
 }
@@ -497,6 +532,14 @@ function renderWeekly(d) {
     const weeks = Array.isArray(d.weekly) ? d.weekly : [];
     const dowStart = DOW_KO[d.week_start_dow] || "?";
     const dowEnd = DOW_KO[(((d.week_start_dow || 4) + 5) % 7) + 1] || "?";
+    // 소급 전(#151) — 서버의 달력 13행(전부 0원)을 '13주 0원' 으로 그리지 않고
+    // 전사 hero 와 같은 안내 한 줄로.
+    if (!weeks.length || dailyBackfilling(d)) {
+        $("sd-wk-meta").textContent = `주: ${dowStart}~${dowEnd} · ${BACKFILL_HINT}`;
+        $("t-sd-weekly").innerHTML =
+            `<p class="hint">${BACKFILL_HINT} — 자료가 들어오면 주간 추이가 그려집니다.</p>`;
+        return;
+    }
     $("sd-wk-meta").textContent =
         `주: ${dowStart}~${dowEnd} · 기준일부터 최근 ${weeks.length}주`;
 
@@ -507,23 +550,24 @@ function renderWeekly(d) {
         <td>${diffCell(w.wow_pct)}</td>
         <td>${escape(int(w.orders))}</td>
     </tr>`).join("");
-    $("t-sd-weekly").innerHTML = weeks.length
-        ? `<table><thead><tr><th class="tl">주차</th><th>매출</th>`
-          + `<th>전주비</th><th>주문수</th></tr></thead><tbody>${body}</tbody></table>`
-        : '<p class="hint">아직 일 단위 집계가 없습니다.</p>';
+    $("t-sd-weekly").innerHTML =
+        `<table><thead><tr><th class="tl">주차</th><th>매출</th>`
+        + `<th>전주비</th><th>주문수</th></tr></thead><tbody>${body}</tbody></table>`;
 }
 
 // ---- ⓕ 일간 28일 --------------------------------------------------------
 
 function renderDaily(d) {
     const days = Array.isArray(d.daily) ? d.daily : [];
-    $("sd-daily-meta").textContent = days.length
-        ? `${days[0].day} ~ ${days[days.length - 1].day} · 빈칸 = 미영업`
-        : "";
-    if (!days.length) {
-        $("t-sd-daily").innerHTML = '<p class="hint">아직 일 단위 집계가 없습니다.</p>';
+    // 소급 전(#151) — 달력 28행(전부 null)을 '28일 미영업' 으로 그리지 않습니다.
+    if (!days.length || dailyBackfilling(d)) {
+        $("sd-daily-meta").textContent = BACKFILL_HINT;
+        $("t-sd-daily").innerHTML =
+            `<p class="hint">${BACKFILL_HINT} — 자료가 들어오면 일별 추이가 그려집니다.</p>`;
         return;
     }
+    $("sd-daily-meta").textContent =
+        `${days[0].day} ~ ${days[days.length - 1].day} · 빈칸 = 미영업`;
     const head = days.map((x) => `<th>${escape(md(x.day))}</th>`).join("");
     const dows = days.map((x) =>
         `<td class="${x.dow >= 6 ? "sd-weekend" : ""}">${DOW_KO[x.dow] || ""}</td>`).join("");
@@ -684,14 +728,17 @@ let svtUnit = "month";
 
 function svtEmpty(text) {
     $("svt-legend").innerHTML = "";
-    $("svt-chart").hidden = true;
+    // <svg> 는 HTMLElement 가 아니라 .hidden 프로퍼티가 속성으로 안 내려갑니다
+    // (expando 만 생겨 CSS [hidden] 이 안 먹음 — 이전 단위의 막대가 안내문 위에
+    // 남던 원인, #151 실측). 속성으로 직접 숨깁니다.
+    $("svt-chart").setAttribute("hidden", "");
     $("svt-table").innerHTML = `<p class="hint">${escape(text)}</p>`;
     $("svt-note").textContent = "";
 }
 
 function svtBars(rows) {   // rows: [{label, value}]
     const svg = $("svt-chart");
-    svg.hidden = false;
+    svg.removeAttribute("hidden");
     const c = palette();
     drawBars(svg, { rows, color: c.s1, colors: c });
 }
@@ -773,9 +820,9 @@ function drawSvt() {
     // 주간 — 91 의 weekly(기준일부터 13주, 최신 주 먼저).
     if (svtUnit === "week") {
         const weeks = Array.isArray(last.weekly) ? last.weekly : [];
-        if (!weeks.length) {
+        if (!weeks.length || dailyBackfilling(last)) {   // 달력 13행(0원)도 빈 것(#151)
             meta.textContent = "";
-            svtEmpty("일 단위 집계 소급 중 — 자료가 들어오면 주간 추이가 그려집니다.");
+            svtEmpty(`${BACKFILL_HINT} — 자료가 들어오면 주간 추이가 그려집니다.`);
             return;
         }
         const asc = [...weeks].sort((a, b) =>
@@ -797,9 +844,9 @@ function drawSvt() {
     // 일별 — 91 의 daily(최근 28일, 오래된 날 먼저 · null = 미영업).
     if (svtUnit === "day") {
         const days = Array.isArray(last.daily) ? last.daily : [];
-        if (!days.length) {
+        if (!days.length || dailyBackfilling(last)) {   // 달력 28행(null)도 빈 것(#151)
             meta.textContent = "";
-            svtEmpty("일 단위 집계 소급 중 — 자료가 들어오면 일별 추이가 그려집니다.");
+            svtEmpty(`${BACKFILL_HINT} — 자료가 들어오면 일별 추이가 그려집니다.`);
             return;
         }
         meta.textContent =
@@ -1103,7 +1150,7 @@ export async function initStoreDash() {
             drawYearCharts(last);
         }
         const svt = $("svt-chart");
-        if (svt && !svt.hidden && svt.clientWidth > 0
+        if (svt && !svt.hasAttribute("hidden") && svt.clientWidth > 0
             && Math.abs(svt.clientWidth - svt.viewBox.baseVal.width) > 2) {
             drawSvt();
         }

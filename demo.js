@@ -259,6 +259,9 @@ const STORES = Array.from({ length: 94 }, (_, i) => ({
     trade_area: AREAS[i % AREAS.length],
     weight: 0.45 + rand() * 1.1,
 }));
+// #151 — 매장 대시보드(api_store_dashboard) 에서 'fact_daily 빈'(소급 백필 전)
+// 상태를 재현하는 매장. 월 집계는 그대로, 일 단위 집계만 없습니다(샘플94점).
+const DEMO_FACT_DAILY_EMPTY_STORES = new Set([94]);
 
 const MONTHS = (() => {
     const out = [];
@@ -873,18 +876,43 @@ function computeAccountPresence() {
     return { channels: AP_CHANNELS, stores, totals };
 }
 
-// ---- 오픈·폐점 기록 데모 (27_store_lifecycle.sql) -------------------------
+// ---- 오픈·폐점 기록 데모 (27_store_lifecycle.sql · 103_store_status.sql) ------
 //
-// 샘플07점은 작년 오픈·이번 달 폐점 두 건을 다 넣어 뒀습니다 — "현재 상태"
+// 샘플07점은 작년 오픈·이번 달 폐점 두 건을 다 넣어 뒀습니다 — "매장 상태"
 // 표에는 최근 이벤트(폐점)만 보이고, "올해 요약"에는 폐점 1건만 잡히는지
 // (작년 오픈은 안 잡히는지) 확인할 수 있게.
+// 103(카드 #159) 4종 이벤트: 샘플93점은 오픈 예정(매출 없음), 샘플05점은
+// 폐점 예정. 샘플08점은 기록 없이 매출이 끊긴 '폐점 후보', 샘플94점은
+// 기록·매출 둘 다 없는 매장으로 둬 상태 표의 힌트 두 갈래가 다 보이게 합니다.
 let storeLifecycleEvents = [
     { id: 1, store: "샘플03점", event_type: "open", event_date: dateOffset(-190), note: "신규 오픈" },
     { id: 2, store: "샘플12점", event_type: "close", event_date: dateOffset(-15), note: "임대 계약 종료" },
     { id: 3, store: "샘플07점", event_type: "open", event_date: dateOffset(-500), note: null },
     { id: 4, store: "샘플07점", event_type: "close", event_date: dateOffset(-40), note: "리뉴얼 공사로 임시 폐점" },
+    { id: 5, store: "샘플93점", event_type: "planned_open", event_date: dateOffset(20), note: "10월 오픈 예정" },
+    { id: 6, store: "샘플05점", event_type: "planned_close", event_date: dateOffset(12), note: "임대 만료 예정" },
 ];
-let nextLifecycleId = 5;
+let nextLifecycleId = 7;
+
+// 마지막 매출월 데모 — 기본은 자료 최신월(MONTHS 끝). 몇 곳만 끊어 둡니다.
+const DEMO_DATA_YM = MONTHS[MONTHS.length - 1];
+function ymMonths(ym) { return Math.floor(ym / 100) * 12 + (ym % 100); }
+function ymShift(ym, months) {
+    const t = ymMonths(ym) - 1 + months;
+    return Math.floor(t / 12) * 100 + (t % 12) + 1;
+}
+const DEMO_LAST_SALES_YM = new Map([
+    ["샘플12점", ymShift(DEMO_DATA_YM, -3)],   // 폐점 기록 있음 · 매출도 끊김
+    ["샘플07점", ymShift(DEMO_DATA_YM, -1)],
+    ["샘플08점", ymShift(DEMO_DATA_YM, -5)],   // 기록 없이 매출 끊김 → 폐점 후보 힌트
+    ["샘플93점", null],                        // 오픈 예정 · 매출 없음
+    ["샘플94점", null],                        // 기록·매출 둘 다 없음
+]);
+// 103 의 mitaly_lifecycle_state 미러 — 이벤트 종류 → 상태 5값.
+const LIFECYCLE_STATE = {
+    open: "operating", close: "closed",
+    planned_open: "planned_open", planned_close: "planned_close",
+};
 
 function computeStoreLifecycle(pStore, pLimit) {
     return storeLifecycleEvents
@@ -897,20 +925,40 @@ function computeStoreLifecycle(pStore, pLimit) {
         }));
 }
 
+// 103: 전 매장이 나옵니다. status(기존 키)는 마지막 이벤트 종류 그대로(없으면
+// null), state 가 5값. p_status 는 옛 이름(open/close)·새 이름(operating/closed…)
+// 둘 다 받습니다 — 실제 함수와 같은 규칙.
 function computeLifecycleStatus(pStatus) {
     const latestByStore = new Map();
     for (const e of [...storeLifecycleEvents].sort(
         (a, b) => a.event_date.localeCompare(b.event_date) || (a.id - b.id))) {
         latestByStore.set(e.store, e);
     }
-    return [...latestByStore.values()]
-        .filter((e) => !pStatus || e.event_type === pStatus)
-        .sort((a, b) => b.event_date.localeCompare(a.event_date))
-        .map((e) => ({
-            store_id: null, store_name: e.store, status: e.event_type,
-            since: e.event_date,
-            days_since: Math.round((Date.now() - new Date(e.event_date).getTime()) / 86400000),
-        }));
+    const rows = STORES.map((s) => {
+        const e = latestByStore.get(s.name) || null;
+        const lastYm = DEMO_LAST_SALES_YM.has(s.name)
+            ? DEMO_LAST_SALES_YM.get(s.name) : DEMO_DATA_YM;
+        return {
+            store_id: s.id, store_name: s.name,
+            status: e ? e.event_type : null,
+            since: e ? e.event_date : null,
+            days_since: e
+                ? Math.round((Date.now() - new Date(e.event_date).getTime()) / 86400000)
+                : null,
+            state: e ? LIFECYCLE_STATE[e.event_type] : "unknown",
+            note: e ? e.note : null,
+            last_sales_ym: lastYm,
+            sales_gap_months: lastYm == null ? null : ymMonths(DEMO_DATA_YM) - ymMonths(lastYm),
+            data_ym: DEMO_DATA_YM,
+        };
+    });
+    return rows
+        .filter((r) => !pStatus || r.status === pStatus || r.state === pStatus)
+        .sort((a, b) => {
+            if (a.since && b.since) return b.since.localeCompare(a.since);
+            if (a.since || b.since) return a.since ? -1 : 1;
+            return a.store_name.localeCompare(b.store_name);
+        });
 }
 
 function computeLifecycleSummary(pYear) {
@@ -2731,6 +2779,10 @@ const HANDLERS = {
     api_board_notice: ({ p_article_no }) => computeBoardNotice(p_article_no),
 
     api_store_visits: ({ p_store, p_limit }) => computeStoreVisits(p_store || null, p_limit),
+    // 101_visit_photos.sql — 데모 클라이언트에는 db.storage 가 없어 app.js 가
+    // 이 rpc 를 부르지 않지만(파일 처리 통째로 건너뜀), 부르더라도 빈 배열이
+    // 되게 스텁을 둡니다. 사진 열은 데모에서 전부 '—' 입니다.
+    api_visit_photos: () => [],
 
     // 34_account_health.sql — jsonb 스칼라라 객체를 그대로 돌려줍니다.
     // 세 상태(ok/warn/fail)가 화면에서 어떻게 보이는지 다 섞어 뒀습니다.
@@ -3394,6 +3446,11 @@ const HANDLERS = {
     api_store_dashboard: ({ p_store_id, p_ym, p_anchor_day, p_year }) => {
         const store = STORES.find((s) => s.id === Number(p_store_id));
         if (!store) return { ok: false, reason: "매장을 찾지 못했습니다" };
+        // #151 — 'fact_daily 빈' 변형(소급 백필 전 prod 실측 재현). 마지막 데모
+        // 매장은 월 집계(agg_month)만 있고 일 단위 집계가 없어, 서버 91 처럼
+        // last_data_day null · 주간 13행 0원 · 일간 28행 null · 영업일수 0 ·
+        // 주문 0 을 돌려줍니다. 화면은 이를 '일 단위 집계 소급 중' 으로 그려야 함.
+        const factDailyEmpty = DEMO_FACT_DAILY_EMPTY_STORES.has(store.id);
         const ym = Number(p_ym);
         if (!ym || ym < 202001 || ym > 209912 || ym % 100 < 1 || ym % 100 > 12) {
             return { ok: false, reason: `기준월(YYYYMM)이 올바르지 않습니다: ${p_ym ?? "(빈 값)"}` };
@@ -3407,6 +3464,7 @@ const HANDLERS = {
         // 이유). 13일에 한 번쯤 미영업(null), 드물게 0원 기록 — 화면의
         // '빈칸 = 미영업 · 0 = 0원' 구분이 데모에서도 보이게 섞습니다.
         const dayAmount = (isoDay) => {
+            if (factDailyEmpty) return null;                  // #151 소급 전
             const h = hashSeed(`${store.name}|${isoDay}`);
             const dym = Number(isoDay.slice(0, 4)) * 100 + Number(isoDay.slice(5, 7));
             const monthly = demoStoreSales(dym, store);
@@ -3420,11 +3478,13 @@ const HANDLERS = {
         };
 
         // 실물의 fact_daily 마지막 날 = 데모 데이터 범위(MONTHS)의 마지막 달 말일.
-        const lastDataDay = iso(monthEnd(MONTHS[MONTHS.length - 1]));
+        // 소급 전 변형(#151)은 null — 91 의 닻 규칙(coalesce(v_last_day, 월말)).
+        const lastDataDay = factDailyEmpty ? null : iso(monthEnd(MONTHS[MONTHS.length - 1]));
         let anchor = p_anchor_day
             ? new Date(p_anchor_day + "T00:00:00")
             : new Date(Math.min(monthEnd(ym).getTime(),
-                                new Date(lastDataDay + "T00:00:00").getTime()));
+                                lastDataDay ? new Date(lastDataDay + "T00:00:00").getTime()
+                                            : monthEnd(ym).getTime()));
         if (!p_anchor_day && iso(anchor) < iso(new Date(Math.floor(ym / 100), ym % 100 - 1, 1))) {
             anchor = monthEnd(ym);
         }
@@ -3447,8 +3507,9 @@ const HANDLERS = {
         const manual = demoTargetOverrides.get(`${store.id}|${ym}`);
         const auto = demoAutoTarget(store, ym);
         const target = manual != null ? manual : auto.target;
-        const ordersHall = Math.round(hall / 23_000);
-        const ordersDelivery = Math.round(delivery / 27_000);
+        // 주문 건수는 실물에서 fact_daily 합 — 소급 전 변형은 0(#151).
+        const ordersHall = factDailyEmpty ? 0 : Math.round(hall / 23_000);
+        const ordersDelivery = factDailyEmpty ? 0 : Math.round(delivery / 27_000);
         const profile = storeProfiles.find((p) => p.store_id === store.id) || null;
 
         const kpi = {
