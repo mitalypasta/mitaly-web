@@ -721,6 +721,56 @@ header.top h1::before {
     padding: 4px 6px;
 }
 
+/* ---- 방문 이력·방문 대상 표의 모바일 카드(카드 #157) --------------------
+   app.js 의 refreshVisits·refreshVisitDue 가 표(table)와 카드 목록(.vm-cards)
+   을 같은 컨테이너(.vm-host)에 둘 다 그려 둡니다. 어느 쪽을 보일지는 아래
+   media 하나가 정합니다 — 리사이즈·회전에 재렌더가 없습니다. 데스크톱은 이
+   블록의 첫 줄(카드 숨김)만 적용돼 표가 전과 같습니다. */
+.vm-cards { display: none; }
+
+@media (max-width: 620px) {
+    /* 카드는 안쪽 스크롤 상자(320px)가 아니라 페이지 흐름으로 */
+    .tableview.vm-host { max-height: none; overflow: visible; }
+    .tableview.vm-host > table { display: none; }
+    .vm-cards { display: grid; gap: 10px; }
+    .vm-card {
+        display: grid;
+        gap: 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--surface-1);
+    }
+    .vm-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 4px 8px;
+    }
+    .vm-store { font-size: 15px; color: var(--text-primary); }
+    .vm-meta { font-size: var(--fs-meta); color: var(--text-secondary); }
+    .vm-line { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+    /* 5항목 — 왼쪽 짧은 라벨 열 + 본문. 줄바꿈은 표와 같이 <br> 로 살립니다. */
+    .vm-notes {
+        display: grid;
+        grid-template-columns: 4.5em 1fr;
+        gap: 4px 8px;
+        font-size: var(--fs-body);
+    }
+    .vm-note { display: contents; }
+    .vm-note-k { color: var(--text-muted); font-size: var(--fs-meta); padding-top: 2px; }
+    .vm-note-v { color: var(--text-primary); overflow-wrap: anywhere; white-space: normal; }
+    /* 표 안 규칙(.tableview .vp-thumbs nowrap·48px)을 카드에서는 되돌립니다. */
+    .vm-host .vm-cards .vp-thumbs { flex-wrap: wrap; gap: 6px; }
+    .vm-host .vm-cards .vp-thumbs img { width: 56px; height: 56px; }
+    .vm-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .vm-actions button { min-height: 40px; }
+    /* 방문 대상 카드는 매장 수만큼(≤100장) 쌓이므로 납작하게 — 메타 줄 오른쪽에 '기록'. */
+    .vm-card.vm-due { grid-template-columns: 1fr auto; align-items: center; }
+    .vm-due .vm-head { grid-column: 1 / -1; }
+}
+
 /* 식자재·발주(10번) — 발주 상품 검색 입력. .field select 와 같은 옷.
    카드 한정으로 입혀 다른 영역의 텍스트 입력 모양은 그대로 둡니다. */
 #supply-card .field input[type="text"] {
@@ -1953,6 +2003,7 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
 /* 카드 안 검색줄 — 전 품목처럼 행이 많은 표에 답니다. */
 .cardsearch {
     display: flex;
+    flex-wrap: wrap;        /* 리뷰 필터줄 체크박스 3개가 375px 에서 넘쳤음(#154) */
     align-items: center;
     gap: 10px;
     margin-bottom: 8px;

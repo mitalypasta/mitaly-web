@@ -6,6 +6,15 @@
 // 대기가 아니라 웹에서 직접 넣습니다(큐 #92). 쓰기는 76 의 DEFINER 함수 2종
 // (api_ad_spend_save·api_ad_spend_delete)만 부릅니다. 엑셀 반입과 같은 표에
 // 공존하고 출처는 source 로 갈립니다('web' vs 파일명).
+//
+// 배달앱 광고 콘솔 자동 수집(카드 #164 수집기 → #165 반입 도구): 배민은
+// 우리가게클릭(CPC)만, 쿠팡이츠 광고센터·요기요 추천광고는 집행액·노출·클릭.
+// 그 외 채널(네이버·인스타그램 등)은 여전히 수기. 출처는 응답 행의 source 로
+// 갈립니다 — 'web' | 'platform:<채널>' | 파일명(엑셀 반입). 같은
+// (월·매장·채널·캠페인)에 플랫폼 반입이 오면 수기 행을 덮습니다(담당자 결정
+// 2026-09-08). ROAS 는 106 이 더한 ad_sales_won(광고 경유 매출) ÷ cost 로,
+// 두 값이 다 있는 행만 씁니다. 106 적용 전에는 source·ad_sales_won 이
+// undefined 로 오므로 화면은 '—' 로 비웁니다(카드 #166).
 
 import { db, fetchStores } from "./client.js";
 import { won, wonFull, int, ymLabel, ymDash } from "./format.js";
@@ -14,6 +23,49 @@ import { table, $, searchify } from "./dom.js";
 
 // 매장 보기(아래)가 같은 응답을 다시 쓰려고 마지막 rows 를 들고 있습니다.
 let adsRows = [];
+
+// 출처 표기 — 'web' 은 화면 입력, 'platform:배민' 류는 수집기 자동 반입,
+// 그 밖의 문자열은 엑셀 반입 파일명. 106 적용 전(undefined/null)은 '—'.
+export function adSourceLabel(source) {
+    if (source == null || source === "") return "—";
+    if (source === "web") return "웹 입력";
+    if (String(source).startsWith("platform:")) {
+        return "플랫폼 자동 · " + escape(String(source).slice("platform:".length) || "?");
+    }
+    return "반입 · " + escape(String(source));
+}
+
+// ROAS = 광고 경유 매출 ÷ 광고비. ad_sales_won 과 cost 가 둘 다 있는(양쪽 다
+// null 이 아니고 cost > 0) 행만 합산합니다 — 한쪽만 있는 행을 섞으면 비율이
+// 왜곡됩니다. 계산 가능한 행이 없으면 null.
+export function adRoas(rows) {
+    let sales = 0, cost = 0, n = 0;
+    for (const r of rows) {
+        if (r.ad_sales_won == null || r.cost == null) continue;
+        const c = Number(r.cost);
+        if (!(c > 0)) continue;
+        sales += Number(r.ad_sales_won) || 0;
+        cost += c;
+        n += 1;
+    }
+    return n ? { roas: sales / cost, sales, cost, n } : null;
+}
+
+function roasText(result) {
+    if (!result) return "—";
+    return `${result.roas.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}배`;
+}
+
+function roasSub(result, total) {
+    if (!result) return "광고 경유 매출이 있는 행이 없습니다";
+    const scope = result.n === total ? "전체" : `${int(result.n)}/${int(total)}행`;
+    return `${scope} · 경유 매출 ${escape(won(result.sales))} ÷ 광고비 ${escape(won(result.cost))}`;
+}
+
+// 안내문 — 어느 채널이 자동이고 어느 채널이 수기인지(#166 · #162 문구 대체).
+const AD_AUTO_NOTE =
+    "배민(우리가게클릭)·쿠팡이츠·요기요 광고비는 자동 수집됩니다 — "
+    + "그 외 채널은 수기로 넣거나 엑셀 양식으로 반입합니다.";
 
 async function loadAds() {
     const { data, error } = await db.rpc("api_ad_spend", {});
@@ -34,7 +86,9 @@ async function loadAds() {
         $("ads-kpis").hidden = true;
         $("t-ads-channel").innerHTML = "";
         $("t-ads").innerHTML =
-            '<p class="hint">아직 넣은 광고 자료가 없습니다. 위 칸에서 추가하세요.</p>';
+            '<p class="hint">' + AD_AUTO_NOTE
+            + " 아직 들어온 자료가 없습니다. 자동 수집분은 반입되면 여기에 나타나고, "
+            + "수기 채널은 위 칸에서 추가하세요.</p>";
         return;
     }
 
@@ -48,6 +102,11 @@ async function loadAds() {
     $("ads-impressions").textContent = int(summary.impressions);
     $("ads-clicks").textContent = int(summary.clicks);
     $("ads-orders").textContent = int(summary.orders);
+    // ROAS 는 서버 summary 가 아니라 rows 에서 셉니다 — 106 이 summary 에
+    // 무엇을 더하든 '둘 다 있는 행만' 규칙을 화면이 스스로 지킵니다.
+    const roas = adRoas(rows);
+    $("ad166-roas").textContent = roasText(roas);
+    $("ad166-roas-sub").innerHTML = roasSub(roas, rows.length);
 
     const byChannel = Array.isArray(data.by_channel) ? data.by_channel : [];
     table($("t-ads-channel"), ["채널", "광고비", "노출 수", "클릭 수", "광고로 들어온 주문"],
@@ -55,14 +114,15 @@ async function loadAds() {
                               int(c.clicks), int(c.orders)]));
     table($("t-ads"),
         ["월", "매장", "채널", "광고 이름", "광고비", "노출 수", "클릭 수",
-         "광고로 들어온 주문", "출처", ""],
+         "광고로 들어온 주문", "광고 경유 매출", "출처", ""],
         rows.map((r) => [
             ymLabel(r.ym), escape(r.store), escape(r.channel),
             escape(r.campaign || "—"), wonFull(r.cost),
             r.impressions == null ? "—" : int(r.impressions),
             r.clicks == null ? "—" : int(r.clicks),
             r.orders == null ? "—" : int(r.orders),
-            r.source === "web" ? "웹 입력" : escape(r.source || "반입"),
+            r.ad_sales_won == null ? "—" : wonFull(r.ad_sales_won),
+            adSourceLabel(r.source),
             `<button type="button" class="ghost" data-act="del" data-id="${r.id}"`
                 + ` data-label="${escape(r.store)} ${ymLabel(r.ym)} ${escape(r.channel)}">삭제</button>`,
         ]),
@@ -152,8 +212,8 @@ function renderAdsStoreAds(name) {
     if (!mine.length) {
         $("adv-kpis").innerHTML = "";
         hint.hidden = false;
-        hint.textContent = "이 매장의 광고 집행 자료가 아직 없습니다 — "
-            + "아래 '광고 집행 현황'에서 넣으면 여기에 잡힙니다.";
+        hint.textContent = "이 매장의 광고 집행 자료가 아직 없습니다. "
+            + AD_AUTO_NOTE + " 수기 채널은 아래 '광고 집행 현황'에서 넣으세요.";
         $("t-adv-ads").innerHTML = "";
         return;
     }
@@ -166,17 +226,19 @@ function renderAdsStoreAds(name) {
         asTile("노출 수", escape(int(sum("impressions"))), ""),
         asTile("클릭 수", escape(int(sum("clicks"))), ""),
         asTile("광고로 들어온 주문", escape(int(sum("orders"))), ""),
+        asTile("ROAS", roasText(adRoas(mine)), roasSub(adRoas(mine), mine.length)),
     ].join("");
     table($("t-adv-ads"),
         ["월", "채널", "광고 이름", "광고비", "노출 수", "클릭 수",
-         "광고로 들어온 주문", "출처"],
+         "광고로 들어온 주문", "광고 경유 매출", "출처"],
         mine.map((r) => [
             ymLabel(r.ym), escape(r.channel), escape(r.campaign || "—"),
             wonFull(r.cost),
             r.impressions == null ? "—" : int(r.impressions),
             r.clicks == null ? "—" : int(r.clicks),
             r.orders == null ? "—" : int(r.orders),
-            r.source === "web" ? "웹 입력" : escape(r.source || "반입"),
+            r.ad_sales_won == null ? "—" : wonFull(r.ad_sales_won),
+            adSourceLabel(r.source),
         ]),
         { html: true });
 }

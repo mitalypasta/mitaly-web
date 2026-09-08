@@ -67,6 +67,14 @@ const DEMO_REVIEWS = [
       order_count: 3, menus: [{ name: "마르게리따 피자" }],
       images: ["demo1.jpg"], delivery_review: { recommendation: "GOOD", contents: [] },
       can_reply: true, can_report: true, replies: [], drafts: [] },
+    // 플랫폼에서 내려간 리뷰(#154 — 105_review_hidden.sql hidden_at). 답글 없음
+    // 이지만 '미답변' 이 아니고, 요약의 미답변·별점 분포에서도 빠져야 합니다.
+    { id: 6, platform: "쿠팡이츠", store: "샘플02점", rating: 1,
+      contents: "주문한 메뉴가 안 왔어요. (이 리뷰는 이후 플랫폼에서 내려갔습니다)",
+      author_name: "샘플닉네임6", written_at: "2026-07-19T21:10:00+09:00",
+      order_count: 1, menus: [{ name: "봉골레 파스타" }],
+      images: [], delivery_review: null, can_reply: true, can_report: null,
+      hidden_at: "2026-07-25T09:12:00+09:00", replies: [], drafts: [] },
 ];
 
 // 레시피 데모(32_recipes.sql) — 실제 원가분석 반입분과 같은 필드 이름을 씁니다.
@@ -131,17 +139,22 @@ const DEMO_SUPPLY_PRODUCTS = [
     { category: "기타", exclusive: "비전용", code: null, product: "케찹 3.3kg", spec: "PK.(3.3kg)", ship_unit: "pk", spec_grams: 3300 },
 ];
 
-// 광고 데모(48_ad_spend.sql) — 실서버는 자료 반입 전이라 빈 표가 정상이고,
-// 데모는 반대로 '채워진' 화면이 제대로 그려지는지 봅니다.
+// 광고 데모(48_ad_spend.sql + 76 source + 106 ad_sales_won) — 실서버는 자료
+// 반입 전이라 빈 표가 정상이고, 데모는 반대로 '채워진' 화면이 제대로
+// 그려지는지 봅니다. #166: 출처 4갈래(web · platform:배민/쿠팡이츠/요기요 ·
+// 엑셀 파일명)와 광고 경유 매출(ad_sales_won)이 있는 행·없는 행·키 자체가
+// 없는 행(106 적용 전 응답 흉내)을 섞어 ROAS 가 '둘 다 있는 행만' 세는지 봅니다.
 const DEMO_ADS = [
-    { id: 1, ym: 202607, store: "샘플01점", channel: "배민", campaign: "우리가게클릭", cost: 330000, impressions: 41200, clicks: 1180, orders: 96, source: "web" },
-    { id: 2, ym: 202607, store: "샘플01점", channel: "쿠팡이츠", campaign: "매장 부스트", cost: 210000, impressions: 28800, clicks: 640, orders: 51, source: "web" },
-    { id: 3, ym: 202607, store: "샘플02점", channel: "배민", campaign: "우리가게클릭", cost: 275000, impressions: 35400, clicks: 990, orders: 74, source: "web" },
-    { id: 4, ym: 202607, store: "샘플03점", channel: "요기요", campaign: "", cost: 120000, impressions: 15100, clicks: 310, orders: 22, source: "web" },
-    { id: 5, ym: 202606, store: "샘플01점", channel: "배민", campaign: "우리가게클릭", cost: 310000, impressions: 39900, clicks: 1050, orders: 88, source: "web" },
-    { id: 6, ym: 202606, store: "샘플02점", channel: "쿠팡이츠", campaign: "매장 부스트", cost: 190000, impressions: 24500, clicks: 570, orders: 43, source: "web" },
+    { id: 1, ym: 202607, store: "샘플01점", channel: "배민", campaign: "우리가게클릭", cost: 330000, impressions: null, clicks: 1180, orders: 96, ad_sales_won: 1254000, source: "platform:배민" },
+    { id: 2, ym: 202607, store: "샘플01점", channel: "쿠팡이츠", campaign: "매장 부스트", cost: 210000, impressions: 28800, clicks: 640, orders: 51, ad_sales_won: 693000, source: "platform:쿠팡이츠" },
+    { id: 3, ym: 202607, store: "샘플02점", channel: "배민", campaign: "우리가게클릭", cost: 275000, impressions: null, clicks: 990, orders: 74, ad_sales_won: 962500, source: "platform:배민" },
+    { id: 4, ym: 202607, store: "샘플03점", channel: "요기요", campaign: "추천광고", cost: 120000, impressions: 15100, clicks: 310, orders: 22, ad_sales_won: 348000, source: "platform:요기요" },
+    { id: 5, ym: 202606, store: "샘플01점", channel: "배민", campaign: "우리가게클릭", cost: 310000, impressions: 39900, clicks: 1050, orders: 88, ad_sales_won: null, source: "web" },
+    { id: 6, ym: 202606, store: "샘플02점", channel: "쿠팡이츠", campaign: "매장 부스트", cost: 190000, impressions: 24500, clicks: 570, orders: 43, ad_sales_won: null, source: "광고비_202606.xlsx" },
+    // 106 적용 전 응답 흉내 — source·ad_sales_won 키 자체가 없음 → 화면은 '—'.
+    { id: 7, ym: 202606, store: "샘플03점", channel: "네이버", campaign: "플레이스 광고", cost: 80000, impressions: null, clicks: null, orders: null },
 ];
-let nextAdId = 7;
+let nextAdId = 8;
 
 // 점주 연락처 데모(44_store_contacts.sql) — 전부 가짜 값입니다.
 const demoContacts = [
@@ -2378,7 +2391,8 @@ const HANDLERS = {
     // 실제 응답과 같은 모양(jsonb 한 줄)으로 돌려줍니다.
     api_reviews: (args) => {
         let rows = DEMO_REVIEWS;
-        if (args.p_unanswered_only) rows = rows.filter((r) => !r.replies.length);
+        // 미답변 = 답글 없음 + 아직 플랫폼에 떠 있음(105 와 같은 판정).
+        if (args.p_unanswered_only) rows = rows.filter((r) => !r.replies.length && !r.hidden_at);
         if (args.p_platform) rows = rows.filter((r) => r.platform === args.p_platform);
         if (args.p_min_rating != null) rows = rows.filter((r) => r.rating >= args.p_min_rating);
         if (args.p_max_rating != null) rows = rows.filter((r) => r.rating <= args.p_max_rating);
@@ -2394,11 +2408,13 @@ const HANDLERS = {
         const rows = HANDLERS.api_reviews({ ...args, p_unanswered_only: false })[0].items;
         const byRating = new Map();
         const byPlatform = new Map();
+        // 내려간 리뷰(hidden_at)는 미답변·별점 분포에서 빠집니다(105 와 같은 규칙).
         for (const r of rows) {
-            byRating.set(r.rating, (byRating.get(r.rating) || 0) + 1);
-            const p = byPlatform.get(r.platform) || { count: 0, unanswered: 0 };
+            if (!r.hidden_at) byRating.set(r.rating, (byRating.get(r.rating) || 0) + 1);
+            const p = byPlatform.get(r.platform) || { count: 0, unanswered: 0, hidden: 0 };
             p.count += 1;
-            if (!r.replies.length) p.unanswered += 1;
+            if (r.hidden_at) p.hidden += 1;
+            else if (!r.replies.length) p.unanswered += 1;
             byPlatform.set(r.platform, p);
         }
         const total = rows.length;
@@ -2407,7 +2423,8 @@ const HANDLERS = {
             : null;
         return [{ summary: {
             total,
-            unanswered: rows.filter((r) => !r.replies.length).length,
+            hidden: rows.filter((r) => r.hidden_at).length,
+            unanswered: rows.filter((r) => !r.replies.length && !r.hidden_at).length,
             avg_rating: avg,
             by_rating: [...byRating.entries()]
                 .map(([rating, count]) => ({ rating, count }))
@@ -3816,7 +3833,8 @@ const HANDLERS = {
             summary: { cost: sum(DEMO_ADS, "cost"),
                        impressions: sum(DEMO_ADS, "impressions"),
                        clicks: sum(DEMO_ADS, "clicks"),
-                       orders: sum(DEMO_ADS, "orders") },
+                       orders: sum(DEMO_ADS, "orders"),
+                       ad_sales_won: sum(DEMO_ADS, "ad_sales_won") },
             by_channel: channels,
             rows: [...DEMO_ADS].sort((a, b) => b.ym - a.ym),
         };
@@ -3845,6 +3863,7 @@ const HANDLERS = {
             impressions: numOrNull(p_impressions),
             clicks: numOrNull(p_clicks),
             orders: numOrNull(p_orders),
+            ad_sales_won: null,   // 수기 행에는 광고 경유 매출이 없습니다(106)
             source: "web",
         };
         if (existing) {

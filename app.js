@@ -338,7 +338,7 @@ async function initDashboard() {
     $("sales-export").addEventListener("click", runSalesExport);
 
     // 리뷰 필터는 서버에서 걸러야 하므로 다시 받습니다.
-    for (const id of ["rv-unanswered", "rv-drafts-only", "rv-platform", "rv-rating"]) {
+    for (const id of ["rv-unanswered", "rv-drafts-only", "rv-hide-hidden", "rv-platform", "rv-rating"]) {
         $(id).addEventListener("change", load);
     }
 
@@ -1337,8 +1337,9 @@ function drawHomeNegReviews(negRes, sumRes) {
         return;
     }
     // 부정 리뷰 = 별점 3점 이하(앱 공통 정의). 새로 들어온 순으로 보입니다.
+    // 플랫폼에서 내려간 리뷰(hidden_at, #154)는 요약 by_rating 이 빼므로 목록도 뺍니다.
     const rows = (((negRes.data || [])[0] || {}).items || [])
-        .filter((r) => Number(r.rating) <= 3)
+        .filter((r) => Number(r.rating) <= 3 && !r.hidden_at)
         .sort((a, b) => String(b.written_at || "").localeCompare(String(a.written_at || "")));
 
     // 전수는 요약(by_rating)으로 셉니다 — 목록은 limit 에 걸릴 수 있습니다.
@@ -1544,11 +1545,19 @@ function drawReviews(d, c) {
     if ($("rv-drafts-only").checked) {
         rows = rows.filter((r) => (r.drafts || []).length);
     }
+    // '내려간 리뷰 숨기기' — 플랫폼에서 삭제·블라인드된 리뷰(hidden_at, #154)는
+    // 기본으로 보이되 회색 배지가 붙고, 이 필터로 뺄 수 있습니다(클라이언트 필터 —
+    // 요약의 미답변·별점 분포는 서버(105)가 이미 뺀 값입니다).
+    if ($("rv-hide-hidden").checked) {
+        rows = rows.filter((r) => !r.hidden_at);
+    }
 
     const total = Number(summary.total) || 0;
+    const hiddenCount = Number(summary.hidden) || 0;
     $("review-summary").textContent = total
         ? `${int(total)}건 · 평균 ${summary.avg_rating ?? "—"}점 · `
           + `미답변 ${int(summary.unanswered || 0)}건`
+          + (hiddenCount ? ` · 내려감 ${int(hiddenCount)}건` : "")
         : "이 기간에 받아온 리뷰가 없습니다";
 
     // 플랫폼 목록은 요약이 알려주는 대로 채웁니다(수집된 것만 보이게).
@@ -1644,6 +1653,9 @@ function drawReviews(d, c) {
         const repeat = Number(r.order_count) || 0;
         const replies = r.replies || [];
         const low = Number(r.rating) <= 3;
+        // 플랫폼에서 내려간 리뷰 — 답글을 달 수 없으니 '미답변' 배지 대신 회색
+        // 배지, 'AI 시안 준비 전' 도 붙이지 않습니다(#154).
+        const hidden = !!r.hidden_at;
 
         return `<article class="rvitem${low ? " low" : ""}">
             <div class="rvhead">
@@ -1651,7 +1663,8 @@ function drawReviews(d, c) {
               <span class="rvscore">${r.rating ?? "—"}</span>
               <span class="rvmeta">${escape(r.store || "")} · ${escape(r.platform || "")} · ${when}</span>
               ${repeat > 1 ? `<span class="tag">재주문 ${repeat}회</span>` : ""}
-              ${replies.length ? "" : '<span class="tag warn">미답변</span>'}
+              ${hidden ? '<span class="tag" title="플랫폼에서 삭제·블라인드된 리뷰">플랫폼에서 내려감</span>'
+                       : replies.length ? "" : '<span class="tag warn">미답변</span>'}
             </div>
             ${r.contents ? `<p class="rvbody">${escape(r.contents)}</p>` : ""}
             ${menus.length ? `<p class="rvmenus">${menus.join(" · ")}</p>` : ""}
@@ -1659,7 +1672,7 @@ function drawReviews(d, c) {
             ${(r.drafts || []).length
                 ? `<div class="rvopen-wrap"><button type="button" class="ghost rvopen"
                        data-review="${Number(r.id)}">AI 답변 시안 보기${r.drafts.length > 1 ? ` · ${r.drafts.length}건` : ""}</button></div>`
-                : draftStateNote(r, replies)}
+                : hidden ? "" : draftStateNote(r, replies)}
           </article>`;
     }).join("");
 
@@ -3091,6 +3104,18 @@ async function deleteVisit(row, button) {
     await refreshVisitDue();
 }
 
+// ≤620px 카드 목록(카드 #157). 표를 그린 컨테이너 안에 같은 자료의 카드
+// 목록(.vm-cards)을 덧붙여 두고, 표↔카드 전환은 styles.css 의 media 하나가
+// 합니다(.vm-host). 둘 다 그리는 이유: 이력은 최근 200건·예정은 매장 수라
+// DOM 이 두 배여도 수천 노드 규모이고, 리사이즈·회전 때 재렌더(재조회 +
+// 사진 서명 URL 재발급)와 matchMedia 리스너가 없어집니다. 카드의 버튼은 표와
+// 같은 data-act 를 달아 initVisits 의 컨테이너 위임 핸들러가 그대로 받고,
+// 사진 <img> 는 loading="lazy" 라 숨은 쪽(display:none)은 내려받지 않습니다.
+function vmAppendCards(container, html) {
+    container.classList.add("vm-host");
+    container.insertAdjacentHTML("beforeend", `<div class="vm-cards">${html}</div>`);
+}
+
 // '방문 대상 매장' — 진단 #101 [A]. api_store_visits 전 매장분에서 매장별
 // 마지막 방문일을 세어, 미방문·기한 초과(격월 권장 60일)를 오래된 순으로
 // 보여줍니다. 새 SQL 없이 화면 계산입니다 — 방문이 격월 1회라 전체 이력도
@@ -3169,6 +3194,22 @@ async function refreshVisitDue() {
             return cells;
         }),
         { html: true });
+
+    // ≤620px 카드(#157): 매장·상태 / 담당 SV·마지막 방문일·경과 / '기록'.
+    vmAppendCards(container, shown.map((r) => {
+        const svLine = visitStoresBySv.size
+            ? `<span class="vm-meta">담당 ${escape(visitSvByStore.get(r.store.name) || "—")}</span>`
+            : "";
+        return '<article class="vm-card vm-due">'
+            + `<div class="vm-head"><strong class="vm-store">${escape(r.store.name)}</strong>`
+            + `<span class="vm-status">${status(r)}</span></div>`
+            + `<div class="vm-line">${svLine}`
+            + `<span class="vm-meta">마지막 방문 ${r.last ? escape(r.last) : "—"}</span>`
+            + `<span class="vm-meta">경과 ${r.days === null ? "—" : int(r.days) + "일"}</span></div>`
+            + '<div class="vm-actions">'
+            + `<button type="button" class="ghost" data-act="visit-pick" data-store-id="${r.store.id}">기록</button>`
+            + "</div></article>";
+    }).join(""));
 }
 
 // vs-store 를 고르면 그 매장만, 비워 두면 전 매장 최근 방문을 보여줍니다
@@ -3244,6 +3285,25 @@ async function refreshVisits() {
             actions(v),
         ]),
         { html: true });
+
+    // ≤620px 카드(#157): 매장·방문일·방문자 / 5항목 / 사진(있을 때만) / 동작.
+    const note = (label, text) =>
+        `<div class="vm-note"><span class="vm-note-k">${label}</span>`
+        + `<span class="vm-note-v">${multiline(text)}</span></div>`;
+    vmAppendCards($("t-visits"), list.map((v) => {
+        const photos = visitPhotosByVisit.get(String(v.visit_id));
+        return '<article class="vm-card">'
+            + `<div class="vm-head"><strong class="vm-store">${escape(v.store_name)}</strong>`
+            + `<span class="vm-meta">${escape(v.visited_on)}`
+            + (v.visited_by ? ` · ${escape(v.visited_by)}` : "") + "</span></div>"
+            + '<div class="vm-notes">'
+            + note("위생", v.hygiene_note) + note("자점매입", v.self_purchase_note)
+            + note("조리", v.cooking_note) + note("점주미팅", v.owner_meeting_note)
+            + note("특이", v.special_note)
+            + "</div>"
+            + (photos && photos.length ? `<div class="vm-photos">${vpThumbCell(photos)}</div>` : "")
+            + `<div class="vm-actions">${actions(v)}</div></article>`;
+    }).join(""));
 }
 
 // 점검 보고 텍스트 — 운영지원팀 실물 양식(광주신안점 예시, 답변서 11번)
