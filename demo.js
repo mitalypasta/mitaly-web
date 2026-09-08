@@ -370,6 +370,11 @@ function alertDirection(pct) {
 function demoAmountAt(ym, store, channel) {
     const mi = MONTHS.indexOf(ym);
     if (mi === -1) return null;
+    // #160 — 103 픽스처(DEMO_LAST_SALES_YM)가 "이 달 뒤로 매출 없음" 이라 한
+    // 매장은 매출도 실제로 끊습니다 — 폐점 매장(샘플12점)의 전 기간 정산 표가
+    // 12개월 창 밖 옛 달만 갖는 실제 모양(여수시청점)이 재현됩니다.
+    const cut = demoSalesCutoff(store);
+    if (cut != null && ym > cut) return null;
     const trend = 0.95 + 0.10 * (mi / MONTHS.length);      // 완만한 전사 성장(연 성장률 한 자릿수)
     const noise = seeded(hashSeed(`${store.name}|${channel}|${ym}`))();
     const factor = trend * (1 + (noise - 0.5) * 0.08);     // 매장별 ±4% 흔들림 — 대부분 임계값(±10%) 안쪽
@@ -921,6 +926,13 @@ const DEMO_LAST_SALES_YM = new Map([
     ["샘플93점", null],                        // 오픈 예정 · 매출 없음
     ["샘플94점", null],                        // 기록·매출 둘 다 없음
 ]);
+// 매출 끊김 매장의 마지막 매출월(숫자 항목만) — demoAmountAt 이 이 달 뒤를
+// null 로 만듭니다(#160). null 항목(샘플93·94점)은 다른 카드의 픽스처(#151 의
+// 월 집계 유지 등)와 얽혀 있어 손대지 않습니다.
+function demoSalesCutoff(store) {
+    const v = DEMO_LAST_SALES_YM.get(store.name);
+    return typeof v === "number" ? v : null;
+}
 // 103 의 mitaly_lifecycle_state 미러 — 이벤트 종류 → 상태 5값.
 const LIFECYCLE_STATE = {
     open: "operating", close: "closed",
@@ -1629,6 +1641,30 @@ for (let fixtureYm = 202601; fixtureYm <= 202606; fixtureYm++) {
     }
 }
 
+// #160 — 폐점 매장(샘플12점: 103 픽스처의 close 이벤트 + 마지막 매출 3개월 전)의
+// 옛 청구 2건: 마지막 매출 전달은 완납, 마지막 달은 미납 그대로. '매장별
+// 로열티' 가 12개월 창 밖 전 기간을 보여주는지 + 폐점 뒤 남은 미수가 미수
+// 목록에 그대로 잡히는지 확인용. 위 202601~ 루프가 그 달을 이미 만들었으면
+// (마지막 매출월이 루프 범위 안) 중복 청구 없이 그 행을 쓰고, 마지막 달의
+// 입금만 걷어 미납으로 둡니다.
+{
+    const closedStore = STORES.find((s) => s.name === "샘플12점");
+    const lastYm = demoSalesCutoff(closedStore);
+    const mine = (ym) => demoInvoices.find((i) => i.ym === ym && i.store === closedStore.name);
+    for (const ym of [shiftYm(lastYm, -1), lastYm]) {
+        if (mine(ym)) continue;
+        const invoice = demoMakeInvoice(ym, closedStore);
+        if (!invoice || ym === lastYm) continue;
+        demoPayments.push({
+            id: nextPaymentId++, invoice_id: invoice.id, paid_on: invoice.due_date,
+            amount: invoice.amount, note: null, source: "hq",
+            canceled_at: null, canceled_note: null,
+        });
+    }
+    const lastInvoice = mine(lastYm);
+    if (lastInvoice) demoPayments = demoPayments.filter((p) => p.invoice_id !== lastInvoice.id);
+}
+
 // D1 시연 — 청구 뒤 매출이 소급 수집돼 스냅샷이 어긋난 매장. 샘플05점 202606
 // (미납) 청구를 '옛 매출' 값으로 되돌려 두면 화면에 '갱신 필요' 배지가 뜨고,
 // '청구 생성·갱신'을 누르면 지금 매출로 재계산돼 사라집니다.
@@ -1725,6 +1761,75 @@ function computeRoyaltyMonth(p_ym) {
             unbilled_stores: rows.length - billed.length,
             overdue_stores: rows.filter((r) => r.status === "미수").length,
             paid_stores: rows.filter((r) => r.status === "완납").length,
+        },
+    };
+}
+
+// api_royalty_store(104, #160)와 같은 모양 — 그 매장의 매출>0 인 달 ∪ 청구
+// 있는 달을 전 기간 오름차순으로. 행 키·상태 판정은 computeRoyaltyMonth 와
+// 같습니다(같은 돈 = 같은 판정). 없는 매장은 null(서버는 행 없음).
+function computeRoyaltyStore(storeId) {
+    const store = STORES.find((s) => s.id === storeId);
+    if (!store) return null;
+    const today = dateOffset(0);
+    const invByYm = new Map(
+        demoInvoices.filter((i) => i.store === store.name).map((i) => [i.ym, i]));
+    const yms = new Set(invByYm.keys());
+    for (const ym of MONTHS) if (demoStoreSales(ym, store)) yms.add(ym);
+
+    const months = [...yms].sort((a, b) => a - b).map((ym) => {
+        const sales = demoStoreSales(ym, store) || null;
+        const invoice = invByYm.get(ym) || null;
+        const paid = invoice ? demoPaidTotal(invoice.id) : 0;
+        const outstanding = invoice ? invoice.amount - paid : null;
+        const overdue = invoice && today > invoice.due_date;
+        return {
+            ym,
+            sales_amount: sales,
+            invoice_id: invoice ? invoice.id : null,
+            source: invoice ? invoice.source : null,
+            billed_sales: invoice ? invoice.sales : null,
+            billed_amount: invoice ? invoice.amount : null,
+            rate_pct: invoice ? invoice.rate : null,
+            due_date: invoice ? invoice.due_date : null,
+            paid_amount: paid,
+            payment_count: invoice
+                ? demoPayments.filter((p) => p.invoice_id === invoice.id && !p.canceled_at).length
+                : 0,
+            outstanding,
+            status: !invoice ? "미청구"
+                : outstanding <= 0 ? "완납"
+                : !overdue ? (paid > 0 ? "부분 입금" : "기한 전")
+                : "미수",
+            overdue_days: overdue ? demoDaysBetween(invoice.due_date, today) : 0,
+        };
+    });
+
+    const salesYms = months.filter((m) => m.sales_amount != null).map((m) => m.ym);
+    const overdueRows = months.filter((m) => m.status === "미수");
+    const override = demoRoyaltyRates.get(store.id);
+    return {
+        store_id: store.id, store: store.name, trade_area: store.trade_area,
+        rate_pct: override ? override.rate_pct : DEMO_SETTLEMENT.rate_pct,
+        rate_override: !!override,
+        default_rate_pct: DEMO_SETTLEMENT.rate_pct,
+        late_interest_pct_year: DEMO_SETTLEMENT.late_pct,
+        first_sales_ym: salesYms.length ? salesYms[0] : null,
+        last_sales_ym: salesYms.length ? salesYms[salesYms.length - 1] : null,
+        data_ym: DEMO_DATA_YM,
+        months,
+        totals: {
+            months: months.length,
+            sales_months: salesYms.length,
+            billed_months: months.filter((m) => m.invoice_id != null).length,
+            sales: months.reduce((a, m) => a + (m.sales_amount || 0), 0),
+            billed: months.reduce((a, m) => a + (m.billed_amount || 0), 0),
+            paid: months.reduce((a, m) => a + m.paid_amount, 0),
+            outstanding: months.reduce((a, m) => a + Math.max(m.outstanding || 0, 0), 0),
+            overdue_outstanding: overdueRows.reduce((a, m) => a + m.outstanding, 0),
+            overdue_months: overdueRows.length,
+            max_overdue_days: overdueRows.reduce((a, m) => Math.max(a, m.overdue_days), 0),
+            paid_months: months.filter((m) => m.status === "완납").length,
         },
     };
 }
@@ -3047,6 +3152,8 @@ const HANDLERS = {
     // ---- 정산 · 로열티 (41_settlement.sql) — 함수 규칙 그대로 ----
     api_royalty_month: ({ p_ym }) => computeRoyaltyMonth(Number(p_ym)),
     api_royalty_receivables: () => computeReceivables(),
+    // ---- 매장별 로열티 전 기간 (104_royalty_store_history.sql · #160) ----
+    api_royalty_store: ({ p_store_id }) => computeRoyaltyStore(Number(p_store_id)),
 
     // ---- 매장별 요율 (84_royalty_store_rate.sql) ----
     api_royalty_store_rates: () => ({

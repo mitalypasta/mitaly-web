@@ -2459,20 +2459,31 @@
          지시 2026-08-21 "정산·광고 탭도 매장 대시보드처럼" · 제목·설명은
          #142 명료화). 매장 대시보드(sd-card)와 같은 문법: searchify 콤보로
          매장을 고르면 그 매장 카드가 채워집니다.
-         원천은 전부 기존 rpc(api_royalty_month 를 달 단위로 캐시 +
-         api_royalty_receivables + api_royalty_store_rates)라 새 SQL 없음 —
+         원천은 api_royalty_store(104_royalty_store_history.sql, 카드 #160) 하나 —
+         그 매장의 매출·청구가 있는 전 기간을 한 번에 줍니다(종전 12개월 창은
+         마지막 매출월이 창 밖인 폐점 매장 40곳을 '자료 없음' 으로 보였음).
+         상태 배지·필터(sts-badge · sts-filter · 아래 월별 표의 sts-month-filter)는
+         103 api_store_lifecycle_status 를 이름으로 조인 —
          settlement.js initSettlementStoreView. 아래 전체 보기 카드 3장은
          그대로입니다(삭제 0). -->
     <section data-area="settlement" class="card full" id="settlement-store-card">
         <header>
-            <h2>매장별 로열티</h2>
+            <h2>매장별 로열티 <span id="sts-badge" hidden></span></h2>
             <span class="meta" id="sts-meta"></span>
         </header>
-        <p class="hint">매장 하나를 골라 최근 12개월의 청구·입금·미수 흐름을 봅니다. 한 달을 전 매장으로 보려면 아래 '월별 로열티 청구'를 쓰세요.</p>
+        <p class="hint">매장 하나를 골라 매출·청구가 있는 전 기간의 청구·입금·미수 흐름을 봅니다. 폐점 매장도 옛 기록이 그대로 보입니다. 한 달을 전 매장으로 보려면 아래 '월별 로열티 청구'를 쓰세요.</p>
         <div class="reqform">
             <div class="field grow">
                 <label for="sts-store">매장</label>
                 <select id="sts-store"><option value="">매장을 고르세요</option></select>
+            </div>
+            <div class="field">
+                <label for="sts-filter">상태</label>
+                <select id="sts-filter">
+                    <option value="">전체</option>
+                    <option value="operating">운영</option>
+                    <option value="closed">폐점</option>
+                </select>
             </div>
         </div>
         <div class="sd-empty" id="sts-empty">매장을 선택하세요 — 위 매장 칸에 이름을 치면 검색됩니다.</div>
@@ -2494,6 +2505,14 @@
             <button type="button" id="st-generate">청구 생성·갱신</button>
             <button type="button" class="ghost" id="st-rate-edit">로열티 수정</button>
             <span class="meta" id="st-generate-msg"></span>
+            <!-- 매장 상태 필터(#160) — 표만 걸러집니다. 타일·안내문은 서버 총계
+                 (전 매장). 폐점 매장은 매장명 옆 배지로도 보입니다. -->
+            <select id="sts-month-filter" title="매장 상태">
+                <option value="">상태 전체</option>
+                <option value="operating">운영</option>
+                <option value="closed">폐점</option>
+            </select>
+            <span class="meta" id="sts-month-shown"></span>
         </div>
         <!-- 갱신 신호 — 청구(생성 시점 스냅샷)와 live 매출이 어긋난 매장 안내.
              매출 소급 수집이 있는 프로젝트라 이 어긋남은 일상입니다.

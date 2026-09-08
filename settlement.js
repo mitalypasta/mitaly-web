@@ -78,9 +78,12 @@ async function refreshSettlementMonth() {
     const ym = settleYm();
     if (!ym) return;
 
-    const { data, error } = await db.rpc("api_royalty_month", { p_ym: ym });
+    // 매장 상태(103)는 표의 폐점 배지·상태 필터가 씁니다 — 한 번만 받고 캐시.
+    const [{ data, error }] = await Promise.all([
+        db.rpc("api_royalty_month", { p_ym: ym }), stsLoadLifecycle()]);
     if (error) {
         stRows = [];
+        $("sts-month-shown").textContent = "";
         $("st-drift").hidden = true;
         $("st-unbilled-warn").hidden = true;
         $("t-settlement").innerHTML =
@@ -152,9 +155,33 @@ async function refreshSettlementMonth() {
         paySelect.value = keep;
     }
 
+    stMonthView = { ratePct: d.rate_pct, driftIds };
+    renderSettlementMonthTable();
+}
+
+// 월별 표 — 상태 필터(sts-month-filter)만 바뀌면 재조회 없이 여기만 다시
+// 그립니다. 타일·안내문은 서버 총계(전 매장)라 필터를 안 탑니다.
+let stMonthView = { ratePct: null, driftIds: new Set() };
+
+function stsMonthBadge(name) {
+    const state = stsStateOf(name);
+    return state === "closed" || state === "planned_close"
+        ? " " + stsStateTag(state) : "";
+}
+
+function renderSettlementMonthTable() {
+    const filter = $("sts-month-filter").value;
+    const rows = stRows.filter((s) => stsMatchesFilter(s.store, filter));
+    $("sts-month-shown").textContent = filter && stRows.length
+        ? `${int(rows.length)} / ${int(stRows.length)}곳` : "";
     if (!stRows.length) {
         $("t-settlement").innerHTML =
             '<p class="hint">이 달에는 매출도 청구도 없습니다. 다른 달을 골라 보세요.</p>';
+        return;
+    }
+    if (!rows.length) {
+        $("t-settlement").innerHTML =
+            '<p class="hint">이 상태의 매장은 이 달에 매출도 청구도 없습니다.</p>';
         return;
     }
 
@@ -163,9 +190,9 @@ async function refreshSettlementMonth() {
     // 같은 정보를 이미 보여줍니다. 상권 표기도 뺐습니다(피드백 4).
     table($("t-settlement"),
         ["상태", "매장", "이 달 매출", "청구한 돈", "들어온 돈", "못 받은 돈", "납기일", "처리"],
-        stRows.map((s) => [
+        rows.map((s) => [
             settleStatusTag(s.status),
-            escape(s.store),
+            escape(s.store) + stsMonthBadge(s.store),
             s.sales_amount != null ? wonFull(s.sales_amount) : "—",
             s.invoice_id != null
                 ? wonFull(s.billed_amount)
@@ -174,14 +201,14 @@ async function refreshSettlementMonth() {
                     + (s.source === "hq"
                         ? '<div class="meta">본사 확정</div>'
                         : `<div class="meta">매출 × ${escape(String(s.rate_pct))}%</div>`)
-                    + (driftIds.has(s.invoice_id)
+                    + (stMonthView.driftIds.has(s.invoice_id)
                         ? '<div><span class="tag h-warn">갱신 필요</span>'
                             + `<div class="meta">청구 당시 매출 ${wonFull(s.billed_sales)}</div></div>`
                         : "")
                 // 생성 전 미리보기 — 서버와 같은 규칙(round(매출×요율/100)).
                 // 요율은 그 매장의 유효 요율(apply_rate_pct, 84)입니다.
                 : `<span class="meta">예상 ${wonFull(Math.round((s.sales_amount || 0)
-                        * (s.apply_rate_pct ?? d.rate_pct ?? 0) / 100))}</span>`,
+                        * (s.apply_rate_pct ?? stMonthView.ratePct ?? 0) / 100))}</span>`,
             wonFull(s.paid_amount)
                 + (s.payments && s.payments.length
                     ? `<div class="meta">${int(s.payments.length)}건</div>` : ""),
@@ -532,52 +559,108 @@ function initRoyaltyRates() {
     $("rate-reset").addEventListener("click", () => saveRate(true));
 }
 
-// ---- 매장별 로열티 — 옛 '매장 보기' (카드 #131 · 제목은 #142 명료화) -------
+// ---- 매장별 로열티 — 옛 '매장 보기' (카드 #131 · 제목은 #142 · 전 기간은 #160) --
 //
 // 매장 대시보드와 같은 문법 — searchify 콤보로 매장을 고르면 그 매장의
-// 청구·입금·미수·실요율 타일 + 최근 12개월 정산 추이 표가 채워집니다.
-// 새 SQL 없음: api_royalty_month(달마다 전 매장이 들어 있음)를 달 단위로
-// 캐시해 매장을 바꿔도 재조회하지 않고, 미수 잔액은 api_royalty_receivables,
-// 실요율은 api_royalty_store_rates(84)를 그대로 씁니다. 청구 생성·입금·요율
-// 저장이 일어나면 stsInvalidate 가 캐시를 버리고 다시 그립니다.
+// 청구·입금·미수·실요율 타일 + 전 기간 정산 표가 채워집니다.
+// 원천은 api_royalty_store(104) 하나 — 그 매장의 매출·청구가 있는 달을 전부
+// 한 번에 줍니다. 종전에는 api_royalty_month 를 최근 12개월 달마다 부르고
+// 이름으로 골라내서, 마지막 매출월이 창 밖인 매장(여수시청점 등 40곳)은
+// 전부 '자료 없음' 이었습니다(HQ-FEEDBACK-20260908 2절). 매장 상태(운영·폐점)는
+// api_store_lifecycle_status(103)를 한 번 받아 이름으로 조인합니다
+// (store_db.js 와 같은 패턴) — 헤더 배지 + 콤보·월별 표의 상태 필터.
 
-const STS_MONTHS_SHOWN = 12;       // 추이 표 범위 — 최근 12개월
-let stsMonths = [];                // 조회 대상 연월(오름차순)
-const stsMonthCache = new Map();   // ym → api_royalty_month 응답 promise
-let stsRatesPromise = null;        // api_royalty_store_rates 응답 promise
-let stsSeq = 0;                    // 매장을 빠르게 바꿀 때 늦게 온 응답 버리기
+// 103 의 state 5값 → 라벨·태그 색(lifecycle.js 와 같은 말·같은 색).
+const STS_STATE_LABEL = {
+    operating: "운영", planned_open: "오픈 예정", planned_close: "폐점 예정",
+    closed: "폐점", unknown: "기록 없음",
+};
+const STS_STATE_CLASS = {
+    operating: "tag up", planned_open: "tag st-early", planned_close: "tag h-warn",
+    closed: "tag down", unknown: "tag",
+};
 
-function stsMonthData(ym) {
-    if (!stsMonthCache.has(ym)) {
-        stsMonthCache.set(ym, db.rpc("api_royalty_month", { p_ym: ym })
-            .then((r) => {
-                if (r.error) {
-                    stsMonthCache.delete(ym);   // 실패는 캐시로 굳히지 않습니다
-                    throw new Error(r.error.message);
-                }
-                return r.data || {};
-            }));
-    }
-    return stsMonthCache.get(ym);
+let stsStores = [];                 // fetchStores 결과 [{id, name}] — 콤보 원본
+let stsLifecycle = new Map();       // store_name → { state, last_sales_ym, … }
+let stsLifecyclePromise = null;
+let stsSeq = 0;                     // 매장을 빠르게 바꿀 때 늦게 온 응답 버리기
+
+// 103 적용 전 환경(state 키 없음 · 이벤트 있는 매장만 옴)도 같은 5값으로
+// 접습니다 — lifecycle.js 와 같은 폴백.
+function stsNormalizeState(v) {
+    return v.state || (v.status === "open" ? "operating"
+        : v.status === "close" ? "closed" : (v.status || "unknown"));
 }
 
-function stsRates() {
-    if (!stsRatesPromise) {
-        stsRatesPromise = db.rpc("api_royalty_store_rates")
-            .then((r) => {
-                if (r.error) {
-                    stsRatesPromise = null;
-                    throw new Error(r.error.message);
-                }
-                return r.data || {};
-            });
+function stsLoadLifecycle() {
+    if (!stsLifecyclePromise) {
+        stsLifecyclePromise = db.rpc("api_store_lifecycle_status").then((r) => {
+            // 못 받아도 정산 화면은 그려져야 합니다 — 그 경우 전부 '기록 없음'.
+            if (!r.error && Array.isArray(r.data)) {
+                stsLifecycle = new Map(r.data.map((v) => [v.store_name, {
+                    ...v, state: stsNormalizeState(v),
+                }]));
+            }
+            return stsLifecycle;
+        });
     }
-    return stsRatesPromise;
+    return stsLifecyclePromise;
 }
 
+function stsStateOf(name) {
+    const v = stsLifecycle.get(name);
+    return v ? v.state : "unknown";
+}
+
+// 상태 필터 — 운영/폐점/전체. '운영' 은 폐점이 아닌 전부(기록 없음·예정 포함,
+// store_db.js 의 sdb-status 와 같은 판정).
+function stsMatchesFilter(name, filter) {
+    if (!filter) return true;
+    return (filter === "closed") === (stsStateOf(name) === "closed");
+}
+
+function stsStateTag(state) {
+    const key = STS_STATE_LABEL[state] ? state : "unknown";
+    return `<span class="${STS_STATE_CLASS[key]}">${escape(STS_STATE_LABEL[key])}</span>`;
+}
+
+// 콤보 항목을 상태 필터로 다시 채웁니다. 고른 매장이 필터 밖으로 나가면
+// 선택을 비웁니다(빈 상태 안내로 돌아감).
+function stsFillStores() {
+    const select = $("sts-store");
+    const filter = $("sts-filter").value;
+    const keep = select.value;
+    while (select.options.length > 1) select.remove(1);
+    for (const s of stsStores) {
+        if (!stsMatchesFilter(s.name, filter)) continue;
+        const option = document.createElement("option");
+        option.value = String(s.id);
+        option.textContent = s.name + (stsStateOf(s.name) === "closed" ? " — 폐점" : "");
+        select.append(option);
+    }
+    // option 을 지우면 select 값이 비므로 남아 있으면 되돌리고(콤보 표시도
+    // 따라옴), 필터 밖으로 나갔으면 빈 상태 안내로 돌아갑니다.
+    if (keep && [...select.options].some((o) => o.value === keep)) {
+        select.value = keep;
+    } else if (keep) {
+        select.value = "";
+        refreshSettlementStore();
+    }
+    stsEmptyMeta();
+}
+
+// 매장을 안 골랐을 때 헤더 메타 — 콤보에 든 매장 수 · 폐점 수.
+function stsEmptyMeta() {
+    if ($("sts-store").value) return;
+    const closed = stsStores.filter((s) => stsStateOf(s.name) === "closed").length;
+    $("sts-meta").textContent = stsStores.length
+        ? `매장 ${int(stsStores.length)}곳` + (closed ? ` · 폐점 ${int(closed)}곳` : "")
+        : "";
+}
+
+// 청구 생성·입금·요율 저장 뒤 — 조회는 rpc 한 번이라 캐시가 없고, 고른
+// 매장이 있으면 다시 그리기만 합니다.
 function stsInvalidate() {
-    stsMonthCache.clear();
-    stsRatesPromise = null;
     if ($("sts-store") && $("sts-store").value) refreshSettlementStore();
 }
 
@@ -590,33 +673,33 @@ function stsTile(label, value, sub, urgent) {
 }
 
 async function refreshSettlementStore() {
-    const name = $("sts-store").value;
+    const storeId = Number($("sts-store").value) || null;
     const empty = $("sts-empty");
     const detail = $("sts-detail");
-    if (!name) {
+    const badge = $("sts-badge");
+    if (!storeId) {
         empty.hidden = false;
         detail.hidden = true;
-        $("sts-meta").textContent = "";
+        badge.hidden = true;
+        stsEmptyMeta();
         return;
     }
     const seq = ++stsSeq;
     $("sts-meta").textContent = "불러오는 중…";
 
-    let monthsData, rates, recv;
+    let d;
     try {
-        [monthsData, rates, recv] = await Promise.all([
-            Promise.all(stsMonths.map(stsMonthData)),
-            stsRates(),
-            // 미수는 입금 기록으로 수시로 변해 캐시하지 않습니다(조회 하나뿐).
-            db.rpc("api_royalty_receivables").then((r) => {
-                if (r.error) throw new Error(r.error.message);
-                return r.data || {};
-            }),
+        const [r] = await Promise.all([
+            db.rpc("api_royalty_store", { p_store_id: storeId }),
+            stsLoadLifecycle(),
         ]);
+        if (r.error) throw new Error(r.error.message);
+        d = r.data;
     } catch (e) {
         if (seq !== stsSeq) return;
         empty.hidden = true;
         detail.hidden = false;
+        badge.hidden = true;
         $("sts-meta").textContent = "";
         $("sts-kpis").innerHTML = "";
         $("t-sts-months").innerHTML =
@@ -629,56 +712,64 @@ async function refreshSettlementStore() {
     empty.hidden = true;
     detail.hidden = false;
 
-    // 월별 추이 — 달마다 그 매장 행을 뽑습니다(없으면 매출·청구 둘 다 없는 달).
-    const rows = stsMonths.map((ym, i) => {
-        const s = (monthsData[i].stores || []).find((r) => r.store === name);
-        return { ym, s };
-    });
+    // 서버는 없는 매장 id 면 행이 없어 null 을 줍니다(104 설계 판단 [6]).
+    if (!d) {
+        badge.hidden = true;
+        $("sts-meta").textContent = "";
+        $("sts-kpis").innerHTML = "";
+        $("t-sts-months").innerHTML = '<p class="hint">매장을 찾지 못했습니다.</p>';
+        $("sts-note").textContent = "";
+        return;
+    }
 
-    const sum = (pick) => rows.reduce((a, r) => a + (r.s ? Number(pick(r.s)) || 0 : 0), 0);
-    const billedSum = sum((s) => s.billed_amount);
-    const paidSum = sum((s) => s.paid_amount);
+    const months = d.months || [];
+    const t = d.totals || {};
+    const state = stsStateOf(d.store);
 
-    // 미수 잔액은 전 기간(청구가 살아 있는 한 12개월 밖도 잡힙니다).
-    const myRecv = (recv.items || []).filter((r) => r.store === name);
-    const recvSum = myRecv.reduce((a, r) => a + (Number(r.outstanding) || 0), 0);
-    const maxOverdue = myRecv.reduce((a, r) => Math.max(a, r.overdue_days || 0), 0);
+    // 헤더 — 상태 배지 + '기간 · 마지막 매출'. 마지막 매출이 자료 최신월보다
+    // 앞이면 끊긴 개월을 같이 적습니다(폐점 판정은 사람 몫 — #158 대조표).
+    badge.hidden = false;
+    badge.innerHTML = stsStateTag(state);
+    const gap = d.last_sales_ym && d.data_ym
+        ? (Math.floor(d.data_ym / 100) * 12 + d.data_ym % 100)
+            - (Math.floor(d.last_sales_ym / 100) * 12 + d.last_sales_ym % 100)
+        : null;
+    $("sts-meta").textContent = (months.length
+            ? `전 기간 ${int(t.months)}개월 · ${ymLabel(months[0].ym)} ~ ${ymLabel(months[months.length - 1].ym)}`
+            : "매출·청구 기록 없음")
+        + ` · 마지막 매출 ${d.last_sales_ym ? ymLabel(d.last_sales_ym) : "—"}`
+        + (gap > 0 ? ` (자료 최신월 ${ymLabel(d.data_ym)}, ${int(gap)}개월 끊김)` : "");
 
-    // 실요율 — 개별 요율이 있으면 그 값, 없으면 공통 요율(84 규칙 그대로).
-    const mine = (rates.stores || []).find((r) => r.store === name);
-    const ratePct = mine && mine.rate_pct != null ? mine.rate_pct : null;
-
-    $("sts-meta").textContent = stsMonths.length
-        ? `최근 ${stsMonths.length}개월 · ${ymLabel(stsMonths[0])} ~ ${ymLabel(stsMonths[stsMonths.length - 1])}`
-        : "";
-
+    const overdue = Number(t.overdue_outstanding) || 0;
     $("sts-kpis").innerHTML = [
-        stsTile("① 청구한 돈 (기간 합계)", escape(wonFull(billedSum)),
-            `청구 ${int(rows.filter((r) => r.s && r.s.invoice_id != null).length)}개월`),
-        stsTile("② 들어온 돈 (입금)", escape(wonFull(paidSum)), ""),
-        stsTile("③ 못 받은 돈 (전 기간)", escape(wonFull(recvSum)),
-            recvSum > 0
-                ? `연체 ${int(myRecv.length)}건 · 최장 ${int(maxOverdue)}일 — 아래 미수 목록에서 처리`
-                : "미수 없음",
-            recvSum > 0),
+        stsTile("① 청구한 돈 (전 기간 합계)", escape(wonFull(t.billed)),
+            `청구 ${int(t.billed_months)}개월 · 매출 ${int(t.sales_months)}개월`),
+        stsTile("② 들어온 돈 (입금)", escape(wonFull(t.paid)),
+            t.billed_months > 0 ? `완납 ${int(t.paid_months)}개월` : ""),
+        stsTile("③ 못 받은 돈 (연체)", escape(wonFull(overdue)),
+            overdue > 0
+                ? `연체 ${int(t.overdue_months)}개월 · 최장 ${int(t.max_overdue_days)}일 — 아래 미수 목록에서 처리`
+                : (Number(t.outstanding) > 0
+                    ? `납기 전 ${escape(wonFull(t.outstanding))} 남음`
+                    : "미수 없음"),
+            overdue > 0),
         stsTile("로열티 요율",
-            ratePct != null
-                ? `${escape(String(ratePct))}%`
-                : (rates.default_rate_pct != null
-                    ? `${escape(String(rates.default_rate_pct))}%` : "—"),
-            ratePct != null
+            d.rate_pct != null ? `${escape(String(d.rate_pct))}%` : "—",
+            d.rate_override
                 ? "이 매장 개별 요율 — 아래 '로열티 수정'에서 바꿉니다"
                 : "공통 요율"),
     ].join("");
 
-    // 표는 최신 달부터. 열 이름은 월별 표와 같은 말(같은 돈 = 같은 이름).
-    const list = [...rows].reverse();
-    table($("t-sts-months"),
-        ["월", "상태", "이 달 매출", "청구한 돈", "들어온 돈", "못 받은 돈", "납기일"],
-        list.map(({ ym, s }) => !s
-            ? [ymLabel(ym), '<span class="tag">자료 없음</span>', "—", "—", "—", "—", "—"]
-            : [
-                ymLabel(ym),
+    if (!months.length) {
+        $("t-sts-months").innerHTML =
+            '<p class="hint">이 매장은 매출도 청구도 기록이 없습니다.</p>';
+    } else {
+        // 표는 최신 달부터. 열 이름은 월별 표와 같은 말(같은 돈 = 같은 이름).
+        const list = [...months].reverse();
+        table($("t-sts-months"),
+            ["월", "상태", "이 달 매출", "청구한 돈", "들어온 돈", "못 받은 돈", "납기일"],
+            list.map((s) => [
+                ymLabel(s.ym),
                 settleStatusTag(s.status),
                 s.sales_amount != null ? wonFull(s.sales_amount) : "—",
                 s.invoice_id != null
@@ -687,7 +778,9 @@ async function refreshSettlementStore() {
                             ? '<div class="meta">본사 확정</div>'
                             : `<div class="meta">매출 × ${escape(String(s.rate_pct))}%</div>`)
                     : "—",
-                wonFull(s.paid_amount),
+                wonFull(s.paid_amount)
+                    + (s.payment_count > 1
+                        ? `<div class="meta">${int(s.payment_count)}건</div>` : ""),
                 s.outstanding == null ? "—"
                     : s.outstanding < 0
                         ? `${wonFull(s.outstanding)} <span class="tag h-warn">과입금</span>`
@@ -696,29 +789,39 @@ async function refreshSettlementStore() {
                                 ? `<div class="meta">연체 ${int(s.overdue_days)}일</div>` : ""),
                 s.due_date ? escape(s.due_date) : "—",
             ]),
-        { html: true });
+            { html: true });
+    }
 
     $("sts-note").textContent =
-        "청구·입금은 아래 '월별 로열티 청구'와 같은 원천입니다 — 청구가 없는 달은 "
+        (state === "closed"
+            ? "폐점 매장입니다 — 옛 기록은 열람용이고, 남은 미수는 아래 미수 목록에서 처리합니다. "
+            : "")
+        + "청구·입금은 아래 '월별 로열티 청구'와 같은 원천입니다 — 청구가 없는 달은 "
         + "'청구 없음'으로 보이고, 그 달을 골라 '청구 생성·갱신'을 누르면 만들어집니다.";
 }
 
 async function initSettlementStoreView() {
-    const months = S.filterRange
-        ? monthsBetween(S.filterRange.min, S.filterRange.max) : [];
-    stsMonths = months.slice(-STS_MONTHS_SHOWN);
-
     const select = $("sts-store");
-    const { data: stores } = await fetchStores();
-    for (const s of stores || []) {
-        const option = document.createElement("option");
-        // 정산 rpc 응답이 매장 이름으로 오므로 값도 이름입니다(sd-store 는 id).
-        option.value = s.name;
-        option.textContent = s.name;
-        select.append(option);
-    }
+    $("sts-filter").addEventListener("change", stsFillStores);
+    $("sts-month-filter").addEventListener("change", renderSettlementMonthTable);
+    // 오픈·폐점 화면에서 기록을 남기면 배지·필터가 낡습니다 — store_db.js 와
+    // 같은 신호로 다시 받습니다.
+    window.addEventListener("mitaly:storedb-refresh", async () => {
+        stsLifecyclePromise = null;
+        await stsLoadLifecycle();
+        stsFillStores();
+        renderSettlementMonthTable();
+        if (select.value) refreshSettlementStore();
+    });
+
+    const [{ data: stores }] = await Promise.all([fetchStores(), stsLoadLifecycle()]);
+    stsStores = stores || [];
+    // 104 는 store_id 를 받으므로 값은 id 입니다(sd-store 와 같음).
+    stsFillStores();
     searchify(select);
     select.addEventListener("change", refreshSettlementStore);
+    // 월별 표는 lifecycle 없이 먼저 그려졌을 수 있어 배지를 다시 붙입니다.
+    renderSettlementMonthTable();
 }
 
 async function refreshReceivables() {
