@@ -1383,23 +1383,17 @@
          store_visits(source='daou')+사진으로 들여옵니다. 여기는 그 게시판과 같은 모양의 목록:
          번호·말머리(초성)·매장·제목·작성자·작성일·사진·원문. 제목을 누르면 본문·사진이 펼쳐집니다.
          전역 담당자 필터는 '매장' 열로 걸립니다(svfilter.js). -->
+    <!-- 매장 방문 리포트 (다우오피스 게시판 반입, 카드 #172·#174) — 다우 게시판 페이지 형식 그대로:
+         게시판 정보(주소·이메일 수신·운영자·설명) → 새글쓰기·페이지 크기 → 번호|말머리 선택|제목|작성자|
+         작성일|조회|좋아요 (공지 고정 행) → 페이지네이션·기간 필터·검색. 제목을 누르면 상세(제목·작성자·
+         첨부 목록·본문·사진·목록/이전글/다음글). 자료: 111 api_visit_board · 110 api_visit_body · 101 사진.
+         전역 담당자 필터는 행의 data-store 로 걸립니다(svfilter.js). -->
     <section data-area="visits" class="card full" id="daou-board-card">
         <header>
-            <h2>매장 방문 리포트</h2>
-            <span class="meta" id="db-meta">다우오피스 게시판에서 자동 반입</span>
-            <a class="linkish" id="db-open" href="https://truefarmbiz.daouoffice.com/gw/app/board/1544587655889555456" target="_blank" rel="noopener">게시판 열기 ↗</a>
+            <h2 id="dbo-name">매장 방문 리포트</h2>
+            <span class="meta" id="dbo-path">다우오피스 게시판에서 자동 반입</span>
         </header>
-        <div class="db-toolbar">
-            <select id="db-kind" aria-label="말머리">
-                <option value="">말머리 전체</option>
-                <option value="방문">방문</option>
-                <option value="릴스">릴스</option>
-                <option value="교육">교육</option>
-            </select>
-            <input type="search" id="db-q" placeholder="매장·작성자·내용 검색" autocomplete="off">
-            <span class="meta" id="db-count"></span>
-        </div>
-        <div class="db-list" id="db-list"><p class="hint">불러오는 중…</p></div>
+        <div id="dbo-root"><p class="hint">불러오는 중…</p></div>
     </section>
 
     <section data-area="visits" class="card full" id="visit-form-card">

@@ -89,14 +89,14 @@ function applyToTable(tbl) {
     if (!headRow) return;
     const cells = [...headRow.cells];
     const col = cells.findIndex((c) => STORE_HEADERS.has(c.textContent.replace(/\s+/g, " ").trim()));
-    if (col < 0) return;
     const bodies = tbl.tBodies.length ? [...tbl.tBodies] : [tbl];
     for (const body of bodies) {
         for (const tr of body.rows) {
             if (tr === headRow) continue;
-            const cell = tr.cells[col];
-            if (!cell) continue;
-            const hide = !svAllows(cell.textContent);
+            // '매장' 열이 없는 표(다우 게시판 모양 등)는 행의 data-store 로 판정합니다.
+            const name = col >= 0 ? (tr.cells[col] ? tr.cells[col].textContent : null) : tr.dataset.store;
+            if (name == null) continue;
+            const hide = !svAllows(name);
             if (tr.hidden !== hide) tr.hidden = hide;
         }
     }

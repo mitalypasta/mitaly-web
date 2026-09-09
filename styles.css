@@ -3187,3 +3187,73 @@ tr.diag-drow td { white-space: normal; }
 .db-text table { border-collapse: collapse; margin: 6px 0; }
 .db-text td, .db-text th { border: 1px solid var(--border); padding: 3px 6px; font-size: 13px; }
 .db-text blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--border); color: var(--text-secondary); }
+
+/* ---- 다우오피스 게시판 페이지 모양 (카드 #174) --------------------------- */
+.dbo-info { background: var(--bg, #f6f6f4); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: var(--text-secondary); }
+.dbo-info-row { margin: 3px 0; }
+.dbo-info-row a { color: var(--text-primary); }
+.dbo-managers { margin-top: 8px; color: var(--text-primary); }
+.dbo-desc { color: var(--text-secondary); }
+.dbo-mini { font-size: 11px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-card, #fff); color: var(--text-secondary); cursor: pointer; margin-left: 4px; }
+.dbo-mini-link { text-decoration: none; }
+.dbo-toolbar { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 6px; }
+.dbo-write { font-size: 14px; color: var(--text-primary); text-decoration: none; }
+.dbo-write:hover { color: var(--primary); }
+.dbo-right { margin-left: auto; }
+.dbo-size, .dbo-header, .dbo-search select, .dbo-search input { font-size: 13px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-card, #fff); color: var(--text-primary); }
+.dbo-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.dbo-table th { font-size: 13px; font-weight: 600; color: var(--text-primary); border-top: 2px solid #333; border-bottom: 1px solid var(--border); padding: 9px 8px; text-align: center; white-space: nowrap; }
+.dbo-table th.tl, .dbo-table td.tl { text-align: left; }
+.dbo-table td { padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 14px; text-align: center; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dbo-table .dbo-no { width: 54px; color: var(--text-secondary); }
+.dbo-table .dbo-hd { width: 110px; }
+.dbo-table .dbo-writer { width: 110px; }
+.dbo-table .dbo-date { width: 70px; color: var(--text-secondary); }
+.dbo-table .dbo-num { width: 60px; color: var(--text-secondary); }
+.dbo-table .dbo-like { color: var(--text-muted); }
+.dbo-table tr.dbo-notice td { background: #f4f5f7; }
+.dbo-mega { color: var(--primary); }
+.dbo-chip { color: var(--text-primary); font-weight: 600; }
+.dbo-title { background: none; border: 0; padding: 0; font: inherit; font-weight: 700; color: var(--text-primary); cursor: pointer; text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbo-title:hover { text-decoration: underline; color: var(--primary); }
+.dbo-title-notice { color: #1a5fd6; font-weight: 600; text-decoration: none; }
+.dbo-clip { color: var(--text-muted); font-size: 13px; }
+.dbo-new { display: inline-block; background: #e5484d; color: #fff; font-size: 10px; font-weight: 700; border-radius: 50%; width: 15px; height: 15px; line-height: 15px; text-align: center; vertical-align: middle; }
+.dbo-cmt { color: var(--primary); font-weight: 600; font-size: 12px; }
+.dbo-empty { color: var(--text-muted); padding: 24px 8px !important; }
+.dbo-row:hover td { background: var(--primary-soft); }
+.dbo-foot { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.dbo-foot-row { display: flex; }
+.dbo-pager { display: flex; justify-content: center; gap: 4px; }
+.dbo-page { min-width: 28px; height: 28px; border: 1px solid var(--border); background: var(--bg-card, #fff); border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--text-secondary); }
+.dbo-page.on { background: var(--text-primary); color: #fff; border-color: var(--text-primary); }
+.dbo-period { display: flex; justify-content: center; gap: 4px; flex-wrap: wrap; align-items: center; }
+.dbo-pill { border: 1px solid var(--border); background: var(--bg-card, #fff); border-radius: 4px; padding: 3px 9px; font-size: 12.5px; cursor: pointer; color: var(--text-secondary); }
+.dbo-pill.on { background: var(--text-primary); color: #fff; border-color: var(--text-primary); }
+.dbo-range input { font-size: 12.5px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; }
+.dbo-search { display: flex; justify-content: center; gap: 6px; }
+.dbo-search input { width: 220px; }
+.dbo-btn { border: 1px solid var(--border); background: var(--bg-card, #fff); border-radius: 4px; padding: 4px 10px; font-size: 13px; cursor: pointer; color: var(--text-primary); }
+.dbo-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.dbo-btn:disabled { opacity: .5; cursor: default; }
+/* 상세 */
+.dbo-post-head { border-top: 2px solid #333; border-bottom: 1px solid var(--border); padding: 12px 6px 10px; margin-bottom: 10px; }
+.dbo-post-title { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+.dbo-post-meta { margin-top: 6px; font-size: 12.5px; color: var(--text-secondary); display: flex; gap: 12px; flex-wrap: wrap; }
+.dbo-post-writer { color: var(--text-primary); font-weight: 600; }
+.dbo-attach { font-size: 13px; color: var(--text-secondary); background: var(--bg, #f6f6f4); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
+.dbo-files { margin: 6px 0 0 16px; padding: 0; columns: 2; }
+.dbo-files li { font-size: 12.5px; margin: 1px 0; list-style: none; }
+.dbo-files a { color: var(--text-primary); }
+.dbo-body { padding: 4px 6px 14px; min-height: 80px; }
+.dbo-photos { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 6px 12px; }
+.dbo-photos .vp-thumb img { width: 140px; height: 140px; object-fit: cover; border-radius: 6px; }
+.dbo-post-actions { border-top: 1px solid var(--border); padding-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+.dbo-nav-title { font-weight: 400; color: var(--text-secondary); margin-left: 6px; }
+@media (max-width: 640px) {
+    .dbo-table .dbo-no, .dbo-table .dbo-num, .dbo-table th.dbo-num { display: none; }
+    .dbo-table .dbo-hd { width: 80px; }
+    .dbo-table td { padding: 8px 6px; font-size: 13px; }
+    .dbo-files { columns: 1; }
+    .dbo-info { font-size: 12px; }
+}

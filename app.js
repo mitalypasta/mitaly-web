@@ -3020,95 +3020,25 @@ function vpThumbCell(photos) {
     }).join("") + "</span>";
 }
 
-// ─── 매장 방문 리포트 게시판 (다우오피스 반입, 카드 #172) ───────────────────
+// ─── 매장 방문 리포트 게시판 (다우오피스 반입, 카드 #172·#174) ─────────────
 //
-// store_visits 중 source='daou' 만 다우오피스 게시판과 같은 모양으로 보여 줍니다.
-// 제목은 반입 규칙의 역순(`YYYY/MM/DD 매장명 종류 리포트`), 말머리는 게시판처럼
-// 매장 이름 첫 글자의 초성입니다. 제목을 누르면 본문(정리 텍스트)과 사진이 그 아래
-// 펼쳐지고, 사진은 그때 처음 받습니다(서명 URL — fetchVisitPhotos).
-const DB_CHO = ["ㄱ", "ㄱ", "ㄴ", "ㄷ", "ㄷ", "ㄹ", "ㅁ", "ㅂ", "ㅂ", "ㅅ", "ㅅ", "ㅇ", "ㅈ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"];
-let dbRows = [];                 // 반입 리포트(최신순)
-let dbLoadedAt = 0;
-const dbPhotoCache = new Map();  // visit_id → [사진]
-
-function dbChosung(name) {
-    const ch = String(name || "").trim().charAt(0);
-    const code = ch.charCodeAt(0) - 0xAC00;
-    if (code < 0 || code > 11171) return ch ? ch.toUpperCase() : "";
-    return DB_CHO[Math.floor(code / 588)] || "";
-}
-
-function dbTitle(v) {
-    const d = String(v.visited_on || "").replace(/-/g, "/");
-    const kind = v.visit_kind && v.visit_kind !== "기타" ? ` ${v.visit_kind}` : " 방문";
-    return `${d} ${v.store_name}${kind} 리포트`;
-}
-
-async function loadDaouBoard(force = false) {
-    const list = $("db-list");
-    if (!list) return;
-    if (!force && Date.now() - dbLoadedAt < 5 * 60_000 && dbRows.length) { renderDaouBoard(); return; }
-    const { data, error } = await db.rpc("api_store_visits", { p_store: null, p_limit: 500 });
-    if (error) {
-        list.innerHTML = `<p class="hint">불러오지 못했습니다: ${escape(error.message || error)}</p>`;
-        return;
-    }
-    dbRows = (Array.isArray(data) ? data : [])
-        .filter((v) => v.source === "daou")
-        .sort((a, b) => String(b.visited_on).localeCompare(String(a.visited_on)) || (b.visit_id - a.visit_id));
-    dbLoadedAt = Date.now();
-    renderDaouBoard();
-}
-
-function renderDaouBoard() {
-    const list = $("db-list");
-    const kind = $("db-kind").value;
-    const q = ($("db-q").value || "").trim().toLowerCase();
-    const rows = dbRows.filter((v) =>
-        (!kind || (v.visit_kind || "방문") === kind)
-        && (!q || [v.store_name, v.visited_by, v.special_note, dbTitle(v)]
-                .some((t) => String(t || "").toLowerCase().includes(q))));
-    $("db-count").textContent = dbRows.length
-        ? `총 ${int(dbRows.length)}건${rows.length !== dbRows.length ? ` · 표시 ${int(rows.length)}건` : ""}`
-        : "";
-    if (!dbRows.length) {
-        list.innerHTML = '<p class="hint">반입된 리포트가 아직 없습니다 — 새벽 사슬이 다우오피스 게시판의 새 글을 매일 가져옵니다.</p>';
-        return;
-    }
-    if (!rows.length) {
-        list.innerHTML = '<p class="hint">조건에 맞는 리포트가 없습니다.</p>';
-        return;
-    }
-    const total = dbRows.length;
-    const md = (iso) => String(iso || "").slice(5).replace("-", "-");
-    list.innerHTML =
-        `<table class="db-table">
-           <thead><tr><th class="db-no">번호</th><th class="db-head">말머리</th><th class="tl">매장</th><th class="tl db-title">제목</th><th class="tl">작성자</th><th>작성일</th><th>사진</th><th>원문</th></tr></thead>
-           <tbody>${rows.map((v) => {
-               const no = total - dbRows.indexOf(v);
-               const photos = dbPhotoCache.get(String(v.visit_id));
-               return `<tr class="db-row" data-visit-id="${v.visit_id}">
-                   <td class="db-no">${int(no)}</td>
-                   <td class="db-head"><span class="db-chip">${escape(dbChosung(v.store_name))}</span></td>
-                   <td class="tl">${escape(v.store_name)}</td>
-                   <td class="tl db-title"><button type="button" class="db-title-btn" data-act="db-toggle" data-visit-id="${v.visit_id}">${escape(dbTitle(v))}</button></td>
-                   <td class="tl">${escape(v.visited_by || "—")}</td>
-                   <td>${escape(md(v.visited_on))}</td>
-                   <td>${photos ? int(photos.length) : '<span class="db-clip" title="펼치면 사진을 불러옵니다">📎</span>'}</td>
-                   <td>${v.external_url ? `<a href="${escape(v.external_url)}" target="_blank" rel="noopener" class="linkish">원문 ↗</a>` : "—"}</td>
-                 </tr>`;
-           }).join("")}</tbody>
-         </table>`;
-}
-
-// 다우 원문 HTML 을 그대로 쓰지 않고 허용 태그만 남깁니다 — 붙여 넣은 채팅 화면의
-// class/data-* 속성, 스크립트, 다우 서버 인증이 필요한 인라인 이미지(따로 첨부로 보여 줌)를
-// 걷어내고 제목·문단·글머리·굵게·표만 남깁니다. 속성은 a.href(http/https)만.
+// 다우오피스 게시판 페이지를 그대로 따릅니다(담당자 지시 2026-09-09): 게시판 정보 →
+// 새글쓰기·페이지 크기 → 번호|말머리 선택|제목|작성자|작성일|조회|좋아요(공지 고정) →
+// 페이지·기간·검색. 제목을 누르면 카드 안이 상세 페이지로 바뀝니다(제목·작성자·첨부 목록·
+// 원문 HTML(110 허용 태그)·사진·목록/이전글/다음글). 자료는 111 api_visit_board 한 번,
+// 본문·사진은 상세를 열 때.
 const DB_ALLOW = new Set(["p", "div", "br", "ul", "ol", "li", "strong", "b", "em", "i", "u", "s",
     "h1", "h2", "h3", "h4", "h5", "h6", "span", "blockquote", "table", "thead", "tbody", "tr", "td", "th",
     "a", "pre", "code", "hr", "sup", "sub"]);
 const DB_DROP = new Set(["script", "style", "iframe", "object", "embed", "img", "svg", "video", "audio",
     "button", "input", "select", "textarea", "form", "meta", "link", "template", "noscript", "canvas"]);
+const DBO_HEADERS = ["폐점", "ㄱ", "ㄴ", "ㄷ", "ㄹ", "ㅁ", "ㅂ", "ㅅ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ", "공지"];
+const DB_CHO = ["ㄱ", "ㄱ", "ㄴ", "ㄷ", "ㄷ", "ㄹ", "ㅁ", "ㅂ", "ㅂ", "ㅅ", "ㅅ", "ㅇ", "ㅈ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"];
+let dbo = { board: null, notices: [], posts: [], loadedAt: 0,
+            view: "list", openId: null, header: "", period: "all", from: "", to: "",
+            scope: "all", q: "", pageSize: 20, page: 0 };
+const dboPhotoCache = new Map();
+
 function dbSanitize(html) {
     const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
     const out = document.createElement("div");
@@ -3118,7 +3048,7 @@ function dbSanitize(html) {
             if (child.nodeType !== Node.ELEMENT_NODE) continue;
             const tag = child.tagName.toLowerCase();
             if (DB_DROP.has(tag)) continue;
-            if (!DB_ALLOW.has(tag)) { walk(child, parent); continue; }   // 모르는 태그는 껍질만 벗김
+            if (!DB_ALLOW.has(tag)) { walk(child, parent); continue; }
             const el = document.createElement(tag === "b" ? "strong" : tag === "i" ? "em" : tag);
             if (tag === "a") {
                 const href = child.getAttribute("href") || "";
@@ -3129,67 +3059,247 @@ function dbSanitize(html) {
         }
     };
     walk(doc.body, out);
-    // 빈 문단·연속 br 정리
     for (const e of out.querySelectorAll("p, div, span")) {
         if (!e.textContent.trim() && !e.querySelector("br, table, ul, ol")) e.remove();
     }
     return out.innerHTML;
 }
 
-async function dbToggle(visitId) {
-    const row = document.querySelector(`#db-list tr.db-row[data-visit-id="${visitId}"]`);
-    if (!row) return;
-    const next = row.nextElementSibling;
-    if (next && next.classList.contains("db-detail")) { next.remove(); row.classList.remove("is-open"); return; }
-    // 다른 펼침은 닫습니다 — 게시판처럼 한 번에 한 글.
-    for (const d of document.querySelectorAll("#db-list tr.db-detail")) d.remove();
-    for (const r of document.querySelectorAll("#db-list tr.db-row.is-open")) r.classList.remove("is-open");
-    const v = dbRows.find((x) => String(x.visit_id) === String(visitId));
-    if (!v) return;
-    row.classList.add("is-open");
-    const detail = document.createElement("tr");
-    detail.className = "db-detail";
-    detail.innerHTML = `<td colspan="8"><div class="db-body">
-        <div class="db-body-head"><strong>${escape(dbTitle(v))}</strong> <span class="meta">${escape(v.visited_by || "")} · ${escape(v.visited_on || "")}</span>
-          ${v.external_url ? ` <a href="${escape(v.external_url)}" target="_blank" rel="noopener" class="linkish">다우오피스 원문 ↗</a>` : ""}</div>
-        <div class="db-text" id="db-text-${v.visit_id}">${v.special_note ? escape(v.special_note).replaceAll("\n", "<br>") : "<span class='hint'>본문 없음</span>"}</div>
-        <div class="db-photos" id="db-photos-${v.visit_id}"><span class="hint">사진 불러오는 중…</span></div>
-      </div></td>`;
-    row.after(detail);
-    // 원문 HTML(110) — 펼칠 때 한 건만 받아 허용 태그만 남기고 그립니다(제목·글머리·들여쓰기 유지).
+function dbChosung(name) {
+    const ch = String(name || "").trim().charAt(0);
+    const code = ch.charCodeAt(0) - 0xAC00;
+    if (code < 0 || code > 11171) return ch ? ch.toUpperCase() : "";
+    return DB_CHO[Math.floor(code / 588)] || "";
+}
+function dboTitle(v) {
+    const d = String(v.visited_on || "").replace(/-/g, "/");
+    const kind = v.kind && v.kind !== "기타" ? ` ${v.kind}` : " 방문";
+    return `${d} ${v.store}${kind} 리포트`;
+}
+function dboHeader(v) { return (v.meta && v.meta.header) || dbChosung(v.store); }
+function dboWriter(v) { return `${v.writer || "—"}${v.meta && v.meta.writer_position ? ` ${v.meta.writer_position}` : ""}`; }
+function dboPostedAt(v) { return (v.meta && v.meta.posted_at) || (v.visited_on ? `${v.visited_on}T00:00:00` : ""); }
+function dboMd(iso) { const t = String(iso || ""); return t.length >= 10 ? `${t.slice(5, 7)}-${t.slice(8, 10)}` : ""; }
+function dboFull(iso) {
+    const t = String(iso || "");
+    return t.length >= 16 ? `${t.slice(0, 10)} ${t.slice(11, 16)}` : t.slice(0, 10);
+}
+function dboBytes(n) {
+    n = Number(n) || 0;
+    if (n >= 1048576) return `${(n / 1048576).toFixed(1)}MB`;
+    if (n >= 1024) return `${Math.round(n / 1024)}KB`;
+    return `${n}B`;
+}
+
+async function loadDaouBoard(force = false) {
+    const root = $("dbo-root");
+    if (!root) return;
+    if (!force && Date.now() - dbo.loadedAt < 5 * 60_000 && dbo.posts.length) { dboRender(); return; }
+    const { data, error } = await db.rpc("api_visit_board", {});
+    if (error) {
+        root.innerHTML = `<p class="hint">불러오지 못했습니다: ${escape(error.message || error)}</p>`;
+        return;
+    }
+    const d = Array.isArray(data) ? (data[0] || {}) : (data || {});
+    dbo.board = d.board || null;
+    dbo.notices = d.notices || [];
+    dbo.posts = d.posts || [];
+    dbo.loadedAt = Date.now();
+    dboRender();
+}
+
+function dboFiltered() {
+    const q = dbo.q.trim().toLowerCase();
+    const now = new Date();
+    let from = null, to = null;
+    if (dbo.period === "1m" || dbo.period === "6m" || dbo.period === "1y") {
+        from = new Date(now); from.setMonth(from.getMonth() - (dbo.period === "1m" ? 1 : dbo.period === "6m" ? 6 : 12));
+    } else if (dbo.period === "custom") {
+        if (dbo.from) from = new Date(dbo.from);
+        if (dbo.to) { to = new Date(dbo.to); to.setHours(23, 59, 59, 999); }
+    }
+    return dbo.posts.filter((v) => {
+        if (dbo.header && dboHeader(v) !== dbo.header) return false;
+        const at = new Date(dboPostedAt(v));
+        if (from && at < from) return false;
+        if (to && at > to) return false;
+        if (q) {
+            const title = dboTitle(v).toLowerCase();
+            const writer = dboWriter(v).toLowerCase();
+            const body = String(v.snippet || "").toLowerCase();
+            if (dbo.scope === "title" && !title.includes(q)) return false;
+            if (dbo.scope === "writer" && !writer.includes(q)) return false;
+            if (dbo.scope === "all" && !(title.includes(q) || body.includes(q))) return false;
+        }
+        return true;
+    });
+}
+
+function dboRender() {
+    const root = $("dbo-root");
+    const board = dbo.board || {};
+    $("dbo-name").textContent = board.name || "매장 방문 리포트";
+    $("dbo-path").textContent = `${board.path ? escape(String(board.path)).replace(/&gt;/g, "/") : "부서 / 운영지원팀"} (총 ${int(dbo.posts.length + dbo.notices.length)}건)`;
+    if (dbo.view === "post" && dbo.openId != null) { dboRenderPost(); return; }
+
+    const rows = dboFiltered();
+    const total = dbo.posts.length;
+    const pages = Math.max(1, Math.ceil(rows.length / dbo.pageSize));
+    if (dbo.page >= pages) dbo.page = pages - 1;
+    const slice = rows.slice(dbo.page * dbo.pageSize, (dbo.page + 1) * dbo.pageSize);
+    const numOf = (v) => total - dbo.posts.indexOf(v);
+    const sizeSel = (id) => `<select class="dbo-size" data-act="dbo-size" aria-label="페이지 크기">${[20, 40, 60, 80].map((n) => `<option value="${n}"${n === dbo.pageSize ? " selected" : ""}>${n}</option>`).join("")}</select>`;
+    const managers = (board.managers || []).map((m) => escape(m.name || "")).join(" ");
+    const headerSel = `<select class="dbo-header" data-act="dbo-header" aria-label="말머리 선택">
+        <option value="">말머리 선택</option>${DBO_HEADERS.map((h) => `<option value="${h}"${dbo.header === h ? " selected" : ""}>${h}</option>`).join("")}</select>`;
+
+    root.innerHTML = `
+      <div class="dbo-info">
+        <div class="dbo-info-row">▪ 게시판 주소 : <a href="${escape(board.url || "#")}" target="_blank" rel="noopener">${escape(board.url || "")}</a> <button type="button" class="dbo-mini" data-act="dbo-copy">복사</button></div>
+        <div class="dbo-info-row">▪ 이메일 수신 : <a href="${escape(board.url || "#")}" target="_blank" rel="noopener" class="dbo-mini dbo-mini-link">+ 신청하기</a></div>
+        <div class="dbo-info-row dbo-managers">운영자 : ${managers || "—"}</div>
+        <div class="dbo-info-row dbo-desc">${escape(board.description || "매장 방문·점검·미팅 내용을 기록하고, 주요 이슈 및 조치사항을 매장별로 누적 관리하기 위한 폴더입니다.")}</div>
+      </div>
+      <div class="dbo-toolbar">
+        <a class="dbo-write" href="${escape(board.url || "#")}" target="_blank" rel="noopener">✎ 새글쓰기</a>
+        <span class="dbo-right">${sizeSel("top")}</span>
+      </div>
+      <table class="dbo-table">
+        <thead><tr><th class="dbo-no">번호</th><th class="dbo-hd">${headerSel}</th><th class="tl">제목</th><th class="tl dbo-writer">작성자</th><th class="dbo-date">작성일</th><th class="dbo-num">조회</th><th class="dbo-num">좋아요</th></tr></thead>
+        <tbody>
+        ${dbo.notices.map((n) => `<tr class="dbo-notice">
+            <td class="dbo-no"><span class="dbo-mega" title="공지">📢</span></td>
+            <td class="dbo-hd"></td>
+            <td class="tl"><a class="dbo-title dbo-title-notice" href="${escape(n.url || "#")}" target="_blank" rel="noopener">[공지] ${escape(n.title || "")}</a></td>
+            <td class="tl dbo-writer">${escape(n.writer || "")}${n.writer_position ? ` ${escape(n.writer_position)}` : ""}</td>
+            <td class="dbo-date">${dboMd(n.posted_at)}</td>
+            <td class="dbo-num">${int(n.read_count || 0)}</td>
+            <td class="dbo-num dbo-like">${int(n.like_count || 0)}</td>
+          </tr>`).join("")}
+        ${slice.length ? slice.map((v) => `<tr class="dbo-row" data-store="${escape(v.store)}" data-visit-id="${v.visit_id}">
+            <td class="dbo-no">${int(numOf(v))}</td>
+            <td class="dbo-hd"><span class="dbo-chip">[${escape(dboHeader(v))}]</span></td>
+            <td class="tl"><button type="button" class="dbo-title" data-act="dbo-open" data-visit-id="${v.visit_id}">${v.photo_count ? '<span class="dbo-clip" title="첨부">📎</span> ' : ""}${escape(dboTitle(v))}${v.meta && v.meta.new ? ' <span class="dbo-new">N</span>' : ""}${v.meta && v.meta.comments ? ` <span class="dbo-cmt">[${int(v.meta.comments)}]</span>` : ""}</button></td>
+            <td class="tl dbo-writer">${escape(dboWriter(v))}</td>
+            <td class="dbo-date">${dboMd(dboPostedAt(v))}</td>
+            <td class="dbo-num">${int((v.meta && v.meta.read_count) || 0)}</td>
+            <td class="dbo-num dbo-like">${int((v.meta && v.meta.like_count) || 0)}</td>
+          </tr>`).join("")
+          : `<tr><td colspan="7" class="dbo-empty">${dbo.posts.length ? "조건에 맞는 글이 없습니다." : "반입된 리포트가 아직 없습니다 — 새벽 사슬이 다우오피스 게시판의 새 글을 매일 가져옵니다."}</td></tr>`}
+        </tbody>
+      </table>
+      <div class="dbo-foot">
+        <div class="dbo-foot-row"><span class="dbo-right">${sizeSel("bottom")}</span></div>
+        <div class="dbo-pager">${Array.from({ length: pages }, (_, i) =>
+            `<button type="button" class="dbo-page${i === dbo.page ? " on" : ""}" data-act="dbo-page" data-page="${i}">${i + 1}</button>`).join("")}</div>
+        <div class="dbo-period">
+          ${[["all", "전체기간"], ["1m", "1개월"], ["6m", "6개월"], ["1y", "1년"], ["custom", "기간입력"]].map(([k, l]) =>
+              `<button type="button" class="dbo-pill${dbo.period === k ? " on" : ""}" data-act="dbo-period" data-period="${k}">${l}</button>`).join("")}
+          <span class="dbo-range"${dbo.period === "custom" ? "" : " hidden"}><input type="date" data-act="dbo-from" value="${escape(dbo.from)}"> ~ <input type="date" data-act="dbo-to" value="${escape(dbo.to)}"></span>
+        </div>
+        <div class="dbo-search">
+          <select data-act="dbo-scope"><option value="all"${dbo.scope === "all" ? " selected" : ""}>제목+내용</option><option value="title"${dbo.scope === "title" ? " selected" : ""}>제목</option><option value="writer"${dbo.scope === "writer" ? " selected" : ""}>작성자</option></select>
+          <input type="search" data-act="dbo-q" value="${escape(dbo.q)}" placeholder="검색어" autocomplete="off">
+          <button type="button" class="dbo-btn" data-act="dbo-search">검색</button>
+        </div>
+      </div>`;
+}
+
+async function dboRenderPost() {
+    const root = $("dbo-root");
+    const list = dboFiltered();
+    const idx = list.findIndex((v) => String(v.visit_id) === String(dbo.openId));
+    const v = idx >= 0 ? list[idx] : dbo.posts.find((x) => String(x.visit_id) === String(dbo.openId));
+    if (!v) { dbo.view = "list"; dboRender(); return; }
+    const prev = idx > 0 ? list[idx - 1] : null;             // 목록에서 위 글(더 최신)
+    const next = idx >= 0 && idx < list.length - 1 ? list[idx + 1] : null;
+    root.innerHTML = `
+      <div class="dbo-post">
+        <div class="dbo-post-head">
+          <div class="dbo-post-title"><span class="dbo-chip">[${escape(dboHeader(v))}]</span> ${escape(dboTitle(v))}</div>
+          <div class="dbo-post-meta">
+            <span class="dbo-post-writer">${escape(dboWriter(v))}</span>
+            <span>${escape(dboFull(dboPostedAt(v)))}</span>
+            <span>조회 ${int((v.meta && v.meta.read_count) || 0)}</span>
+            <span>좋아요 ${int((v.meta && v.meta.like_count) || 0)}</span>
+            <span>댓글 ${int((v.meta && v.meta.comments) || 0)}</span>
+            ${v.url ? `<a href="${escape(v.url)}" target="_blank" rel="noopener" class="linkish">다우오피스 원문 ↗</a>` : ""}
+          </div>
+        </div>
+        <div class="dbo-attach" id="dbo-attach">📎 첨부 ${int(v.photo_count)}개${v.photo_bytes ? ` (${dboBytes(v.photo_bytes)})` : ""}${v.photo_count ? ' <span class="hint">불러오는 중…</span>' : ""}</div>
+        <div class="dbo-body db-text" id="dbo-body">${v.snippet ? escape(v.snippet) + "…" : "<span class='hint'>본문 불러오는 중…</span>"}</div>
+        <div class="dbo-photos" id="dbo-photos"></div>
+        <div class="dbo-post-actions">
+          <button type="button" class="dbo-btn" data-act="dbo-list">목록</button>
+          <button type="button" class="dbo-btn" data-act="dbo-open" data-visit-id="${prev ? prev.visit_id : ""}"${prev ? "" : " disabled"}>▲ 이전글${prev ? ` <span class="dbo-nav-title">${escape(dboTitle(prev))}</span>` : ""}</button>
+          <button type="button" class="dbo-btn" data-act="dbo-open" data-visit-id="${next ? next.visit_id : ""}"${next ? "" : " disabled"}>▼ 다음글${next ? ` <span class="dbo-nav-title">${escape(dboTitle(next))}</span>` : ""}</button>
+        </div>
+      </div>`;
+    $("daou-board-card").scrollIntoView({ block: "start", behavior: "smooth" });
+
+    // 본문(110) — 허용 태그만 남겨 원문 위계 그대로
     db.rpc("api_visit_body", { p_visit_id: v.visit_id }).then((r) => {
         const body = r && !r.error && r.data ? (Array.isArray(r.data) ? r.data[0] : r.data) : null;
-        const box = document.getElementById(`db-text-${v.visit_id}`);
-        if (!box || !body || !body.body_html) return;
-        const html = dbSanitize(body.body_html);
-        if (html.trim()) box.innerHTML = html;
-    }, () => { /* 110 미적용 — 정리 텍스트 그대로 */ });
-    let photos = dbPhotoCache.get(String(v.visit_id));
-    if (!photos) {
-        const map = await fetchVisitPhotos([v.visit_id]);
-        photos = map.get(String(v.visit_id)) || [];
-        dbPhotoCache.set(String(v.visit_id), photos);
-        const cnt = row.cells[6];
-        if (cnt) cnt.textContent = int(photos.length);
+        const box = $("dbo-body");
+        if (!box || String(dbo.openId) !== String(v.visit_id)) return;
+        if (body && body.body_html && dbSanitize(body.body_html).trim()) box.innerHTML = dbSanitize(body.body_html);
+        else if (body && body.special_note) box.innerHTML = escape(body.special_note).replaceAll("\n", "<br>");
+        else box.innerHTML = "<span class='hint'>본문 없음</span>";
+    }, () => {});
+    // 첨부(101) — 이름·크기 목록 + 사진
+    if (v.photo_count) {
+        let photos = dboPhotoCache.get(String(v.visit_id));
+        if (!photos) {
+            const map = await fetchVisitPhotos([v.visit_id]);
+            photos = map.get(String(v.visit_id)) || [];
+            dboPhotoCache.set(String(v.visit_id), photos);
+        }
+        if (String(dbo.openId) !== String(v.visit_id)) return;
+        const att = $("dbo-attach");
+        if (att) att.innerHTML = `📎 첨부 ${int(photos.length)}개${v.photo_bytes ? ` (${dboBytes(v.photo_bytes)})` : ""}
+            <ul class="dbo-files">${photos.map((p) => `<li><a href="${escape(p.url || "#")}" target="_blank" rel="noopener">${escape(p.file_name || "")}</a>${p.byte_size ? ` <span class="meta">(${dboBytes(p.byte_size)})</span>` : ""}</li>`).join("")}</ul>`;
+        const ph = $("dbo-photos");
+        if (ph) ph.innerHTML = photos.length ? vpThumbCell(photos) : "";
     }
-    const box = document.getElementById(`db-photos-${v.visit_id}`);
-    if (box) box.innerHTML = photos.length ? vpThumbCell(photos) : '<span class="hint">사진 없음</span>';
 }
 
 function initDaouBoard() {
-    if (!$("db-list")) return;
-    $("db-kind").addEventListener("change", renderDaouBoard);
-    $("db-q").addEventListener("input", debounce(renderDaouBoard, 150));
-    $("db-list").addEventListener("click", (e) => {
-        const btn = e.target.closest('[data-act="db-toggle"]');
-        if (btn) { e.preventDefault(); dbToggle(btn.dataset.visitId); }
+    const root = $("dbo-root");
+    if (!root) return;
+    root.addEventListener("click", async (e) => {
+        const t = e.target.closest("[data-act]");
+        if (!t) return;
+        const act = t.dataset.act;
+        if (act === "dbo-open" && t.dataset.visitId) { dbo.view = "post"; dbo.openId = t.dataset.visitId; dboRender(); }
+        else if (act === "dbo-list") { dbo.view = "list"; dbo.openId = null; dboRender(); }
+        else if (act === "dbo-page") { dbo.page = Number(t.dataset.page) || 0; dboRender(); }
+        else if (act === "dbo-period") { dbo.period = t.dataset.period; dbo.page = 0; dboRender(); }
+        else if (act === "dbo-search") { dbo.page = 0; dboRender(); }
+        else if (act === "dbo-copy") {
+            try { await navigator.clipboard.writeText((dbo.board || {}).url || ""); t.textContent = "복사됨"; setTimeout(() => { t.textContent = "복사"; }, 1500); } catch { /* 클립보드 불가 */ }
+        }
+    });
+    root.addEventListener("change", (e) => {
+        const t = e.target.closest("[data-act]");
+        if (!t) return;
+        const act = t.dataset.act;
+        if (act === "dbo-size") { dbo.pageSize = Number(t.value) || 20; dbo.page = 0; dboRender(); }
+        else if (act === "dbo-header") { dbo.header = t.value; dbo.page = 0; dboRender(); }
+        else if (act === "dbo-scope") { dbo.scope = t.value; }
+        else if (act === "dbo-from") { dbo.from = t.value; dbo.page = 0; dboRender(); }
+        else if (act === "dbo-to") { dbo.to = t.value; dbo.page = 0; dboRender(); }
+    });
+    root.addEventListener("input", (e) => {
+        const t = e.target.closest('[data-act="dbo-q"]');
+        if (t) dbo.q = t.value;
+    });
+    root.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && e.target.closest('[data-act="dbo-q"]')) { e.preventDefault(); dbo.page = 0; dboRender(); }
     });
     document.addEventListener("mitaly:area-shown", (e) => {
         if ((e.detail || {}).area === "visits") loadDaouBoard();
     });
-    document.addEventListener("mitaly:sv-changed", () => {
-        for (const d of document.querySelectorAll("#db-list tr.db-detail")) d.remove();
-    });
+    document.addEventListener("mitaly:sv-changed", () => { if (dbo.view === "list") dboRender(); });
     loadDaouBoard();
 }
 
