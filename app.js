@@ -3161,7 +3161,6 @@ function dboRender() {
         <div class="dbo-info-row dbo-desc">${escape(board.description || "매장 방문·점검·미팅 내용을 기록하고, 주요 이슈 및 조치사항을 매장별로 누적 관리하기 위한 폴더입니다.")}</div>
       </div>
       <div class="dbo-toolbar">
-        <a class="dbo-write" href="${escape(board.url || "#")}" target="_blank" rel="noopener">✎ 새글쓰기</a>
         <span class="dbo-right">${sizeSel("top")}</span>
       </div>
       <table class="dbo-table">
