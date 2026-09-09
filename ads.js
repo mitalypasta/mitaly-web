@@ -110,8 +110,10 @@ async function loadAds() {
 
     const byChannel = Array.isArray(data.by_channel) ? data.by_channel : [];
     table($("t-ads-channel"), ["채널", "광고비", "노출 수", "클릭 수", "광고로 들어온 주문"],
-        byChannel.map((c) => [c.channel, wonFull(c.cost), int(c.impressions),
-                              int(c.clicks), int(c.orders)]));
+        byChannel.map((c) => [c.channel, wonFull(c.cost),
+                              c.impressions == null ? "—" : int(c.impressions),
+                              c.clicks == null ? "—" : int(c.clicks),
+                              c.orders == null ? "—" : int(c.orders)]));
     table($("t-ads"),
         ["월", "매장", "채널", "광고 이름", "광고비", "노출 수", "클릭 수",
          "광고로 들어온 주문", "광고 경유 매출", "출처", ""],

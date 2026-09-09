@@ -1589,7 +1589,10 @@ const HOME_CHANNEL_NAMES = {
 async function loadHomeHealth() {
     const el = $("home-warn");
     const [healthRes, runnerRes] = await Promise.all([
-        db.rpc("api_account_health").catch((e) => ({ error: e })),
+        // PostgrestBuilder 는 thenable 이지만 .catch 가 없어 TypeError 로 홈 경고
+        // 타일이 통째로 안 그려졌다(2026-09-09 실측: 콘솔 "db.rpc(...).catch is not
+        // a function"). 아래 runner_status 줄과 같은 then(성공, 실패) 꼴로.
+        db.rpc("api_account_health").then((r) => r, (e) => ({ error: e })),
         db.from("runner_status").select("last_seen_at").limit(1)
             .then((r) => r, (e) => ({ error: e })),
     ]);

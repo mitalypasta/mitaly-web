@@ -368,20 +368,37 @@ function registerExport(container, headers, rows) {
     header.append(btn);
 }
 
-// 셀 값을 엑셀 셀로. HTML(배지·meta 줄)은 글자만 남기고, '1,234'·'1,234원'
-// 같은 순수 숫자는 숫자 타입으로 넣어 엑셀에서 바로 계산되게 합니다.
-// (won() 의 '1.2억'·'%' 류는 단위를 잃으므로 문자열 그대로 둡니다.)
-function exportCell(v) {
-    if (typeof v === "number") return v;
-    const text = String(v ?? "")
-        .replace(/<(div|p|br|li)[^>]*>/gi, " ")
-        .replace(/<[^>]*>/g, "")
+// 셀 값을 엑셀 셀로 (2026-09-09 재작성 — 본사 검토 내려받기 3종 실측 결함).
+//   · 버튼·링크만 있는 칸('입금'·'삭제' 처리 열)은 값이 아니므로 비웁니다.
+//   · 값 뒤에 붙는 meta 줄·배지(<div class="meta">매출 × 3.3%</div>, '갱신 필요')는
+//     버리고 **첫 블록의 글자만** 값으로 씁니다 — 전에는 전부 이어 붙여
+//     "50,398원 매출 × 3.3% 갱신 필요 청구 당시 매출 1,527,200원" 문자열이 나갔습니다.
+//   · '—'(값 없음)은 빈 칸으로 — 숫자 열에 문자열이 섞이면 엑셀 합계가 깨집니다.
+//   · '1,234'·'1,234원'·'47,117.1'(천 단위 구분이 있는 소수)은 숫자 타입으로.
+//     구분 없는 소수('2025.10' 연월 라벨)는 문자열 그대로(2025.1 로 망가짐 방지).
+//   · won() 의 '1.2억'·'%' 류는 단위를 잃으므로 문자열 그대로 둡니다.
+const EMPTY_MARKS = new Set(["", "—", "–", "-", "…"]);
+function decodeText(html) {
+    return String(html ?? "")
+        .replace(/<[^>]*>/g, " ")
         .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
         .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
         .replace(/\s+/g, " ").trim();
-    // 정수만 숫자로 바꿉니다. 소수점이 있는 건 '2025.10'(연월 라벨) 같은
-    // 표기가 숫자 2025.1 로 망가질 수 있어 문자열 그대로 둡니다.
-    if (/^[-+]?[0-9][0-9,]*원?$/.test(text)) {
+}
+function exportCell(v) {
+    if (typeof v === "number") return Number.isFinite(v) ? v : null;
+    if (v == null) return null;
+    let html = String(v);
+    const hasControl = /<(button|a|input|select)\b/i.test(html);
+    html = html.replace(/<(button|a|select)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+               .replace(/<input\b[^>]*>/gi, " ");
+    const whole = decodeText(html);
+    if (hasControl && whole === "") return null;
+    const first = decodeText(html.split(/<(?:div|p|br|li|ul|ol|table|tr)\b[^>]*>/i)[0]);
+    const text = first !== "" ? first : whole;
+    if (EMPTY_MARKS.has(text)) return null;
+    if (/^[-+]?[0-9]{1,3}(,[0-9]{3})+(\.[0-9]+)?원?$/.test(text)
+        || /^[-+]?[0-9]+원?$/.test(text)) {
         return Number(text.replace(/[,원]/g, ""));
     }
     return text;
@@ -408,10 +425,27 @@ async function exportCard(card) {
             ["매장", "매장명", "지점", "매장 이름", "가맹점", "가맹점명"].includes(String(h).trim()));
         const rowsIn = storeCol < 0 ? d.rows
             : d.rows.filter((r) => svAllows(String(exportCell(r[storeCol]) ?? "")));
-        const aoa = [d.headers.map((h) => exportCell(h)),
-                     ...rowsIn.map((r) => r.map(exportCell))];
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa),
-            sheetTitle(title, i, parts.length));
+        let aoa = [d.headers.map((h) => exportCell(h)),
+                   ...rowsIn.map((r) => r.map(exportCell))];
+        // 값이 하나도 없는 열(처리·삭제 버튼 열, 이름 없는 열)은 빼서 빈 열이
+        // 시트에 남지 않게 합니다.
+        const width = Math.max(...aoa.map((r) => r.length));
+        const keep = [];
+        for (let c = 0; c < width; c += 1) {
+            if (aoa.slice(1).some((r) => r[c] != null && r[c] !== "")) keep.push(c);
+        }
+        aoa = aoa.map((r) => keep.map((c) => (r[c] == null ? null : r[c])));
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        // 열 너비: 글자 수 기준(한글 2칸), 8~40 사이 — 전에는 전부 13 이라
+        // 긴 매장명·금액이 잘려 보였습니다.
+        ws["!cols"] = keep.map((_, c) => {
+            const lens = aoa.map((r) => {
+                const t = r[c] == null ? "" : String(r[c]);
+                return [...t].reduce((n, ch) => n + (ch.charCodeAt(0) > 0x2000 ? 2 : 1), 0);
+            });
+            return { wch: Math.min(40, Math.max(8, Math.max(...lens) + 2)) };
+        });
+        XLSX.utils.book_append_sheet(wb, ws, sheetTitle(title, i, parts.length));
     });
     const day = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const safe = title.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();

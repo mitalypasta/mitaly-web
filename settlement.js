@@ -234,6 +234,14 @@ async function generateInvoices() {
     if (!ym) return;
     const button = $("st-generate");
     const msg = $("st-generate-msg");
+    // 진행 중인 달은 서버(107)가 거부합니다 — 왕복 없이 같은 이유를 먼저 보여 줍니다.
+    const now = new Date();
+    const thisYm = now.getFullYear() * 100 + (now.getMonth() + 1);
+    if (ym >= thisYm) {
+        msg.textContent = "이번 달은 아직 끝나지 않았습니다 — 다음 달 1일 이후에 생성하세요. "
+            + "지금 예상액은 표의 '예상' 값으로 보세요.";
+        return;
+    }
     button.disabled = true;
     msg.textContent = "계산 중…";
 

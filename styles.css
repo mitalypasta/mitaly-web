@@ -19,7 +19,7 @@
     --surface-1:       #ffffff;
     --text-primary:    #212529;
     --text-secondary:  #495057;
-    --text-muted:      #9096a2;
+    --text-muted:      #6b7280;   /* 2026-09-09 #9096a2→: 흰 바탕 대비 2.9→4.8:1 (WCAG AA) */
     --gridline:        #eef0f3;
     --baseline:        #d3d5d9;
     --border:          rgba(18, 25, 38, 0.09);
@@ -64,7 +64,7 @@
     --fs-hero:         34px;      /* hero 답 숫자 — 답은 더 크게(디자인 언어) */
     --fs-title:        15px;      /* 카드 제목 */
     --fs-body:         13px;      /* 본문·표 */
-    --fs-meta:         11.5px;    /* 보조·각주·축 라벨 */
+    --fs-meta:         12px;      /* 보조·각주·축 라벨 (2026-09-09 11.5→12: 본사 검토 가독성) */
 
     /* 경계는 그림자보다 선 — 참고 3종 공통(그림자 거의 0, 헤어라인 1px).
        그림자는 흔적만 남기고 카드가 --border 헤어라인을 두릅니다
