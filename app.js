@@ -1451,12 +1451,14 @@ function drawHomeSv(res) {
         : "";
 
     // 필터 옵션은 응답의 SV 목록으로(선택값은 유지).
+    // 2026-09-09 담당자 지시("담당자 전체도 필요 없겠다"): '전체' 는 없고 한 명씩만 봅니다.
+    // 처음 값은 전역 담당자 필터(헤더) → 없으면 매장이 있는 첫 담당자.
     const filter = $("home-sv-filter");
     const keep = filter.value;
-    filter.innerHTML = '<option value="">전체</option>'
-        + all.map((v) => `<option value="${escape(v.sv)}">${escape(v.sv)} (${int(v.stores)})</option>`).join("");
-    // 처음 그릴 때는 전역 담당자 필터(헤더)의 값을 따릅니다.
-    const want = keep || svCurrent();
+    filter.innerHTML = all.map((v) =>
+        `<option value="${escape(v.sv)}">${escape(v.sv)} (${int(v.stores)})</option>`).join("");
+    const want = keep || svCurrent()
+        || (all.find((v) => Number(v.stores) > 0) || all[0] || {}).sv || "";
     if ([...filter.options].some((o) => o.value === want)) filter.value = want;
     renderSv();
 }
@@ -1466,16 +1468,22 @@ function renderSv() {
     const all = (svData && svData.svs) || [];
     const day = (svData && svData.day) ? String(svData.day) : "";
     const pick = $("home-sv-filter").value;
-    const svs = pick ? all.filter((v) => v.sv === pick) : all;
+    const v = all.find((x) => x.sv === pick) || all[0];
+    if (!v) {
+        $("home-sv-summary").innerHTML = "";
+        listEl.innerHTML = '<p class="home-anom-empty">담당 SV 가 배정된 매장이 없습니다 — 매장 정보의 담당 SV 를 채우면 여기 카드가 생깁니다.</p>';
+        return;
+    }
+    const items = v.items || {};
 
-    // 숫자 6개 — 담당자 표 순서. 누르면 아래 그 항목의 첫 목록으로.
+    // 숫자 6개 — 담당자 표 순서. 누르면 아래 그 항목으로.
     const tiles = [
-        ["stores",      "담당 매장",      svSum(svs, (v) => v.stores),                         "개", "현재 운영 매장", "t-good"],
-        ["no_sales",    "전일 미영업",    svSum(svs, (v) => v.items.no_sales.count),           "개", "전일 매출 0원 또는 POS 미발생", "t-urgent"],
-        ["bad_reviews", "악성/저평점 리뷰", svSum(svs, (v) => v.items.bad_reviews.count),      "건", "전일 신규 1~2점 리뷰", "t-urgent"],
-        ["unanswered",  "미답변 리뷰",    svSum(svs, (v) => v.items.unanswered.count),         "건", "전일 신규 리뷰 중 답글 미등록", "t-attn"],
-        ["drops",       "매출 급락 매장", svSum(svs, (v) => v.items.drops.count),              "개", "전주 동일요일 대비 30% 이상 감소", "t-attn"],
-        ["unchecked",   "확인 미완료",    svSum(svs, (v) => v.unchecked),                      "건", "특이사항 확인·조치가 안 된 건", "t-urgent"],
+        ["stores",      "담당 매장",      Number(v.stores) || 0,                          "개", "현재 운영 매장", "t-good"],
+        ["no_sales",    "전일 미영업",    Number(items.no_sales.count) || 0,              "개", "전일 매출 0원 또는 POS 미발생", "t-urgent"],
+        ["bad_reviews", "악성/저평점 리뷰", Number(items.bad_reviews.count) || 0,         "건", "전일 신규 1~2점 리뷰", "t-urgent"],
+        ["unanswered",  "미답변 리뷰",    Number(items.unanswered.count) || 0,            "건", "전일 신규 리뷰 중 답글 미등록", "t-attn"],
+        ["drops",       "매출 급락 매장", Number(items.drops.count) || 0,                 "개", "전주 동일요일 대비 30% 이상 감소", "t-attn"],
+        ["unchecked",   "확인 미완료",    Number(v.unchecked) || 0,                       "건", "특이사항 확인·조치가 안 된 건", "t-urgent"],
     ];
     $("home-sv-summary").innerHTML = tiles.map(([key, label, n, unit, subText, tone]) =>
         `<button type="button" class="tile hometile sv-tile ${tone}" data-count="${n}" data-sv-key="${key}">
@@ -1484,51 +1492,62 @@ function renderSv() {
            <div class="sub">${escape(subText)}</div>
          </button>`).join("");
 
-    if (!all.length) {
-        listEl.innerHTML = '<p class="home-anom-empty">담당 SV 가 배정된 매장이 없습니다 — 매장 정보의 담당 SV 를 채우면 여기 카드가 생깁니다.</p>';
-        return;
+    // 항목별 표: 매장 | 내용 | 확인. 0건 항목은 카드 아래 한 줄로 접습니다.
+    const todayN = Number(v.today) || 0;
+    const uncheckedN = Number(v.unchecked) || 0;
+    const blocks = [];
+    const quiet = [];
+    for (const [key, title, go, kind, card, backlog, checkable] of SV_ITEMS) {
+        const it = items[key] || {};
+        const n = Number(it.count) || 0;
+        if (!n) { if (!backlog) quiet.push(title); continue; }
+        const lines = it.rows || [];
+        const extra = n - lines.length;
+        const unchecked = checkable ? (Number(it.unchecked) || 0) : null;
+        blocks.push(
+            `<div class="sv-item${backlog ? " sv-backlog" : ""}" data-sv-key="${key}">
+               <div class="sv-item-h">
+                 <button type="button" class="home-anom-row sv-item-go" data-go="${go}" data-kind="${kind}" data-card="${card}">
+                   <span class="ar-main">${escape(title)}</span>
+                   <span class="ar-side sv-count">${int(n)}건${unchecked != null ? ` · 미확인 ${int(unchecked)}` : ""}${key === "overdue" && it.amount ? ` · ${won(it.amount)}` : ""} · 화면으로 →</span>
+                 </button>
+               </div>
+               <table class="sv-table"><tbody>
+               ${lines.map((r) =>
+                   `<tr class="sv-line${r.checked ? " is-checked" : ""}">
+                      <td class="sv-store"><button type="button" class="home-anom-row sv-row" data-go="${go}" data-kind="${kind}" data-card="${card}" data-store="${escape(r.store || "")}"><span class="ar-main">${escape(r.store || "")}</span></button></td>
+                      <td class="sv-detail">${svRowText(key, r)}</td>
+                      <td class="sv-act">${checkable
+                          ? `<button type="button" class="sv-check${r.checked ? " is-on" : ""}" title="${r.checked ? "확인 해제" : "확인·조치 완료로 표시"}"
+                               data-day="${escape(day)}" data-kind="${key}" data-store-id="${r.store_id}" data-ref-id="${r.ref_id || 0}" data-done="${r.checked ? "0" : "1"}">${r.checked ? "✓ 확인됨" : "확인"}</button>`
+                          : ""}</td>
+                    </tr>`).join("")}
+               ${extra > 0 ? `<tr><td colspan="3"><button type="button" class="home-anom-row home-anom-more sv-row" data-go="${go}" data-kind="${kind}" data-card="${card}">외 ${int(extra)}건 더 보기 →</button></td></tr>` : ""}
+               </tbody></table>
+             </div>`);
     }
-    listEl.innerHTML = svs.map((v) => {
-        const items = v.items || {};
-        const todayN = Number(v.today) || 0;
-        const uncheckedN = Number(v.unchecked) || 0;
-        const rows = [];
-        const quiet = [];
-        for (const [key, title, go, kind, card, backlog, checkable] of SV_ITEMS) {
-            const it = items[key] || {};
-            const n = Number(it.count) || 0;
-            if (!n) { if (!backlog) quiet.push(title); continue; }
-            const lines = (it.rows || []).slice(0, 4);
-            const extra = n - lines.length;
-            const unchecked = checkable ? (Number(it.unchecked) || 0) : null;
-            rows.push(
-                `<div class="sv-item${backlog ? " sv-backlog" : ""}" data-sv-key="${key}">
-                   <button type="button" class="sv-item-h home-anom-row" data-go="${go}" data-kind="${kind}" data-card="${card}">
-                     <span class="ar-main">${escape(title)}</span>
-                     <span class="ar-side sv-count">${int(n)}건${unchecked != null ? ` · 미확인 ${int(unchecked)}` : ""}${key === "overdue" && it.amount ? ` · ${won(it.amount)}` : ""}</span>
-                   </button>
-                   ${lines.map((r) =>
-                       `<div class="sv-line${r.checked ? " is-checked" : ""}">
-                          <button type="button" class="home-anom-row sv-row" data-go="${go}" data-kind="${kind}" data-card="${card}" data-store="${escape(r.store || "")}">
-                            <span class="ar-main">${escape(r.store || "")}</span>
-                            <span class="ar-side ar-text">${svRowText(key, r)}</span>
-                          </button>
-                          ${checkable ? `<button type="button" class="sv-check${r.checked ? " is-on" : ""}" title="${r.checked ? "확인 해제" : "확인·조치 완료로 표시"}"
-                              data-day="${escape(day)}" data-kind="${key}" data-store-id="${r.store_id}" data-ref-id="${r.ref_id || 0}" data-done="${r.checked ? "0" : "1"}">${r.checked ? "✓ 확인됨" : "확인"}</button>` : ""}
-                        </div>`).join("")}
-                   ${extra > 0 ? `<button type="button" class="home-anom-row home-anom-more sv-row" data-go="${go}" data-kind="${kind}" data-card="${card}">외 ${int(extra)}건 더 보기</button>` : ""}
-                 </div>`);
-        }
-        return `<section class="sv-card${todayN ? "" : " sv-card-quiet"}" data-sv="${escape(v.sv)}">
-                  <header class="sv-head">
-                    <span class="sv-name">${escape(v.sv || "미배정")}</span>
-                    <span class="sv-meta">매장 ${int(v.stores)}곳</span>
-                    <span class="sv-today${uncheckedN ? " is-hot" : ""}">오늘 ${int(todayN)}건 · 미확인 ${int(uncheckedN)}</span>
-                  </header>
-                  ${rows.join("") || '<p class="home-anom-empty">오늘 처리할 일이 없습니다.</p>'}
-                  ${quiet.length ? `<p class="sv-quiet">이상 없음: ${escape(quiet.join(" · "))}</p>` : ""}
-                </section>`;
-    }).join("");
+    // 오늘 할 일(앞)과 밀린 일(뒤)을 두 단으로 — 넓은 화면에서 한눈에.
+    const todayBlocks = blocks.filter((h) => !h.includes('class="sv-item sv-backlog"'));
+    const backlogBlocks = blocks.filter((h) => h.includes('class="sv-item sv-backlog"'));
+    listEl.innerHTML =
+        `<section class="sv-card sv-single" data-sv="${escape(v.sv)}">
+           <header class="sv-head">
+             <span class="sv-name">${escape(v.sv || "미배정")}</span>
+             <span class="sv-meta">매장 ${int(v.stores)}곳 · ${day ? `${day.slice(5, 7).replace(/^0/, "")}/${day.slice(8, 10).replace(/^0/, "")} 기준` : ""}</span>
+             <span class="sv-today${uncheckedN ? " is-hot" : ""}">오늘 ${int(todayN)}건 · 미확인 ${int(uncheckedN)}</span>
+           </header>
+           <div class="sv-cols">
+             <div class="sv-col">
+               <h4 class="sv-col-h">오늘 처리</h4>
+               ${todayBlocks.join("") || '<p class="home-anom-empty">오늘 처리할 일이 없습니다.</p>'}
+               ${quiet.length ? `<p class="sv-quiet">이상 없음: ${escape(quiet.join(" · "))}</p>` : ""}
+             </div>
+             <div class="sv-col">
+               <h4 class="sv-col-h">밀린 일</h4>
+               ${backlogBlocks.join("") || '<p class="home-anom-empty">밀린 일이 없습니다.</p>'}
+             </div>
+           </div>
+         </section>`;
 }
 
 function initHomeSv() {
