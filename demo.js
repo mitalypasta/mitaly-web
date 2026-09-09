@@ -2002,6 +2002,9 @@ const DEMO_DIAG_STORES = [
 let tradeAreaRows = [];
 let tradeAreaSeq = 1;
 
+// 담당자별 오늘 확인 필요의 '확인' 표시(데모 메모리) — 카드 #168
+const DEMO_SV_CHECKS = new Set();
+
 const HANDLERS = {
     // 상권 분석 — 저장/목록/단건/삭제 (98_trade_area).
     api_trade_area_save: (a) => {
@@ -2575,6 +2578,45 @@ const HANDLERS = {
         }
         items.sort((a, b) => (a.rating ?? 99) - (b.rating ?? 99));
         return [{ items: items.slice(0, p_limit || 200) }];
+    },
+
+    // 담당자별 오늘 확인 필요(108 api_sv_daily, 카드 #168) — 실제 함수와 같은 모양의
+    // jsonb 한 줄. 데모는 두 카드 고정. '확인' 은 아래 api_sv_daily_check 가 메모리에 기록.
+    api_sv_daily: () => {
+        const y = new Date(Date.now() - 86400000);
+        const day = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, "0")}-${String(y.getDate()).padStart(2, "0")}`;
+        const chk = (kind, sid, ref = 0) => DEMO_SV_CHECKS.has(`${kind}|${sid}|${ref}`);
+        const mk = (kind, rows) => {
+            const out = rows.map((r) => ({ ...r, checked: chk(kind, r.store_id, r.ref_id || 0) }));
+            return { count: out.length, unchecked: out.filter((r) => !r.checked).length, rows: out };
+        };
+        const a = {
+            no_sales: mk("no_sales", [{ store_id: 7, store: "샘플07점", last_day: day }, { store_id: 11, store: "샘플11점", last_day: null }]),
+            bad_reviews: mk("bad_reviews", [{ store_id: 3, store: "샘플03점", ref_id: 9001, platform: "배민", rating: 2, snippet: "면이 불어서 왔어요", written_at: day }]),
+            unanswered: mk("unanswered", [{ store_id: 3, store: "샘플03점", ref_id: 9001, platform: "배민", rating: 2, snippet: "면이 불어서 왔어요", written_at: day },
+                                          { store_id: 5, store: "샘플05점", ref_id: 9002, platform: "쿠팡이츠", rating: 5, snippet: "맛있어요", written_at: day }]),
+            drops: mk("drops", [{ store_id: 2, store: "샘플02점", amount: 640000, prev_amount: 1100000, pct: -42 }]),
+            open_tasks: { count: 0, rows: [] }, health_fail: { count: 0, rows: [] }, overdue: { count: 0, amount: 0, rows: [] },
+            drafts: { count: 14 }, no_visit: { count: 5, rows: [{ store_id: 1, store: "샘플01점", last_on: null }] },
+            unknown_state: { count: 0, rows: [] },
+        };
+        const b = {
+            no_sales: { count: 0, unchecked: 0, rows: [] }, bad_reviews: { count: 0, unchecked: 0, rows: [] },
+            unanswered: { count: 0, unchecked: 0, rows: [] }, drops: { count: 0, unchecked: 0, rows: [] },
+            open_tasks: { count: 0, rows: [] }, health_fail: { count: 0, rows: [] }, overdue: { count: 0, amount: 0, rows: [] },
+            drafts: { count: 3 }, no_visit: { count: 0, rows: [] },
+            unknown_state: { count: 1, rows: [{ store_id: 9, store: "샘플09점" }] },
+        };
+        const unc = (x) => x.no_sales.unchecked + x.bad_reviews.unchecked + x.unanswered.unchecked + x.drops.unchecked;
+        return { day, svs: [
+            { sv: "김담당", stores: 12, today: 6, unchecked: unc(a), items: a },
+            { sv: "이담당", stores: 11, today: 0, unchecked: 0, items: b },
+        ] };
+    },
+    api_sv_daily_check: ({ p_kind, p_store_id, p_ref_id, p_done }) => {
+        const k = `${p_kind}|${p_store_id}|${p_ref_id || 0}`;
+        if (p_done) DEMO_SV_CHECKS.add(k); else DEMO_SV_CHECKS.delete(k);
+        return { ok: true, done: !!p_done };
     },
 
     // AI 답글 초안. 데모에서는 DEMO_REVIEWS 의 drafts 를 그대로 셉니다.

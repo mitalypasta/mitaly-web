@@ -6,6 +6,7 @@
 // 전 화면이 같은 동작을 갖도록 공통 층 한 곳에만 둡니다.
 
 import { escape } from "./util.js";
+import { svAllows } from "./svfilter.js";
 import { ymDash } from "./format.js";
 
 // id 로 요소를 잡는 짧은 헬퍼. 화면 모듈 어디서나 씁니다.
@@ -202,7 +203,8 @@ export function searchify(target) {
     select.tabIndex = -1;
     select.setAttribute("aria-hidden", "true");
 
-    const options = () => [...select.options];
+    // 전역 담당자 필터(svfilter.js)가 숨긴 항목은 목록에서도 뺍니다.
+    const options = () => [...select.options].filter((o) => !o.hidden);
     const showSelected = () => {
         const cur = SELECT_VALUE.get.call(select);
         const opt = options().find((o) => o.value === cur);
@@ -401,8 +403,13 @@ async function exportCard(card) {
     const wb = XLSX.utils.book_new();
     const title = (card.querySelector("h2")?.textContent || "표").trim();
     parts.forEach((d, i) => {
+        // 전역 담당자 필터가 걸려 있으면 화면과 같은 행만 내보냅니다('매장' 열 기준).
+        const storeCol = d.headers.findIndex((h) =>
+            ["매장", "매장명", "지점", "매장 이름", "가맹점", "가맹점명"].includes(String(h).trim()));
+        const rowsIn = storeCol < 0 ? d.rows
+            : d.rows.filter((r) => svAllows(String(exportCell(r[storeCol]) ?? "")));
         const aoa = [d.headers.map((h) => exportCell(h)),
-                     ...d.rows.map((r) => r.map(exportCell))];
+                     ...rowsIn.map((r) => r.map(exportCell))];
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa),
             sheetTitle(title, i, parts.length));
     });

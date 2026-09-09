@@ -323,6 +323,17 @@ export function initHomeTiles() {
                 // 그 조회가 이 값을 읽습니다(두 번 조회하지 않으려고).
                 $("rv-rating").value = "low";
             }
+            if (row.dataset.kind === "storedash") {
+                // 담당자별 할 일(#168)의 매장 행 — '선택 매장 매출' 서브탭에서 그 매장.
+                showSalesSub("선택 매장 매출");
+                const sd = $("sd-store");
+                const name = row.dataset.store || "";
+                const opt = sd && [...sd.options].find((o) => o.textContent === name || o.value === name);
+                if (opt) {
+                    sd.value = opt.value;
+                    sd.dispatchEvent(new Event("change"));
+                }
+            }
             if (row.dataset.kind === "alert") {
                 // 급증·급감 카드도 '전체 매장 매출' 서브탭에 있습니다(#129).
                 showSalesSub("전체 매장 매출");
@@ -331,7 +342,7 @@ export function initHomeTiles() {
             }
             const store = row.dataset.store || "";
             const storeSelect = $("f-store");
-            const known = store &&
+            const known = row.dataset.kind !== "storedash" && store &&
                 [...storeSelect.options].some((o) => o.value === store);
             if (known) {
                 storeSelect.value = store;

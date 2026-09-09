@@ -12,6 +12,7 @@ import { escape, clip, debounce, niceTicks, monthsBetween } from "./util.js";
 import { S } from "./state.js";
 import { table, $, monthPicker, searchify, loadSheetJS, showTip, hideTip } from "./dom.js";
 import { palette, renderHeat, drawLine, drawBars } from "./charts.js";
+import { initSvFilter, svCurrent } from "./svfilter.js";
 
 // Supabase 클라이언트(데모 분기·설정 게이트)는 client.js 로 빠졌습니다 —
 // docs/web-split-plan.md 3단계. db 를 쓰는 화면 모듈이 같은 인스턴스를 씁니다.
@@ -81,6 +82,9 @@ function render(session) {
         if (!app.dataset.ready) {
             app.dataset.ready = "1";
             initAreas();
+            // 전역 담당자 필터(#168 확장) — 매장 프로필을 받아 헤더 선택기를 채우고
+            // 모든 매장 select·표에 걸립니다. 실패해도 화면은 그대로 뜹니다.
+            initSvFilter(db).catch(() => {});
             initReport();
             initDashboard();
         }
@@ -1200,6 +1204,7 @@ function initHomeHero() {
 }
 
 function initHome() {
+    initHomeSv();
     // 홈에 들어올 때마다 신선하면 그대로 두고, 오래됐으면 다시 받습니다.
     // 부팅 착지가 홈이면 첫 area-shown 이벤트는 이미 지나갔으므로(nav.js
     // initAreas 가 먼저 돎) 지금 상태(S.area)를 직접 봅니다.
@@ -1231,6 +1236,10 @@ async function loadHome() {
     const baseYm = (range.max >= nowYm && range.max > range.min)
         ? shiftYm(range.max, -1) : range.max;
     const reviewFromYm = shiftYm(nowYm, -1);
+
+    // 담당자별 오늘 할 일(#168) — 다른 홈 조회와 독립이라 따로 던지고 따로 그립니다.
+    db.rpc("api_sv_daily", { p_day: null })
+        .then(drawHomeSv, (e) => drawHomeSv({ error: e }));
 
     const [cmpRes, alertRes, negRes, negSumRes] = await Promise.all([
         db.rpc("api_sales_compare", { p_ym: baseYm, p_store: null }),
@@ -1366,6 +1375,193 @@ function drawHomeNegReviews(negRes, sumRes) {
              </button>`).join("")
           + homeMoreRow(negative - Math.min(6, rows.length), "reviews", "review", "review-card")
         : '<p class="home-anom-empty">최근 두 달에 새로 들어온 부정 리뷰가 없습니다.</p>';
+}
+
+// ---- 담당자별 오늘 확인 필요 (카드 #168) ---------------------------------
+//
+// 108 api_sv_daily 가 SV 한 명당 {sv, stores, today, unchecked, items} 를 줍니다.
+// 담당자 표(2026-09-09) 그대로: 필터를 고르면 숫자 6개(담당 매장·전일 미영업·
+// 악성/저평점·미답변·매출 급락·확인 미완료)가 먼저 보이고, 숫자를 누르면 아래
+// 그 항목 목록으로 내려갑니다. 행마다 '확인' 버튼 — 108 api_sv_daily_check 에
+// 저장돼 '확인 미완료' 가 줄어듭니다. 행 자체를 누르면 해당 화면으로(nav.js 위임).
+const SV_ITEMS = [
+    // key, 제목, area, kind, 카드 id, 밀린 일, 확인 가능
+    ["no_sales",      "전일 미영업",         "sales",      "storedash", "sd-card",                    false, true],
+    ["bad_reviews",   "악성/저평점 리뷰",    "reviews",    "review",    "review-card",                false, true],
+    ["unanswered",    "미답변 리뷰",         "reviews",    "review",    "review-card",                false, true],
+    ["drops",         "매출 급락 매장",      "sales",      "storedash", "sd-card",                    false, true],
+    ["open_tasks",    "열린 업무",           "tasks",      "task",      "task-list-card",             false, false],
+    ["health_fail",   "계정 이상",           "stores",     "health",    "account-presence-card",      false, false],
+    ["overdue",       "로열티 미납",         "settlement", "overdue",   "settlement-receivable-card", true,  false],
+    ["drafts",        "AI 답글 초안 검토",   "reviews",    "draft",     "review-card",                true,  false],
+    ["no_visit",      "방문 점검(30일 내 없음)", "visits", "visit",     "visit-due-card",             true,  false],
+    ["unknown_state", "매장 상태 확인",      "lifecycle",  "lifecycle", "lifecycle-status-card",      true,  false],
+];
+let svData = null;      // 마지막 응답 (필터 변경 때 다시 그리기용)
+
+function svRowText(key, r) {
+    switch (key) {
+    case "bad_reviews":
+    case "unanswered":
+        return `${escape(r.platform || "")} <span class="ar-star">★${r.rating ?? "—"}</span> ${escape(clip(r.snippet || "내용 없음", 30))}`;
+    case "no_sales":
+        return r.last_day ? `마지막 매출 ${escape(String(r.last_day))}` : "매출 기록 없음";
+    case "drops":
+        return `${won(r.amount)} · 전주 같은 요일 ${won(r.prev_amount)} (${pctText(r.pct)})`;
+    case "open_tasks":
+        return `${escape(clip(r.title || "", 24))} · ${escape(r.status || "")}`;
+    case "health_fail":
+        return `${escape(r.channel || "")} · ${escape(clip(r.detail || "", 30))}`;
+    case "overdue":
+        return `${ymLabel(r.ym)} 청구 · 납기 ${escape(String(r.due_date || ""))} · 미수 ${won(r.balance)}`;
+    case "no_visit":
+        return r.last_on ? `마지막 방문 ${escape(String(r.last_on))}` : "방문 기록 없음";
+    case "unknown_state":
+        return "오픈·폐점 이벤트 없음";
+    default:
+        return "";
+    }
+}
+
+function svSum(svs, pick) {
+    return svs.reduce((n, v) => n + (Number(pick(v)) || 0), 0);
+}
+
+function drawHomeSv(res) {
+    const listEl = $("home-sv-cards");
+    const sub = $("home-sv-sub");
+    if (!listEl) return;
+    if (res.error) {
+        sub.textContent = "";
+        $("home-sv-summary").innerHTML = "";
+        listEl.innerHTML = `<p class="home-anom-empty">불러오지 못했습니다: ${escape(res.error.message || res.error)}</p>`;
+        return;
+    }
+    // jsonb 한 줄 함수 — data 가 객체 그대로 옵니다(배열로 오면 첫 요소).
+    svData = Array.isArray(res.data) ? (res.data[0] || {}) : (res.data || {});
+    const all = svData.svs || [];
+    const day = svData.day ? String(svData.day) : "";
+    sub.textContent = day
+        ? `${day.slice(5, 7).replace(/^0/, "")}/${day.slice(8, 10).replace(/^0/, "")} 기준 · 담당 = 매장 정보의 담당 SV · 숫자를 누르면 그 목록으로`
+        : "";
+
+    // 필터 옵션은 응답의 SV 목록으로(선택값은 유지).
+    const filter = $("home-sv-filter");
+    const keep = filter.value;
+    filter.innerHTML = '<option value="">전체</option>'
+        + all.map((v) => `<option value="${escape(v.sv)}">${escape(v.sv)} (${int(v.stores)})</option>`).join("");
+    // 처음 그릴 때는 전역 담당자 필터(헤더)의 값을 따릅니다.
+    const want = keep || svCurrent();
+    if ([...filter.options].some((o) => o.value === want)) filter.value = want;
+    renderSv();
+}
+
+function renderSv() {
+    const listEl = $("home-sv-cards");
+    const all = (svData && svData.svs) || [];
+    const day = (svData && svData.day) ? String(svData.day) : "";
+    const pick = $("home-sv-filter").value;
+    const svs = pick ? all.filter((v) => v.sv === pick) : all;
+
+    // 숫자 6개 — 담당자 표 순서. 누르면 아래 그 항목의 첫 목록으로.
+    const tiles = [
+        ["stores",      "담당 매장",      svSum(svs, (v) => v.stores),                         "개", "현재 운영 매장", "t-good"],
+        ["no_sales",    "전일 미영업",    svSum(svs, (v) => v.items.no_sales.count),           "개", "전일 매출 0원 또는 POS 미발생", "t-urgent"],
+        ["bad_reviews", "악성/저평점 리뷰", svSum(svs, (v) => v.items.bad_reviews.count),      "건", "전일 신규 1~2점 리뷰", "t-urgent"],
+        ["unanswered",  "미답변 리뷰",    svSum(svs, (v) => v.items.unanswered.count),         "건", "전일 신규 리뷰 중 답글 미등록", "t-attn"],
+        ["drops",       "매출 급락 매장", svSum(svs, (v) => v.items.drops.count),              "개", "전주 동일요일 대비 30% 이상 감소", "t-attn"],
+        ["unchecked",   "확인 미완료",    svSum(svs, (v) => v.unchecked),                      "건", "특이사항 확인·조치가 안 된 건", "t-urgent"],
+    ];
+    $("home-sv-summary").innerHTML = tiles.map(([key, label, n, unit, subText, tone]) =>
+        `<button type="button" class="tile hometile sv-tile ${tone}" data-count="${n}" data-sv-key="${key}">
+           <div class="label">${escape(label)}</div>
+           <div class="value">${int(n)}<span class="sv-unit">${unit}</span></div>
+           <div class="sub">${escape(subText)}</div>
+         </button>`).join("");
+
+    if (!all.length) {
+        listEl.innerHTML = '<p class="home-anom-empty">담당 SV 가 배정된 매장이 없습니다 — 매장 정보의 담당 SV 를 채우면 여기 카드가 생깁니다.</p>';
+        return;
+    }
+    listEl.innerHTML = svs.map((v) => {
+        const items = v.items || {};
+        const todayN = Number(v.today) || 0;
+        const uncheckedN = Number(v.unchecked) || 0;
+        const rows = [];
+        const quiet = [];
+        for (const [key, title, go, kind, card, backlog, checkable] of SV_ITEMS) {
+            const it = items[key] || {};
+            const n = Number(it.count) || 0;
+            if (!n) { if (!backlog) quiet.push(title); continue; }
+            const lines = (it.rows || []).slice(0, 4);
+            const extra = n - lines.length;
+            const unchecked = checkable ? (Number(it.unchecked) || 0) : null;
+            rows.push(
+                `<div class="sv-item${backlog ? " sv-backlog" : ""}" data-sv-key="${key}">
+                   <button type="button" class="sv-item-h home-anom-row" data-go="${go}" data-kind="${kind}" data-card="${card}">
+                     <span class="ar-main">${escape(title)}</span>
+                     <span class="ar-side sv-count">${int(n)}건${unchecked != null ? ` · 미확인 ${int(unchecked)}` : ""}${key === "overdue" && it.amount ? ` · ${won(it.amount)}` : ""}</span>
+                   </button>
+                   ${lines.map((r) =>
+                       `<div class="sv-line${r.checked ? " is-checked" : ""}">
+                          <button type="button" class="home-anom-row sv-row" data-go="${go}" data-kind="${kind}" data-card="${card}" data-store="${escape(r.store || "")}">
+                            <span class="ar-main">${escape(r.store || "")}</span>
+                            <span class="ar-side ar-text">${svRowText(key, r)}</span>
+                          </button>
+                          ${checkable ? `<button type="button" class="sv-check${r.checked ? " is-on" : ""}" title="${r.checked ? "확인 해제" : "확인·조치 완료로 표시"}"
+                              data-day="${escape(day)}" data-kind="${key}" data-store-id="${r.store_id}" data-ref-id="${r.ref_id || 0}" data-done="${r.checked ? "0" : "1"}">${r.checked ? "✓ 확인됨" : "확인"}</button>` : ""}
+                        </div>`).join("")}
+                   ${extra > 0 ? `<button type="button" class="home-anom-row home-anom-more sv-row" data-go="${go}" data-kind="${kind}" data-card="${card}">외 ${int(extra)}건 더 보기</button>` : ""}
+                 </div>`);
+        }
+        return `<section class="sv-card${todayN ? "" : " sv-card-quiet"}" data-sv="${escape(v.sv)}">
+                  <header class="sv-head">
+                    <span class="sv-name">${escape(v.sv || "미배정")}</span>
+                    <span class="sv-meta">매장 ${int(v.stores)}곳</span>
+                    <span class="sv-today${uncheckedN ? " is-hot" : ""}">오늘 ${int(todayN)}건 · 미확인 ${int(uncheckedN)}</span>
+                  </header>
+                  ${rows.join("") || '<p class="home-anom-empty">오늘 처리할 일이 없습니다.</p>'}
+                  ${quiet.length ? `<p class="sv-quiet">이상 없음: ${escape(quiet.join(" · "))}</p>` : ""}
+                </section>`;
+    }).join("");
+}
+
+function initHomeSv() {
+    const filter = $("home-sv-filter");
+    if (!filter) return;
+    filter.addEventListener("change", renderSv);
+    // 숫자 타일 → 아래 그 항목의 첫 목록으로(같은 화면 안, 화면 이동 없음).
+    $("home-sv-summary").addEventListener("click", (e) => {
+        const tile = e.target.closest(".sv-tile");
+        if (!tile) return;
+        const key = tile.dataset.svKey;
+        const target = key === "stores" || key === "unchecked"
+            ? document.querySelector("#home-sv-cards .sv-card")
+            : document.querySelector(`#home-sv-cards .sv-item[data-sv-key="${key}"]`)
+              || document.querySelector("#home-sv-cards .sv-card");
+        target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    // '확인' 버튼 — 108 api_sv_daily_check. 성공하면 숫자·행을 다시 받습니다.
+    $("home-sv-cards").addEventListener("click", async (e) => {
+        const btn = e.target.closest(".sv-check");
+        if (!btn) return;
+        e.stopPropagation();
+        btn.disabled = true;
+        const { data, error } = await db.rpc("api_sv_daily_check", {
+            p_day: btn.dataset.day, p_kind: btn.dataset.kind,
+            p_store_id: Number(btn.dataset.storeId), p_ref_id: Number(btn.dataset.refId) || 0,
+            p_done: btn.dataset.done === "1", p_note: null,
+        });
+        if (error || (data && data.ok === false)) {
+            btn.disabled = false;
+            btn.textContent = "실패 — 다시";
+            btn.title = error ? (error.message || String(error)) : (data.reason || "");
+            return;
+        }
+        homeLoadedAt = 0;               // 다음 홈 진입도 신선하게
+        db.rpc("api_sv_daily", { p_day: null })
+            .then(drawHomeSv, (err) => drawHomeSv({ error: err }));
+    });
 }
 
 // ---- 홈 경고 배너 (수집·계정 이상 신호 통합 — 담당자 확정) -------------

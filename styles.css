@@ -3013,3 +3013,106 @@ tr.diag-drow td { white-space: normal; }
     line-height: 1.6;
     color: var(--text-muted);
 }
+
+/* ---- 담당자별 오늘 할 일 (홈, 카드 #168) ---------------------------- */
+.sv-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+}
+.sv-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-card, #fff);
+    padding: 12px 12px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+.sv-card-quiet { opacity: .85; }
+.sv-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+}
+.sv-name { font-weight: 700; font-size: 15px; }
+.sv-meta { color: var(--text-muted); font-size: var(--fs-meta); }
+.sv-today {
+    margin-left: auto;
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.sv-today.is-hot { color: var(--critical); }
+.sv-item { display: flex; flex-direction: column; gap: 2px; }
+.sv-item-h .ar-main { font-weight: 600; }
+.sv-item-h .sv-count { font-weight: 700; color: var(--critical); white-space: nowrap; }
+.sv-backlog .sv-item-h .sv-count { color: var(--attn); }
+.sv-row { padding-left: 14px; }
+.sv-quiet {
+    margin: 4px 0 0;
+    color: var(--text-muted);
+    font-size: var(--fs-meta);
+    line-height: 1.5;
+}
+@media (max-width: 640px) {
+    .sv-cards { grid-template-columns: 1fr; }
+}
+
+.sv-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+.sv-filter select { font-size: 14px; }
+.sv-summary { margin-bottom: 12px; }
+.sv-tile .value .sv-unit { font-size: 14px; font-weight: 600; margin-left: 2px; color: var(--text-secondary); }
+.sv-line { display: flex; align-items: stretch; gap: 6px; }
+.sv-line .sv-row { flex: 1 1 auto; min-width: 0; }
+.sv-line.is-checked .ar-main { text-decoration: line-through; color: var(--text-muted); }
+.sv-check {
+    flex: 0 0 auto;
+    align-self: center;
+    border: 1px solid var(--border);
+    background: var(--bg-card, #fff);
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    color: var(--text-secondary);
+}
+.sv-check:hover { border-color: var(--primary); color: var(--primary); }
+.sv-check.is-on { background: var(--primary-soft); color: var(--primary-strong); border-color: transparent; }
+.sv-check:disabled { opacity: .6; cursor: default; }
+
+/* ---- 전역 담당자 필터 (헤더, 카드 #168 확장) ---------------------------- */
+.sv-global-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-right: 6px;
+}
+.sv-global-wrap select {
+    font-size: 13px;
+    padding: 3px 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card, #fff);
+    color: var(--text-primary);
+    max-width: 160px;
+}
+@media (max-width: 640px) {
+    .sv-global-wrap { font-size: 12px; }
+    .sv-global-wrap select { max-width: 120px; }
+}
