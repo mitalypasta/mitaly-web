@@ -3139,7 +3139,7 @@ function dboRender() {
     const root = $("dbo-root");
     const board = dbo.board || {};
     $("dbo-name").textContent = board.name || "매장 방문 리포트";
-    $("dbo-path").textContent = `${board.path ? escape(String(board.path)).replace(/&gt;/g, "/") : "부서 / 운영지원팀"} (총 ${int(dbo.posts.length + dbo.notices.length)}건)`;
+    $("dbo-path").textContent = `부서 / 운영지원팀 (총 ${int(dbo.posts.length + dbo.notices.length)}건)`;
     if (dbo.view === "post" && dbo.openId != null) { dboRenderPost(); return; }
 
     const rows = dboFiltered();

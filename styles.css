@@ -3243,9 +3243,10 @@ tr.diag-drow td { white-space: normal; }
 .dbo-post-writer { color: var(--text-primary); font-weight: 600; }
 .dbo-attach { font-size: 13px; color: var(--text-secondary); background: var(--bg, #f6f6f4); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
 .dbo-files { margin: 6px 0 0 16px; padding: 0; columns: 2; }
-.dbo-files li { font-size: 12.5px; margin: 1px 0; list-style: none; }
+.dbo-files li { font-size: 12.5px; margin: 1px 0; list-style: none; break-inside: avoid; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dbo-files a { color: var(--text-primary); }
 .dbo-body { padding: 4px 6px 14px; min-height: 80px; }
+.dbo-body.db-text { max-height: none; overflow: visible; }
 .dbo-photos { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 6px 12px; }
 .dbo-photos .vp-thumb img { width: 140px; height: 140px; object-fit: cover; border-radius: 6px; }
 .dbo-post-actions { border-top: 1px solid var(--border); padding-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
