@@ -3020,7 +3020,138 @@ function vpThumbCell(photos) {
     }).join("") + "</span>";
 }
 
+// ─── 매장 방문 리포트 게시판 (다우오피스 반입, 카드 #172) ───────────────────
+//
+// store_visits 중 source='daou' 만 다우오피스 게시판과 같은 모양으로 보여 줍니다.
+// 제목은 반입 규칙의 역순(`YYYY/MM/DD 매장명 종류 리포트`), 말머리는 게시판처럼
+// 매장 이름 첫 글자의 초성입니다. 제목을 누르면 본문(정리 텍스트)과 사진이 그 아래
+// 펼쳐지고, 사진은 그때 처음 받습니다(서명 URL — fetchVisitPhotos).
+const DB_CHO = ["ㄱ", "ㄱ", "ㄴ", "ㄷ", "ㄷ", "ㄹ", "ㅁ", "ㅂ", "ㅂ", "ㅅ", "ㅅ", "ㅇ", "ㅈ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"];
+let dbRows = [];                 // 반입 리포트(최신순)
+let dbLoadedAt = 0;
+const dbPhotoCache = new Map();  // visit_id → [사진]
+
+function dbChosung(name) {
+    const ch = String(name || "").trim().charAt(0);
+    const code = ch.charCodeAt(0) - 0xAC00;
+    if (code < 0 || code > 11171) return ch ? ch.toUpperCase() : "";
+    return DB_CHO[Math.floor(code / 588)] || "";
+}
+
+function dbTitle(v) {
+    const d = String(v.visited_on || "").replace(/-/g, "/");
+    const kind = v.visit_kind && v.visit_kind !== "기타" ? ` ${v.visit_kind}` : " 방문";
+    return `${d} ${v.store_name}${kind} 리포트`;
+}
+
+async function loadDaouBoard(force = false) {
+    const list = $("db-list");
+    if (!list) return;
+    if (!force && Date.now() - dbLoadedAt < 5 * 60_000 && dbRows.length) { renderDaouBoard(); return; }
+    const { data, error } = await db.rpc("api_store_visits", { p_store: null, p_limit: 500 });
+    if (error) {
+        list.innerHTML = `<p class="hint">불러오지 못했습니다: ${escape(error.message || error)}</p>`;
+        return;
+    }
+    dbRows = (Array.isArray(data) ? data : [])
+        .filter((v) => v.source === "daou")
+        .sort((a, b) => String(b.visited_on).localeCompare(String(a.visited_on)) || (b.visit_id - a.visit_id));
+    dbLoadedAt = Date.now();
+    renderDaouBoard();
+}
+
+function renderDaouBoard() {
+    const list = $("db-list");
+    const kind = $("db-kind").value;
+    const q = ($("db-q").value || "").trim().toLowerCase();
+    const rows = dbRows.filter((v) =>
+        (!kind || (v.visit_kind || "방문") === kind)
+        && (!q || [v.store_name, v.visited_by, v.special_note, dbTitle(v)]
+                .some((t) => String(t || "").toLowerCase().includes(q))));
+    $("db-count").textContent = dbRows.length
+        ? `총 ${int(dbRows.length)}건${rows.length !== dbRows.length ? ` · 표시 ${int(rows.length)}건` : ""}`
+        : "";
+    if (!dbRows.length) {
+        list.innerHTML = '<p class="hint">반입된 리포트가 아직 없습니다 — 새벽 사슬이 다우오피스 게시판의 새 글을 매일 가져옵니다.</p>';
+        return;
+    }
+    if (!rows.length) {
+        list.innerHTML = '<p class="hint">조건에 맞는 리포트가 없습니다.</p>';
+        return;
+    }
+    const total = dbRows.length;
+    const md = (iso) => String(iso || "").slice(5).replace("-", "-");
+    list.innerHTML =
+        `<table class="db-table">
+           <thead><tr><th class="db-no">번호</th><th class="db-head">말머리</th><th class="tl">매장</th><th class="tl db-title">제목</th><th class="tl">작성자</th><th>작성일</th><th>사진</th><th>원문</th></tr></thead>
+           <tbody>${rows.map((v) => {
+               const no = total - dbRows.indexOf(v);
+               const photos = dbPhotoCache.get(String(v.visit_id));
+               return `<tr class="db-row" data-visit-id="${v.visit_id}">
+                   <td class="db-no">${int(no)}</td>
+                   <td class="db-head"><span class="db-chip">${escape(dbChosung(v.store_name))}</span></td>
+                   <td class="tl">${escape(v.store_name)}</td>
+                   <td class="tl db-title"><button type="button" class="db-title-btn" data-act="db-toggle" data-visit-id="${v.visit_id}">${escape(dbTitle(v))}</button></td>
+                   <td class="tl">${escape(v.visited_by || "—")}</td>
+                   <td>${escape(md(v.visited_on))}</td>
+                   <td>${photos ? int(photos.length) : '<span class="db-clip" title="펼치면 사진을 불러옵니다">📎</span>'}</td>
+                   <td>${v.external_url ? `<a href="${escape(v.external_url)}" target="_blank" rel="noopener" class="linkish">원문 ↗</a>` : "—"}</td>
+                 </tr>`;
+           }).join("")}</tbody>
+         </table>`;
+}
+
+async function dbToggle(visitId) {
+    const row = document.querySelector(`#db-list tr.db-row[data-visit-id="${visitId}"]`);
+    if (!row) return;
+    const next = row.nextElementSibling;
+    if (next && next.classList.contains("db-detail")) { next.remove(); row.classList.remove("is-open"); return; }
+    // 다른 펼침은 닫습니다 — 게시판처럼 한 번에 한 글.
+    for (const d of document.querySelectorAll("#db-list tr.db-detail")) d.remove();
+    for (const r of document.querySelectorAll("#db-list tr.db-row.is-open")) r.classList.remove("is-open");
+    const v = dbRows.find((x) => String(x.visit_id) === String(visitId));
+    if (!v) return;
+    row.classList.add("is-open");
+    const detail = document.createElement("tr");
+    detail.className = "db-detail";
+    detail.innerHTML = `<td colspan="8"><div class="db-body">
+        <div class="db-body-head"><strong>${escape(dbTitle(v))}</strong> <span class="meta">${escape(v.visited_by || "")} · ${escape(v.visited_on || "")}</span>
+          ${v.external_url ? ` <a href="${escape(v.external_url)}" target="_blank" rel="noopener" class="linkish">다우오피스 원문 ↗</a>` : ""}</div>
+        <div class="db-text">${v.special_note ? escape(v.special_note).replaceAll("\n", "<br>") : "<span class='hint'>본문 없음</span>"}</div>
+        <div class="db-photos" id="db-photos-${v.visit_id}"><span class="hint">사진 불러오는 중…</span></div>
+      </div></td>`;
+    row.after(detail);
+    let photos = dbPhotoCache.get(String(v.visit_id));
+    if (!photos) {
+        const map = await fetchVisitPhotos([v.visit_id]);
+        photos = map.get(String(v.visit_id)) || [];
+        dbPhotoCache.set(String(v.visit_id), photos);
+        const cnt = row.cells[6];
+        if (cnt) cnt.textContent = int(photos.length);
+    }
+    const box = document.getElementById(`db-photos-${v.visit_id}`);
+    if (box) box.innerHTML = photos.length ? vpThumbCell(photos) : '<span class="hint">사진 없음</span>';
+}
+
+function initDaouBoard() {
+    if (!$("db-list")) return;
+    $("db-kind").addEventListener("change", renderDaouBoard);
+    $("db-q").addEventListener("input", debounce(renderDaouBoard, 150));
+    $("db-list").addEventListener("click", (e) => {
+        const btn = e.target.closest('[data-act="db-toggle"]');
+        if (btn) { e.preventDefault(); dbToggle(btn.dataset.visitId); }
+    });
+    document.addEventListener("mitaly:area-shown", (e) => {
+        if ((e.detail || {}).area === "visits") loadDaouBoard();
+    });
+    document.addEventListener("mitaly:sv-changed", () => {
+        for (const d of document.querySelectorAll("#db-list tr.db-detail")) d.remove();
+    });
+    loadDaouBoard();
+}
+
 async function initVisits() {
+    initDaouBoard();
     const storeSelect = $("vs-store");
     const { data: stores, error: storeErr } = await fetchStores();
     if (!storeErr) visitAllStores = stores || [];

@@ -1378,6 +1378,30 @@
          아직 없어(scope-2026.md 9번) 방문자는 자유 텍스트입니다. 매장을
          고르면 아래 이력 표가 그 매장 최근 방문만 자동으로 다시 불러옵니다
          (재방문 시 이전 이력 자동 조회). -->
+    <!-- 매장 방문 리포트 (다우오피스 게시판 반입, 카드 #172, 2026-09-09 담당자 요구) —
+         운영지원팀이 다우오피스 게시판에 쓰는 리포트를 tools/daou_visit_reports.py 가 새벽마다
+         store_visits(source='daou')+사진으로 들여옵니다. 여기는 그 게시판과 같은 모양의 목록:
+         번호·말머리(초성)·매장·제목·작성자·작성일·사진·원문. 제목을 누르면 본문·사진이 펼쳐집니다.
+         전역 담당자 필터는 '매장' 열로 걸립니다(svfilter.js). -->
+    <section data-area="visits" class="card full" id="daou-board-card">
+        <header>
+            <h2>매장 방문 리포트</h2>
+            <span class="meta" id="db-meta">다우오피스 게시판에서 자동 반입</span>
+            <a class="linkish" id="db-open" href="https://truefarmbiz.daouoffice.com/gw/app/board/1544587655889555456" target="_blank" rel="noopener">게시판 열기 ↗</a>
+        </header>
+        <div class="db-toolbar">
+            <select id="db-kind" aria-label="말머리">
+                <option value="">말머리 전체</option>
+                <option value="방문">방문</option>
+                <option value="릴스">릴스</option>
+                <option value="교육">교육</option>
+            </select>
+            <input type="search" id="db-q" placeholder="매장·작성자·내용 검색" autocomplete="off">
+            <span class="meta" id="db-count"></span>
+        </div>
+        <div class="db-list" id="db-list"><p class="hint">불러오는 중…</p></div>
+    </section>
+
     <section data-area="visits" class="card full" id="visit-form-card">
         <header>
             <h2>방문 기록 추가</h2>

@@ -3143,3 +3143,34 @@ tr.diag-drow td { white-space: normal; }
     .sv-table .sv-store { width: 40%; }
     .sv-table td { font-size: 12.5px; padding: 3px 4px; }
 }
+
+/* ---- 매장 방문 리포트 게시판 (다우오피스 반입, 카드 #172) --------------- */
+.db-toolbar { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; flex-wrap: wrap; }
+.db-toolbar select, .db-toolbar input[type=search] { font-size: 14px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card, #fff); color: var(--text-primary); }
+.db-toolbar input[type=search] { flex: 1 1 200px; max-width: 320px; }
+.db-list { overflow-x: auto; }
+.db-table { width: 100%; border-collapse: collapse; }
+.db-table th { font-size: 12px; color: var(--text-secondary); background: var(--bg, #f6f6f4); border-top: 2px solid var(--border); border-bottom: 1px solid var(--border); padding: 8px 8px; text-align: center; white-space: nowrap; }
+.db-table th.tl { text-align: left; }
+.db-table td { padding: 8px 8px; border-bottom: 1px solid var(--border); font-size: 13.5px; text-align: center; vertical-align: middle; white-space: nowrap; }
+.db-table td.tl { text-align: left; }
+.db-table td.db-title { white-space: normal; }
+.db-table .db-no { width: 48px; color: var(--text-muted); }
+.db-table .db-head { width: 56px; }
+.db-chip { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; color: var(--text-secondary); background: var(--bg-card, #fff); }
+.db-title-btn { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--text-primary); cursor: pointer; text-align: left; }
+.db-title-btn:hover { color: var(--primary); text-decoration: underline; }
+.db-row:hover td { background: var(--primary-soft); }
+.db-row.is-open td { background: var(--primary-soft); }
+.db-clip { color: var(--text-muted); }
+.db-detail td { background: var(--bg, #f6f6f4); white-space: normal; text-align: left; padding: 12px 14px 14px; }
+.db-body { border-left: 3px solid var(--primary); padding-left: 12px; }
+.db-body-head { margin-bottom: 8px; }
+.db-text { font-size: 13.5px; line-height: 1.6; color: var(--text-primary); word-break: keep-all; margin-bottom: 10px; max-height: 480px; overflow: auto; }
+.db-photos { display: flex; flex-wrap: wrap; gap: 6px; }
+.db-photos .vp-thumbs, .db-photos a { display: inline-flex; }
+.db-photos .vp-thumb img { width: 120px; height: 120px; object-fit: cover; border-radius: 6px; }
+@media (max-width: 640px) {
+    .db-table th:nth-child(1), .db-table td:nth-child(1), .db-table th:nth-child(2), .db-table td:nth-child(2) { display: none; }
+    .db-table td { font-size: 13px; padding: 7px 6px; }
+}
