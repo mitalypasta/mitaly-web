@@ -3116,3 +3116,7 @@ tr.diag-drow td { white-space: normal; }
     .sv-global-wrap { font-size: 12px; }
     .sv-global-wrap select { max-width: 120px; }
 }
+
+/* ---- 방문 기록 출처 배지 (다우오피스 반입, 카드 #169) ------------------- */
+.vs-src { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: var(--primary-soft); color: var(--primary-strong); margin-left: 4px; white-space: nowrap; }
+.vs-src-link { font-size: 12px; margin-left: 4px; white-space: nowrap; }

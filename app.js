@@ -3410,6 +3410,17 @@ async function refreshVisitDue() {
 
 // vs-store 를 고르면 그 매장만, 비워 두면 전 매장 최근 방문을 보여줍니다
 // (재방문 시 이전 이력 자동 조회 요구사항 — 새 조회가 아니라 p_store 필터).
+// 다우오피스에서 반입한 기록(109 source='daou')은 출처 배지 + 원문 링크를 붙입니다.
+// 웹에서 쓴 기록(web)은 아무것도 안 붙습니다 — 이 배지가 "고칠 곳은 다우오피스" 를 알립니다.
+function visitSourceTag(v) {
+    if (v.source !== "daou") return "";
+    const kind = v.visit_kind && v.visit_kind !== "방문" ? ` ${escape(v.visit_kind)}` : "";
+    const link = v.external_url
+        ? ` <a class="vs-src-link" href="${escape(v.external_url)}" target="_blank" rel="noopener">원문 ↗</a>`
+        : "";
+    return ` <span class="tag vs-src" title="다우오피스 방문 리포트 게시판에서 자동 반입">다우${kind}</span>${link}`;
+}
+
 async function refreshVisits() {
     const storeId = $("vs-store").value;
     const storeName = storeId
@@ -3471,7 +3482,7 @@ async function refreshVisits() {
         list.map((v) => [
             escape(v.store_name),
             escape(v.visited_on),
-            v.visited_by ? escape(v.visited_by) : "—",
+            (v.visited_by ? escape(v.visited_by) : "—") + visitSourceTag(v),
             multiline(v.hygiene_note),
             multiline(v.self_purchase_note),
             multiline(v.cooking_note),
@@ -3491,7 +3502,7 @@ async function refreshVisits() {
         return '<article class="vm-card">'
             + `<div class="vm-head"><strong class="vm-store">${escape(v.store_name)}</strong>`
             + `<span class="vm-meta">${escape(v.visited_on)}`
-            + (v.visited_by ? ` · ${escape(v.visited_by)}` : "") + "</span></div>"
+            + (v.visited_by ? ` · ${escape(v.visited_by)}` : "") + visitSourceTag(v) + "</span></div>"
             + '<div class="vm-notes">'
             + note("위생", v.hygiene_note) + note("자점매입", v.self_purchase_note)
             + note("조리", v.cooking_note) + note("점주미팅", v.owner_meeting_note)
