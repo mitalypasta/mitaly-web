@@ -3257,7 +3257,7 @@ async function dboRenderPost() {
         if (String(dbo.openId) !== String(v.visit_id)) return;
         const att = $("dbo-attach");
         if (att) att.innerHTML = `📎 첨부 ${int(photos.length)}개${v.photo_bytes ? ` (${dboBytes(v.photo_bytes)})` : ""}
-            <ul class="dbo-files">${photos.map((p) => `<li><a href="${escape(p.url || "#")}" target="_blank" rel="noopener">${escape(p.file_name || "")}</a>${p.byte_size ? ` <span class="meta">(${dboBytes(p.byte_size)})</span>` : ""}</li>`).join("")}</ul>`;
+            <ul class="dbo-files">${photos.map((p) => `<li><a href="${escape(p.url || "#")}" target="_blank" rel="noopener">${escape(p.file_name || "")}</a>${p.byte_size ? ` <span class="dbo-fsize">(${dboBytes(p.byte_size)})</span>` : ""}</li>`).join("")}</ul>`;
         const ph = $("dbo-photos");
         if (ph) ph.innerHTML = photos.length ? vpThumbCell(photos) : "";
     }

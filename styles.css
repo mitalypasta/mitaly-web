@@ -3245,6 +3245,7 @@ tr.diag-drow td { white-space: normal; }
 .dbo-files { margin: 6px 0 0 16px; padding: 0; columns: 2; }
 .dbo-files li { font-size: 12.5px; margin: 1px 0; list-style: none; break-inside: avoid; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dbo-files a { color: var(--text-primary); }
+.dbo-fsize { display: inline; color: var(--text-muted); margin-left: 4px; font-size: 12px; }
 .dbo-body { padding: 4px 6px 14px; min-height: 80px; }
 .dbo-body.db-text { max-height: none; overflow: visible; }
 .dbo-photos { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 6px 12px; }
