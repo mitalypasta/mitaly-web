@@ -910,8 +910,11 @@
              수집 탭이 없어져 이 배너가 유일한 신호입니다(app.js loadHomeHealth). -->
         <div class="home-warn" id="home-warn" hidden></div>
 
-        <h3 class="home-sub-h">지금 처리할 일 <span class="home-anom-sub">전체 기간 · 누르면 해당 화면으로</span></h3>
-        <div class="kpis" id="home-tiles">
+        <!-- 2026-09-09 담당자 지시("기존에 있던 건 없애줘"): 옛 타일 5개(미처리·승인 대기·문의 검토·
+             초안 검토·진단 대상)는 화면에서 뺍니다. 요소는 hidden 으로 남깁니다 — 업무·문의·진단
+             모듈이 값을 여기 채우고(없으면 오류), 홈 hero 는 이제 아래 담당자 요약을 봅니다. -->
+        <h3 class="home-sub-h" hidden>지금 처리할 일 <span class="home-anom-sub">전체 기간 · 누르면 해당 화면으로</span></h3>
+        <div class="kpis" id="home-tiles" hidden>
             <button type="button" class="tile hometile t-urgent" id="home-tile-tasks" data-go-target="tasks">
                 <div class="label">미처리 업무</div>
                 <div class="value" id="home-tasks">—</div>

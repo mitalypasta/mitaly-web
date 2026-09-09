@@ -1153,51 +1153,56 @@ let homeLoadedAt = 0;
 // diagnosis) 조회를 더 하지 않고 타일 숫자를 관찰해 따라갑니다(nav.js 의
 // tk-waiting 거울과 같은 방식).
 
-const HOME_HERO_PARTS = [
-    ["home-tasks", "미처리 업무"],
-    ["home-approvals", "승인 대기"],
-    ["home-inquiry", "문의 답변 검토"],
-    ["home-drafts", "답글 초안 검토"],
-    ["home-diag", "진단 대상"],
+// 2026-09-09: hero 는 '담당자별 오늘 확인 필요' 요약(#168)을 봅니다 — 옛 타일 5개는
+// 담당자 지시로 화면에서 뺐습니다. 숫자 = 확인 미완료(전일 미영업·악성·미답변·급락 중
+// '확인' 표시가 없는 건), 배지 = 미영업·악성이 있으면 조치 필요, 나머지 미확인이 있으면
+// 확인 필요, 0 이면 없음. 값은 renderSv 가 타일을 다시 그릴 때마다 관찰해 따라갑니다.
+const HOME_HERO_FACTS = [
+    ["no_sales",    "전일 미영업"],
+    ["bad_reviews", "악성/저평점 리뷰"],
+    ["unanswered",  "미답변 리뷰"],
+    ["drops",       "매출 급락"],
 ];
+
+function heroTileValue(key) {
+    const el = document.querySelector(`#home-sv-summary .sv-tile[data-sv-key="${key}"]`);
+    if (!el) return null;
+    const raw = (el.querySelector(".value")?.textContent || "").replace(/[^\d]/g, "");
+    return raw === "" ? null : Number(raw);
+}
 
 function updateHomeHero() {
     const numEl = $("home-hero-num");
     const badge = $("home-hero-badge");
     const facts = $("home-hero-facts");
-    let total = 0;
-    let loaded = 0;
-    const parts = [];
-    for (const [id, label] of HOME_HERO_PARTS) {
-        const raw = ($(id).textContent || "").replace(/[^\d]/g, "");
-        if (raw === "") continue;   // 아직 집계 전("—")
-        loaded += 1;
-        const n = Number(raw);
-        total += n;
-        if (n > 0) parts.push(`${escape(label)} <b>${int(n)}</b>`);
-    }
-    if (!loaded) {
+    const unchecked = heroTileValue("unchecked");
+    if (unchecked == null) {
         numEl.textContent = "—";
         badge.hidden = true;
         facts.textContent = "집계 중…";
         return;
     }
-    numEl.textContent = `${int(total)}건`;
-    // 미처리 업무(기준일 초과)가 있으면 조치 필요 — 타일의 급함 구분
-    // (t-urgent/t-attn)과 같은 눈금입니다.
-    const overdue = Number(($("home-tasks").textContent || "").replace(/[^\d]/g, "")) > 0;
+    const parts = [];
+    let urgent = false;
+    for (const [key, label] of HOME_HERO_FACTS) {
+        const n = heroTileValue(key) || 0;
+        if (n > 0) parts.push(`${escape(label)} <b>${int(n)}</b>`);
+        if (n > 0 && (key === "no_sales" || key === "bad_reviews")) urgent = true;
+    }
+    const pick = $("home-sv-filter")?.value || "";
+    numEl.textContent = `${int(unchecked)}건`;
     badge.hidden = false;
     badge.className = "hero-badge "
-        + (total === 0 ? "hb-good" : overdue ? "hb-critical" : "hb-attn");
-    badge.textContent = total === 0 ? "없음" : overdue ? "조치 필요" : "확인 필요";
-    facts.innerHTML =
-        (parts.length ? parts.join(" · ") : "미처리·검토 대기·진단 대상 모두 0건")
-        + (loaded < HOME_HERO_PARTS.length ? " · 일부 집계 중" : "");
+        + (unchecked === 0 ? "hb-good" : urgent ? "hb-critical" : "hb-attn");
+    badge.textContent = unchecked === 0 ? "없음" : urgent ? "조치 필요" : "확인 필요";
+    facts.innerHTML = (pick ? `${escape(pick)} 담당 · ` : "전 담당자 · ")
+        + (parts.length ? parts.join(" · ") : "전일 미영업·악성 리뷰·미답변·급락 모두 0건")
+        + " — 확인 미완료 기준";
 }
 
 function initHomeHero() {
     const refresh = debounce(updateHomeHero, 120);
-    new MutationObserver(refresh).observe($("home-tiles"), {
+    new MutationObserver(refresh).observe($("home-sv-summary"), {
         childList: true, characterData: true, subtree: true,
     });
     updateHomeHero();
