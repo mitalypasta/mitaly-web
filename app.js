@@ -3101,6 +3101,41 @@ function renderDaouBoard() {
          </table>`;
 }
 
+// 다우 원문 HTML 을 그대로 쓰지 않고 허용 태그만 남깁니다 — 붙여 넣은 채팅 화면의
+// class/data-* 속성, 스크립트, 다우 서버 인증이 필요한 인라인 이미지(따로 첨부로 보여 줌)를
+// 걷어내고 제목·문단·글머리·굵게·표만 남깁니다. 속성은 a.href(http/https)만.
+const DB_ALLOW = new Set(["p", "div", "br", "ul", "ol", "li", "strong", "b", "em", "i", "u", "s",
+    "h1", "h2", "h3", "h4", "h5", "h6", "span", "blockquote", "table", "thead", "tbody", "tr", "td", "th",
+    "a", "pre", "code", "hr", "sup", "sub"]);
+const DB_DROP = new Set(["script", "style", "iframe", "object", "embed", "img", "svg", "video", "audio",
+    "button", "input", "select", "textarea", "form", "meta", "link", "template", "noscript", "canvas"]);
+function dbSanitize(html) {
+    const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+    const out = document.createElement("div");
+    const walk = (node, parent) => {
+        for (const child of [...node.childNodes]) {
+            if (child.nodeType === Node.TEXT_NODE) { parent.appendChild(document.createTextNode(child.nodeValue)); continue; }
+            if (child.nodeType !== Node.ELEMENT_NODE) continue;
+            const tag = child.tagName.toLowerCase();
+            if (DB_DROP.has(tag)) continue;
+            if (!DB_ALLOW.has(tag)) { walk(child, parent); continue; }   // 모르는 태그는 껍질만 벗김
+            const el = document.createElement(tag === "b" ? "strong" : tag === "i" ? "em" : tag);
+            if (tag === "a") {
+                const href = child.getAttribute("href") || "";
+                if (/^https?:\/\//i.test(href)) { el.setAttribute("href", href); el.setAttribute("target", "_blank"); el.setAttribute("rel", "noopener"); }
+            }
+            walk(child, el);
+            parent.appendChild(el);
+        }
+    };
+    walk(doc.body, out);
+    // 빈 문단·연속 br 정리
+    for (const e of out.querySelectorAll("p, div, span")) {
+        if (!e.textContent.trim() && !e.querySelector("br, table, ul, ol")) e.remove();
+    }
+    return out.innerHTML;
+}
+
 async function dbToggle(visitId) {
     const row = document.querySelector(`#db-list tr.db-row[data-visit-id="${visitId}"]`);
     if (!row) return;
@@ -3117,10 +3152,18 @@ async function dbToggle(visitId) {
     detail.innerHTML = `<td colspan="8"><div class="db-body">
         <div class="db-body-head"><strong>${escape(dbTitle(v))}</strong> <span class="meta">${escape(v.visited_by || "")} · ${escape(v.visited_on || "")}</span>
           ${v.external_url ? ` <a href="${escape(v.external_url)}" target="_blank" rel="noopener" class="linkish">다우오피스 원문 ↗</a>` : ""}</div>
-        <div class="db-text">${v.special_note ? escape(v.special_note).replaceAll("\n", "<br>") : "<span class='hint'>본문 없음</span>"}</div>
+        <div class="db-text" id="db-text-${v.visit_id}">${v.special_note ? escape(v.special_note).replaceAll("\n", "<br>") : "<span class='hint'>본문 없음</span>"}</div>
         <div class="db-photos" id="db-photos-${v.visit_id}"><span class="hint">사진 불러오는 중…</span></div>
       </div></td>`;
     row.after(detail);
+    // 원문 HTML(110) — 펼칠 때 한 건만 받아 허용 태그만 남기고 그립니다(제목·글머리·들여쓰기 유지).
+    db.rpc("api_visit_body", { p_visit_id: v.visit_id }).then((r) => {
+        const body = r && !r.error && r.data ? (Array.isArray(r.data) ? r.data[0] : r.data) : null;
+        const box = document.getElementById(`db-text-${v.visit_id}`);
+        if (!box || !body || !body.body_html) return;
+        const html = dbSanitize(body.body_html);
+        if (html.trim()) box.innerHTML = html;
+    }, () => { /* 110 미적용 — 정리 텍스트 그대로 */ });
     let photos = dbPhotoCache.get(String(v.visit_id));
     if (!photos) {
         const map = await fetchVisitPhotos([v.visit_id]);

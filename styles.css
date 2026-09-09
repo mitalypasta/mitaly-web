@@ -3174,3 +3174,16 @@ tr.diag-drow td { white-space: normal; }
     .db-table th:nth-child(1), .db-table td:nth-child(1), .db-table th:nth-child(2), .db-table td:nth-child(2) { display: none; }
     .db-table td { font-size: 13px; padding: 7px 6px; }
 }
+
+/* ---- 방문 리포트 원문 렌더링 (다우 화면과 같은 위계, 카드 #173) ------------ */
+.db-text h1, .db-text h2, .db-text h3, .db-text h4 { margin: 14px 0 6px; font-weight: 700; color: var(--text-primary); }
+.db-text h1 { font-size: 18px; } .db-text h2 { font-size: 16px; } .db-text h3, .db-text h4 { font-size: 15px; }
+.db-text p { margin: 4px 0; }
+.db-text ul, .db-text ol { margin: 4px 0 8px 22px; padding: 0; }
+.db-text li { margin: 2px 0; list-style: disc; }
+.db-text ol > li { list-style: decimal; }
+.db-text li ul { margin-left: 18px; }
+.db-text strong { font-weight: 700; }
+.db-text table { border-collapse: collapse; margin: 6px 0; }
+.db-text td, .db-text th { border: 1px solid var(--border); padding: 3px 6px; font-size: 13px; }
+.db-text blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--border); color: var(--text-secondary); }
