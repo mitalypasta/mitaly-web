@@ -116,6 +116,21 @@ export async function initTasks() {
         $("tk-kind-custom-field").hidden = $("tk-kind").value !== "other";
     });
 
+    // hero 의 주 행동 — '새 업무 접수' 폼은 <details class="cardfold"> 안에 접혀
+    // 있어서 화면에서 보이지 않았습니다(2026-09-10 진단 D절: 4단 플로우).
+    // 카드를 꺼내는 대신 답 옆에서 바로 열고 그 자리로 데려갑니다.
+    $("tasks-hero-act").addEventListener("click", () => {
+        const card = $("task-form-card");
+        const fold = card && card.querySelector("details.cardfold");
+        if (fold) fold.open = true;
+        if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+        // tk-store 는 searchify 가 감싸며 숨기는 select 라 직접 포커스가 안 먹습니다.
+        // 사람이 실제로 치는 칸(.combo)이 있으면 그쪽을 잡습니다.
+        const wrap = $("tk-store") && $("tk-store").closest(".combo-wrap");
+        const target = (wrap && wrap.querySelector("input.combo")) || $("tk-kind");
+        if (target) setTimeout(() => target.focus({ preventScroll: true }), 350);
+    });
+
     const { data: stores } = await fetchStores();
     for (const s of stores || []) {
         const opt = document.createElement("option");
@@ -180,6 +195,10 @@ export async function refreshTasksSummary() {
     const { data, error } = await db.rpc("api_tasks_summary");
     if (error) {
         $("tasks-summary-meta").textContent = "불러오지 못했습니다: " + error.message;
+        $("tasks-hero-num").textContent = "—";
+        $("tasks-hero-badge").hidden = true;
+        $("tasks-hero-facts").textContent =
+            "업무 현황을 불러오지 못했습니다: " + error.message;
         return;
     }
     const by = data.by_status || {};
@@ -191,6 +210,35 @@ export async function refreshTasksSummary() {
     $("tk-escalated").textContent = int(by.escalated);
     $("tasks-summary-meta").textContent =
         `미처리 기준 ${int(data.overdue_days)}일 — 본사가 정합니다`;
+
+    // ---- hero: 이 화면의 답 (디자인 시스템 v1 · 카드 3계급) ----------------
+    //
+    // 답 = '사람이 손대야 풀리는 건' = 접수(아직 아무도 안 잡음) + 승인 대기
+    // (담당자가 눌러야 다음으로 넘어감). 처리 중·이관은 이미 손이 가 있어
+    // 오늘 새로 잡을 일이 아니라 답에서 뺍니다.
+    //
+    // ⚠️ 미처리(overdue)는 **상태가 아니라 시간 조건**입니다(접수 후 N일 초과,
+    //    상태 무관). 그래서 위 둘과 더하면 같은 건을 두 번 셉니다 — 더하지 않고
+    //    '무엇부터' 를 가리키는 신호로만 씁니다.
+    const received = Number(by.received || 0);
+    const waiting = Number(by.waiting_approval || 0);
+    const need = received + waiting;
+    const overdue = Number(data.overdue || 0);
+    const days = Number(data.overdue_days || 0);
+
+    $("tasks-hero-num").textContent = `${need}건`;
+    const badge = $("tasks-hero-badge");
+    badge.hidden = false;
+    badge.className = "hero-badge "
+        + (overdue > 0 ? "hb-critical" : need > 0 ? "hb-attn" : "hb-good");
+    badge.textContent = overdue > 0 ? "조치 필요" : need > 0 ? "확인" : "정상";
+
+    $("tasks-hero-facts").textContent = need > 0
+        ? `미처리 ${overdue}건 먼저 (접수 후 ${days}일 초과 · 상태 무관)`
+            + ` · 승인 대기 ${waiting} · 접수 ${received}`
+            + ` — 처리 중 ${Number(by.in_progress || 0)} · 이관 ${Number(by.escalated || 0)} 제외`
+            + " (이미 손이 가 있는 건)"
+        : "지금 새로 손댈 건이 없습니다.";
 
     // 홈 '오늘 할 일' 타일. 같은 숫자를 두 번 묻지 않으려고 여기서 같이 채웁니다.
     const homeTasks = $("home-tasks");

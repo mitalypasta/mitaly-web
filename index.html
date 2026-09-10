@@ -2146,6 +2146,22 @@
          이 축은 매출과 그레인이 다릅니다(접수 건 단위). 그래서 위쪽 기간·매장
          필터를 따르지 않습니다 — 방문·점검, 오픈·폐점과 같은 이유입니다.
          1번(문의 응대)이 만들어지면 판단 불가 건이 '이관' 상태로 여기 들어옵니다. -->
+    <!-- 업무 화면의 '답'. 화면당 하나입니다(디자인 시스템 v1 · 카드 3계급).
+         아래 '업무 현황' 5타일은 그대로 두고 근거 층으로 남습니다 — 답과 근거는
+         지우고 바꾸는 관계가 아니라 층이 다른 것입니다.
+         답 숫자의 정의는 tasks.js refreshTasksSummary 주석에 있습니다. -->
+    <section data-area="tasks" class="card hero-card" id="tasks-hero">
+        <header class="hero-head">
+            <div class="hero-q">오늘 처리할 건 몇 건, 뭐부터?</div>
+            <span class="hero-badge" id="tasks-hero-badge" hidden></span>
+        </header>
+        <div class="hero-answer">
+            <span class="hero-num" id="tasks-hero-num">—</span>
+            <button type="button" class="btn-primary" id="tasks-hero-act">새 업무 접수</button>
+        </div>
+        <p class="hero-facts" id="tasks-hero-facts">집계 중…</p>
+    </section>
+
     <section data-area="tasks" class="card full" id="tasks-summary-card">
         <header>
             <h2>업무 현황</h2>
@@ -2502,6 +2518,20 @@
          103 api_store_lifecycle_status 를 이름으로 조인 —
          settlement.js initSettlementStoreView. 아래 전체 보기 카드 3장은
          그대로입니다(삭제 0). -->
+    <!-- 정산 화면의 '답'. 미수는 달에 상관없이 모으는 것이라(미수 목록 카드와
+         같은 기준) 월 요약의 미수와 다릅니다 — 월 요약은 '그 달' 이고 여기는
+         '지금 못 받은 돈 전부' 입니다. settlement.js refreshReceivables 가 채웁니다. -->
+    <section data-area="settlement" class="card hero-card" id="settlement-hero">
+        <header class="hero-head">
+            <div class="hero-q">미수 있나?</div>
+            <span class="hero-badge" id="settlement-hero-badge" hidden></span>
+        </header>
+        <div class="hero-answer">
+            <span class="hero-num" id="settlement-hero-num">—</span>
+        </div>
+        <p class="hero-facts" id="settlement-hero-facts">집계 중…</p>
+    </section>
+
     <section data-area="settlement" class="card full" id="settlement-store-card">
         <header>
             <h2>매장별 로열티 <span id="sts-badge" hidden></span></h2>

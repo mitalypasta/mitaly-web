@@ -837,6 +837,12 @@ async function refreshReceivables() {
     if (error) {
         $("t-receivables").innerHTML =
             '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + "</p>";
+        // hero 가 '집계 중…' 에 멈춰 있으면 사람은 아직 계산 중인 줄 압니다.
+        // 모른다는 것을 모른다고 말해야 합니다.
+        $("settlement-hero-num").textContent = "—";
+        $("settlement-hero-badge").hidden = true;
+        $("settlement-hero-facts").textContent =
+            "미수를 불러오지 못했습니다: " + error.message;
         return;
     }
     const d = data || {};
@@ -846,6 +852,33 @@ async function refreshReceivables() {
     $("st-recv-meta").textContent = items.length
         ? `${int(totals.count)}건 · ${wonFull(totals.outstanding)}`
         : "";
+
+    // ---- hero: 이 화면의 답 (디자인 시스템 v1 · 카드 3계급) ----------------
+    //
+    // 답은 '지금 못 받은 돈 전부' 입니다. 위 월별 표의 미수 타일과 숫자가 다른데
+    // 그게 맞습니다 — 저쪽은 **고른 달**, 여기는 납기가 지난 청구를 달에 상관없이
+    // 다 모은 것(api_royalty_receivables)입니다. 화면이 안고 오는 질문은 후자입니다.
+    //
+    // 금액은 원 단위 정확 표기(wonFull). 정산은 대사 화면이라 만/억 반올림을
+    // 쓰지 않습니다 — 매출 헤드라인과 다른 규칙입니다.
+    const recvCount = Number(totals.count || 0);
+    const recvAmount = Number(totals.outstanding || 0);
+    const worstDays = items.reduce(
+        (m, r) => Math.max(m, Number(r.overdue_days || 0)), 0);
+    const worstRow = items.find(
+        (r) => Number(r.overdue_days || 0) === worstDays);
+
+    $("settlement-hero-num").textContent = recvCount ? wonFull(recvAmount) : "0원";
+    const sBadge = $("settlement-hero-badge");
+    sBadge.hidden = false;
+    sBadge.className = "hero-badge " + (recvCount ? "hb-critical" : "hb-good");
+    sBadge.textContent = recvCount ? "조치 필요" : "정상";
+
+    $("settlement-hero-facts").textContent = recvCount
+        ? `${int(recvCount)}건 · 매장 ${new Set(items.map((r) => r.store)).size}곳`
+            + (worstRow ? ` — 가장 오래된 건 ${worstRow.store} ${int(worstDays)}일` : "")
+            + " · 아래 목록에서 입금 기록하거나 발송 승인을 요청합니다."
+        : "납기가 지난 미수가 없습니다.";
 
     if (!items.length) {
         $("t-receivables").innerHTML = '<p class="hint">미수가 없습니다.</p>';

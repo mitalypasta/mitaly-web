@@ -14,14 +14,14 @@ const cssVar = (name) =>
     getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 export const palette = () => ({
-    s1: cssVar("--series-1"),
-    s2: cssVar("--series-2"),
-    grid: cssVar("--gridline"),
-    base: cssVar("--baseline"),
+    s1: cssVar("--data-1"),
+    s2: cssVar("--data-2"),
+    grid: cssVar("--data-grid"),
+    base: cssVar("--data-axis"),
     muted: cssVar("--text-muted"),
     secondary: cssVar("--text-secondary"),
     primary: cssVar("--text-primary"),
-    surface: cssVar("--surface-1"),
+    surface: cssVar("--bg-surface"),
 });
 
 // ---- 히트맵 ----------------------------------------------------------
