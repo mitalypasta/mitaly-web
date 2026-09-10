@@ -2038,6 +2038,27 @@
          59_ourhome_orders.sql(아워홈 본사물류 발주량, QUEUE #67) 위의 화면입니다.
          '발주량 - 이론사용량 = 자점매입 의심' 의 앞 절반이 이제 있습니다.
          뒤 절반(판정)은 로스·폐기율이 와야 켜집니다 — 59 설계 판단 [4]. -->
+    <!-- 식자재·발주 화면의 답.
+    
+         질문을 '원가율 튀는 매장 있나?' 로 잡지 않았습니다. 이 화면의 원가율은
+         아워홈 발주 ÷ 매출 = **하한**(자점매입 미포함, 아래 카드가 그렇게 밝힙니다)
+         이라, 자점매입 비중이 매장마다 다르면 순위가 엉뚱한 매장을 가리킵니다.
+    
+         대신 이 영역의 실제 병목을 묻습니다 — 이론 사용량이 판매의 몇 %를 덮고
+         있는가. 커버리지가 낮으면 아래 숫자들이 '틀린' 것이 아니라 '일부만 담긴'
+         것이고, 그걸 모르면 계속 이상하다고만 하게 됩니다.
+         ingredients.js drawIngredientUsage 가 채웁니다. -->
+    <section data-area="ingredients" class="card hero-card" id="ingredients-hero">
+        <header class="hero-head">
+            <div class="hero-q">이론 사용량을 믿을 수 있나?</div>
+            <span class="hero-badge" id="ingredients-hero-badge" hidden></span>
+        </header>
+        <div class="hero-answer">
+            <span class="hero-num" id="ingredients-hero-num">—</span>
+        </div>
+        <p class="hero-facts" id="ingredients-hero-facts">집계 중…</p>
+    </section>
+
     <!-- ============================================================
          매장 발주·식자재 보기 (카드 #132 — 식자재 탭의 '매장 대시보드'식
          매장 보기, web/ing_store.js). 매장 1곳을 골라 아워홈 발주량 추이(59)
@@ -2089,70 +2110,6 @@
         <div class="tableview" id="t-ourhome-stores"></div>
     </section>
 
-    <!-- 발주 상품 마스터 — 58_menu_recipes.sql 의 supply_products (209품목,
-         원가분석 '상품별공급단가' + 발주 체크리스트). 아워홈 코드가 발주량과
-         레시피를 잇는 유일한 다리입니다 (큐 #102 [A]). -->
-    <section data-area="ingredients" class="card full" id="supply-card">
-        <header>
-            <h2>발주 상품 마스터</h2>
-            <span class="meta" id="sp-meta"></span>
-        </header>
-        <div class="reqform">
-            <div class="field">
-                <label for="sp-q">검색</label>
-                <input id="sp-q" type="text" placeholder="상품명 · 코드">
-            </div>
-            <div class="field">
-                <label for="sp-cat">구분</label>
-                <select id="sp-cat"><option value="">전체</option></select>
-            </div>
-        </div>
-        <div class="tableview" id="t-supply-products"></div>
-    </section>
-
-    <!-- 조리 레시피 — 58_menu_recipes.sql 의 menu_recipes (98메뉴 · 833행,
-         이미지레시피 원본). 원가분석(32, 40메뉴)과 별개 표입니다 — 없는 것은
-         레시피가 아니라 원가분석이라는 가공물 (CLAUDE.md 10번 정정, 큐 #102 [A]).
-         4라운드: 행 나열(메뉴명이 원료 수만큼 반복)이 보기 불편하다는 담당자
-         피드백으로 메뉴 단위 묶음 보기 — 메뉴 행 ▸ 로 원료 상세를 펼칩니다. -->
-    <section data-area="ingredients" class="card full" id="menu-recipe-card">
-        <header>
-            <h2>조리 레시피</h2>
-            <span class="meta" id="mr-meta"></span>
-        </header>
-        <div class="reqform">
-            <div class="field">
-                <label for="mr-q">검색</label>
-                <input id="mr-q" type="text" placeholder="메뉴 · 재료">
-            </div>
-            <div class="field">
-                <label for="mr-menu">메뉴</label>
-                <select id="mr-menu"><option value="">전체</option></select>
-            </div>
-            <div class="field">
-                <label for="mr-status">상태</label>
-                <select id="mr-status"><option value="">전체</option></select>
-            </div>
-        </div>
-        <p class="hint" id="mr-coverage"></p>
-        <p class="hint" id="mr-shown"></p>
-        <div class="tableview" id="t-menu-recipes"></div>
-    </section>
-
-    <section data-area="ingredients" class="card full" id="recipe-card">
-        <header>
-            <h2>레시피 소요량 (원가분석 기준)</h2>
-            <span class="meta" id="recipe-meta"></span>
-        </header>
-        <div class="reqform">
-            <div class="field">
-                <label for="rc-menu">메뉴</label>
-                <select id="rc-menu"><option value="">메뉴를 고르세요</option></select>
-            </div>
-        </div>
-        <div class="tableview" id="t-recipes"></div>
-    </section>
-
     <section data-area="ingredients" class="card full" id="ingredient-usage-card">
         <header>
             <h2>이론 재료 사용량</h2>
@@ -2176,6 +2133,79 @@
         <div class="tableview" id="t-ingredient-usage"></div>
         <div class="tableview" id="t-iu-unmatched"></div>
     </section>
+
+    <!-- 원장(접힘) — 기준(마스터). 가끔 고치는 것이라 접어 둡니다. -->
+    <!-- 조리 레시피 — 58_menu_recipes.sql 의 menu_recipes (98메뉴 · 833행,
+         이미지레시피 원본). 원가분석(32, 40메뉴)과 별개 표입니다 — 없는 것은
+         레시피가 아니라 원가분석이라는 가공물 (CLAUDE.md 10번 정정, 큐 #102 [A]).
+         4라운드: 행 나열(메뉴명이 원료 수만큼 반복)이 보기 불편하다는 담당자
+         피드백으로 메뉴 단위 묶음 보기 — 메뉴 행 ▸ 로 원료 상세를 펼칩니다. -->
+    <details data-area="ingredients" class="card ledger" id="menu-recipe-card">
+        <summary>
+            <h2>조리 레시피</h2>
+            <span class="meta" id="mr-meta"></span>
+        </summary>
+        <div class="ledger-body">
+            <div class="reqform">
+                <div class="field">
+                    <label for="mr-q">검색</label>
+                    <input id="mr-q" type="text" placeholder="메뉴 · 재료">
+                </div>
+                <div class="field">
+                    <label for="mr-menu">메뉴</label>
+                    <select id="mr-menu"><option value="">전체</option></select>
+                </div>
+                <div class="field">
+                    <label for="mr-status">상태</label>
+                    <select id="mr-status"><option value="">전체</option></select>
+                </div>
+            </div>
+            <p class="hint" id="mr-coverage"></p>
+            <p class="hint" id="mr-shown"></p>
+            <div class="tableview" id="t-menu-recipes"></div>
+        </div>
+    </details>
+
+    <!-- 원장(접힘) — 기준(마스터). 209품목 — 검색해서 꺼내 보는 원장입니다. -->
+    <!-- 발주 상품 마스터 — 58_menu_recipes.sql 의 supply_products (209품목,
+         원가분석 '상품별공급단가' + 발주 체크리스트). 아워홈 코드가 발주량과
+         레시피를 잇는 유일한 다리입니다 (큐 #102 [A]). -->
+    <details data-area="ingredients" class="card ledger" id="supply-card">
+        <summary>
+            <h2>발주 상품 마스터</h2>
+            <span class="meta" id="sp-meta"></span>
+        </summary>
+        <div class="ledger-body">
+            <div class="reqform">
+                <div class="field">
+                    <label for="sp-q">검색</label>
+                    <input id="sp-q" type="text" placeholder="상품명 · 코드">
+                </div>
+                <div class="field">
+                    <label for="sp-cat">구분</label>
+                    <select id="sp-cat"><option value="">전체</option></select>
+                </div>
+            </div>
+            <div class="tableview" id="t-supply-products"></div>
+        </div>
+    </details>
+
+    <!-- 원장(접힘) — 기준(마스터). 메뉴 하나의 재료 소요량을 확인할 때 폅니다. -->
+    <details data-area="ingredients" class="card ledger" id="recipe-card">
+        <summary>
+            <h2>레시피 소요량 (원가분석 기준)</h2>
+            <span class="meta" id="recipe-meta"></span>
+        </summary>
+        <div class="ledger-body">
+            <div class="reqform">
+                <div class="field">
+                    <label for="rc-menu">메뉴</label>
+                    <select id="rc-menu"><option value="">메뉴를 고르세요</option></select>
+                </div>
+            </div>
+            <div class="tableview" id="t-recipes"></div>
+        </div>
+    </details>
 
     <!-- POS 메뉴 — 5번 영역(POS메뉴 및 프로모션). 50_pos_menu.sql 이 짝입니다.
          이지포스 상품 마스터를 받아 온 현황이고, 변경은 요청 → 승인(업무) →

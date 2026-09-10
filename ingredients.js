@@ -13,7 +13,7 @@
 import { db, fetchStores } from "./client.js";
 import { int, ymLabel, wonFull } from "./format.js";
 import { escape } from "./util.js";
-import { table, $, monthPicker } from "./dom.js";
+import { table, $, monthPicker, setHero, heroFail } from "./dom.js";
 
 let recipeRows = [];       // api_recipes 전체(278행 수준) — select 와 표가 같이 씀
 let menuRecipeRows = [];   // api_menu_recipes 전체(617행 수준, 데코 제외)
@@ -315,6 +315,7 @@ async function refreshIngredientUsage() {
     if (error) {
         $("t-ingredient-usage").innerHTML =
             '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + "</p>";
+        heroFail("ingredients-hero", error.message);
         return;
     }
     const d = data || {};
@@ -338,6 +339,8 @@ async function refreshIngredientUsage() {
 
     const cov = d.coverage || {};
     if (!cov.qty_total) {
+        setHero("ingredients-hero", { num: "—",
+            facts: "선택한 기간에 판매 자료가 없어 커버리지를 잴 수 없습니다." });
         $("iu-coverage").textContent = "";
         $("t-ingredient-usage").innerHTML =
             '<p class="hint">선택한 기간에 판매 데이터가 없습니다.</p>';
@@ -351,6 +354,31 @@ async function refreshIngredientUsage() {
     $("iu-coverage").textContent =
         `원가분석이 있는 메뉴 ${int(cov.menu_matched)}/${int(cov.menu_total)}개 · ` +
         `판매 수량 기준 ${pct}% 가 이 계산에 들어갔습니다.`;
+
+    // ---- hero: 이 화면의 답 -------------------------------------------
+    //
+    // 답 = 이론 사용량이 판매의 몇 %를 덮는가. 커버리지가 낮으면 아래 숫자들이
+    // '틀린' 것이 아니라 '일부만 담긴' 것이고, 그걸 모르면 계속 이상하다고만
+    // 하게 됩니다.
+    //
+    // ⚠️ '원가율 튀는 매장' 을 답으로 삼지 않았습니다. 이 화면의 원가율은
+    //    아워홈 발주 ÷ 매출 = 하한(자점매입 미포함)이라 매장 순위를 매기면
+    //    엉뚱한 매장을 가리킵니다.
+    //
+    // 이 숫자는 위 기간·매장 고르개를 따릅니다 — 전사 고정값이 아닙니다.
+    const openTop = Array.isArray(d.unmatched_top) ? d.unmatched_top.length : 0;
+    const scope = $("iu-store").value ? `${$("iu-store").value} 기준` : "전 매장 기준";
+    setHero("ingredients-hero", {
+        num: `${pct}%`,
+        tone: pct < 50 ? "critical" : pct < 80 ? "attn" : "good",
+        badge: pct < 50 ? "보강 필요" : pct < 80 ? "확인" : "정상",
+        facts: `원가분석이 있는 메뉴 ${int(cov.menu_matched)}/${int(cov.menu_total)}개`
+            + ` — 판매 수량 기준 ${pct}% 만 이 계산에 들어갔습니다 (${scope}).`
+            + (openTop
+                ? ` 아래 '원가분석 없는 메뉴' 상위 ${int(openTop)}개부터 채우면 커버리지가 오릅니다`
+                  + " — 그중 다수는 조리 레시피는 있고 원가분석만 없습니다."
+                : ""),
+    });
 
     // 단가가 빈 재료는 공급가 합계에 0 으로 들어가 과소 표시됩니다 ([H]).
     // 합계를 손대지 않고(추정 금지) 그 재료만 표시로 구분합니다.
