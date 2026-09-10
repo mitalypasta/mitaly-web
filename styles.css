@@ -2759,6 +2759,26 @@ tr.diag-drow td { white-space: normal; }
 .report h1 { font-size: var(--sz-6); margin: 0 0 var(--sp-4); }
 .report h2 { font-size: var(--sz-5); margin: var(--sp-9) 0 var(--sp-4); }
 
+/* 리포트 안 지표 격자 — 화면 타일(.tile)과 달리 종이에서 잘리지 않게
+   테두리 없이 헤어라인 구분만 씁니다. */
+.report-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--sp-6) var(--sp-8);
+    margin: var(--sp-6) 0 var(--sp-8);
+    padding: var(--sp-6) 0;
+    border-top: var(--bw-hair) solid var(--border-subtle);
+    border-bottom: var(--bw-hair) solid var(--border-subtle);
+}
+.report-grid .rg-l { font-size: var(--sz-2); color: var(--text-muted); }
+.report-grid .rg-v {
+    font-size: var(--sz-6);
+    font-weight: var(--fw-bold);
+    letter-spacing: var(--track-tight);
+    font-variant-numeric: tabular-nums;
+}
+.report-grid .rg-s { font-size: var(--sz-2); color: var(--text-secondary); }
+
 .report-meta {
     display: flex;
     gap: var(--sp-8);
@@ -2829,12 +2849,21 @@ tr.diag-drow td { white-space: normal; }
  *
  * 그래서 인쇄할 때는 보고서만 남기고 나머지는 전부 숨깁니다.
  */
+/* 인쇄 — 출력할 카드 하나만 남기고 화면 껍데기를 다 걷습니다.
+ *
+ * 2026-09-10 이전에는 #report-card 하나에 박혀 있어 다른 카드는 인쇄할 수
+ * 없었습니다. 이제 인쇄 대상은 `.print-target` 이고, 인쇄 직전에 JS 가
+ * 지금 보이는 `[data-printable]` 카드에 그 클래스를 붙입니다(app.js).
+ * 그래서 버튼으로도, 브라우저 Ctrl+P 로도 같은 결과가 나옵니다. */
 @media print {
-    .sidenav, .subnav, .filters, .kpis, .top,
-    [data-area]:not(#report-card),
-    #report-card > header, #report-card > .hint { display: none !important; }
+    .sidenav, .subnav, .filters, .kpis, .top, #area-head,
+    /* 화면 전용 떠 있는 것들 — [data-area] 가 아니라 위 규칙이 못 겁니다.
+       '개발 데이터' 배지가 종이에 찍히던 것을 여기서 막습니다(2026-09-10). */
+    .env-badge, .tooltip, .modal, .rvpanel-backdrop,
+    [data-area]:not(.print-target),
+    .print-target > header, .print-target > .hint { display: none !important; }
 
-    #report-card {
+    .print-target {
         border: none;
         box-shadow: none;
         padding: 0;
@@ -2847,6 +2876,10 @@ tr.diag-drow td { white-space: normal; }
     .report h2 { break-after: avoid; }
     .report table { break-inside: auto; }
     .report tr { break-inside: avoid; }
+    .report-grid { break-inside: avoid; }
+
+    /* 종이에는 색을 아껴 씁니다 — 흑백 출력에서도 읽혀야 합니다. */
+    .report-grid .rg-v { color: var(--text-primary); }
 
     @page { margin: 16mm; }
 }

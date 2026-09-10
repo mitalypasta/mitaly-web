@@ -361,6 +361,20 @@ async function initDashboard() {
     // 굳어, 첫 진입 화면에서 차트가 카드 절반만 채웁니다(H2, SALES-DIAGNOSIS).
     // 보이게 된 순간 폭이 어긋난 차트가 하나라도 있으면 한 번 다시 그립니다 —
     // 맞으면 아무것도 안 하므로 평상시 전환 비용은 없습니다.
+    // 인쇄 대상 정하기 — [data-printable] 카드 중 지금 보이는 것 하나에만
+    // .print-target 을 붙입니다(인쇄 CSS 는 그 하나만 남깁니다).
+    // 버튼(window.print())으로 눌러도, 브라우저 Ctrl+P 로도 같은 결과입니다.
+    // 예전에는 인쇄 CSS 가 #report-card 에 박혀 있어 다른 화면에서 Ctrl+P 를
+    // 누르면 안 보이던 월간 보고서가 나왔습니다.
+    addEventListener("beforeprint", () => {
+        for (const el of document.querySelectorAll(".print-target")) {
+            el.classList.remove("print-target");
+        }
+        const target = [...document.querySelectorAll("[data-printable]")]
+            .find((el) => !el.hidden && el.offsetParent !== null);
+        if (target) target.classList.add("print-target");
+    });
+
     document.addEventListener("mitaly:area-shown", () => {
         if (!S.lastData) return;
         const stale = [...document.querySelectorAll("svg.plot")].some((svg) => {

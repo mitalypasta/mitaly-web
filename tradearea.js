@@ -380,7 +380,147 @@ function render(r) {
     } else {
         $("ta-pop-card").hidden = true;
     }
+
+    // 결과가 있으면 리포트도 같이 만듭니다 — 따로 누르게 하면 있는 줄도 모릅니다.
+    drawTaReport(r);
 }
+
+// ---------------------------------------------------------------- 후보지 리포트
+//
+// 화면에 이미 있는 결과(lastResult)만 씁니다 — 리포트 때문에 분석을 다시
+// 돌리지 않습니다(월간 보고서와 같은 태도). 저장본을 열어도 같은 문서가 나옵니다.
+//
+// 지도는 안 싣습니다. 카카오 지도는 타일이 인쇄에 안 실려 종이에 빈 칸으로
+// 나옵니다 — 대신 주소와 반경을 글로 적습니다.
+//
+// 숫자에는 **기준을 붙입니다**. 예상 월매출은 점 추정이 아니라 범위이고,
+// 그 범위가 무엇인지(실측 93개 매장 백테스트의 사분위) 각주에 남깁니다 —
+// 이 리포트는 출점 판단에 쓰이므로 근거 없이 숫자만 나가면 안 됩니다.
+
+function rg(label, value, sub) {
+    return `<div><div class="rg-l">${escape(label)}</div>`
+        + `<div class="rg-v">${value}</div>`
+        + `<div class="rg-s">${sub ? escape(sub) : ""}</div></div>`;
+}
+
+// 표 머리 정렬은 값과 맞춥니다 — 첫 열만 왼쪽(이름), 나머지는 오른쪽(숫자).
+// th·td 기본이 우측 정렬이라(styles.css) 머리에도 tl 을 다 붙이면 머리와 값이
+// 서로 다른 쪽에 붙어 읽기가 어긋납니다.
+function rows(headers, body) {
+    return `<table><thead><tr>`
+        + headers.map((h, i) =>
+            `<th${i === 0 ? ' class="tl"' : ""}>${escape(h)}</th>`).join("")
+        + `</tr></thead><tbody>` + body + `</tbody></table>`;
+}
+
+export function drawTaReport(r) {
+    const card = $("ta-report-card");
+    const sheet = $("ta-report-sheet");
+    if (!card || !sheet) return;
+    if (!r) { card.hidden = true; return; }
+
+    const e = r.expected || {};
+    const lo = e.lo || Math.round((e.q75 || 0) * 0.55);
+    const hi = e.hi || Math.round((e.q75 || 0) * 1.05);
+    const addr = (r.geo && r.geo.address_name) || "";
+    const when = r.analyzedAt
+        ? new Date(r.analyzedAt).toLocaleString("ko-KR",
+            { dateStyle: "long", timeStyle: "short" })
+        : "";
+
+    // ---- 매출 비교
+    const cmp = [["미태리 예상 (범위 중앙)", Math.round((lo + hi) / 2)]];
+    if (r.majorAvg > 0) cmp.push(["대형 프랜차이즈 평균", r.majorAvg]);
+    if (r.compAvg > 0) cmp.push(["반경 안 전체 음식점 평균", r.compAvg]);
+
+    // ---- 인구
+    const pop = r.pop;
+    const popGrid = pop
+        ? `<div class="report-grid">`
+            + rg("거주인구", `${int(pop.resident)}명`,
+                 pop.age ? `2030세대 ${pop.age.ratio2030}%` : "")
+            + rg("배후세대", `${int(pop.household)}세대`,
+                 pop.housing ? `아파트 ${pop.housing.aptRatio}%` : "")
+            + rg("점심 유동", `${int(pop.lunch)}명`, "")
+            + rg("저녁 유동", `${int(pop.dinner)}명`, "")
+            + rg("직장인구", `${int(pop.worker)}명`, "")
+            + `</div>`
+        : `<p class="hint">인구 자료를 받지 못했습니다.</p>`;
+
+    // ---- 시간대 유동
+    const fl = pop && pop.floating;
+    let floatTable = "";
+    if (fl && fl.day && fl.day.length > 1) {
+        const week = fl.week || [];
+        floatTable = rows(["시간대", "평일", "주말"],
+            fl.day.map((d, i) => `<tr><td class="tl">${int(d.hour)}시</td>`
+                + `<td>${int(d.total)}명</td>`
+                + `<td>${week[i] ? int(week[i].total) + "명" : "—"}</td></tr>`).join(""));
+    }
+
+    // ---- 주변 프랜차이즈
+    const brands = (r.brands || []).filter((b) => b.avg > 0)
+        .sort((a, b) => b.avg - a.avg);
+    const brandTable = brands.length
+        ? rows(["브랜드", "매장", "평균 월매출"],
+            brands.map((b) => `<tr><td class="tl">${escape(b.brand)}</td>`
+                + `<td>${int(b.cnt)}곳</td><td>${int(b.avg)}만원</td></tr>`).join(""))
+        : `<p class="hint">매출이 잡힌 프랜차이즈가 없습니다.</p>`;
+
+    const warn = [r.popError, r.salesError].filter(Boolean);
+
+    sheet.innerHTML = `
+<div class="report">
+  <div class="report-head">
+    <h1>후보지 상권 리포트</h1>
+    <div class="report-meta">
+      <span><b>${escape(r.name || "(지점명 없음)")}</b></span>
+      <span>${escape(addr)}</span>
+      <span>반경 ${int(r.radius)}m</span>
+      <span>분석 ${escape(when)}</span>
+    </div>
+  </div>
+
+  <h2>1. 결론</h2>
+  <div class="report-grid">
+    ${rg("예상 월매출", `${int(lo)} ~ ${int(hi)}만원`, "실제 매장 절반이 드는 구간")}
+    ${rg("상권 유형", escape(r.areaType || "—"), escape(r.region || ""))}
+    ${rg("상권 점수", `${int(r.areaScore)} / 100`, "")}
+    ${rg("주변 음식점", `${int(r.counts.stores)}곳`,
+         `인식 브랜드 ${int(r.counts.brands)}개 · ${int(r.counts.brandStores)}곳`)}
+  </div>
+  ${warn.length
+      ? `<p class="hint">⚠️ 이 분석에서 못 받은 자료: ${escape(warn.join(" · "))}</p>`
+      : ""}
+
+  <h2>2. 매출 비교</h2>
+  ${rows(["구분", "월매출"], cmp.map(([k, v]) =>
+      `<tr><td class="tl">${escape(k)}</td><td>${int(v)}만원</td></tr>`).join(""))}
+
+  <h2>3. 상권 인구</h2>
+  ${popGrid}
+
+  ${floatTable ? `<h2>4. 시간대별 유동인구</h2>${floatTable}` : ""}
+
+  <h2>${floatTable ? "5" : "4"}. 주변 프랜차이즈</h2>
+  ${brandTable}
+
+  <h2>기준</h2>
+  <p class="hint">
+    예상 월매출은 <b>점 추정이 아니라 범위</b>입니다. 반경 안 음식점 추정매출의
+    상위 25% 값에 0.55~1.05 배를 적용한 구간이고, 그 배수는 실측 93개 매장
+    백테스트에서 실제÷예측이 25~75% 사분위에 든 값입니다 — 실제 매장의 약
+    절반이 이 구간에 들었습니다. 반경 밖 수요·임대료·경쟁 신규 출점은
+    들어 있지 않습니다.
+  </p>
+  <p class="hint">
+    주변 음식점 추정매출과 인구는 외부 자료를 그대로 옮긴 값입니다.
+    미태리 예상은 그 자료로 계산한 것이라, 원자료가 틀리면 같이 틀립니다.
+  </p>
+</div>`;
+    card.hidden = false;
+}
+
 
 // 카카오 지도 SDK 는 이 탭에서 처음 지도를 그릴 때 한 번만 불러옵니다.
 let kakaoSdkPromise = null;
@@ -537,6 +677,7 @@ async function run() {
 
 export function initTradeArea() {
     $("ta-run").addEventListener("click", run);
+    $("ta-report-print").addEventListener("click", () => window.print());
     for (const id of ["ta-address", "ta-name"]) {
         $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
     }
