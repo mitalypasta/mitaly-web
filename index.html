@@ -10,6 +10,9 @@
     <link rel="preconnect" href="https://esm.sh" crossorigin>
     <link rel="stylesheet"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+    <!-- 디자인 시스템 토큰(원시→의미→컴포넌트 3계층). styles.css 보다 먼저 실려야
+         합니다 — 뒤에 오면 styles.css 의 규칙이 토큰을 못 봅니다. -->
+    <link rel="stylesheet" href="tokens.css">
     <link rel="stylesheet" href="styles.css">
     <script src="config.js"></script>
 </head>
@@ -24,7 +27,7 @@
                autocomplete="email" required>
         <input type="password" id="password" placeholder="비밀번호"
                autocomplete="current-password">
-        <button type="submit" id="login-button">로그인</button>
+        <button type="submit" id="login-button" class="btn-primary">로그인</button>
     </form>
     <p class="notice" id="gate-notice"></p>
     <p class="alt">
@@ -492,7 +495,7 @@
             </div>
             <div class="field">
                 <label>&nbsp;</label>
-                <button type="button" id="ta-run">분석</button>
+                <button type="button" id="ta-run" class="btn-primary">분석</button>
             </div>
         </div>
         <p class="notice" id="ta-status"></p>
@@ -560,7 +563,7 @@
             </div>
             <div class="field">
                 <label>&nbsp;</label>
-                <button type="button" id="mm-save">저장</button>
+                <button type="button" id="mm-save" class="btn-primary">저장</button>
             </div>
             <div class="field">
                 <label>&nbsp;</label>
@@ -720,7 +723,7 @@
                 <div class="tableview" id="t-kpi-settings"></div>
                 <div class="reqform">
                     <div class="field">
-                        <button type="button" id="kpi-set-save">바뀐 값 저장</button>
+                        <button type="button" id="kpi-set-save" class="btn-primary">바뀐 값 저장</button>
                     </div>
                 </div>
                 <p class="notice" id="kpi-set-notice"></p>
@@ -850,7 +853,7 @@
                 </div>
                 <div class="field">
                     <label>&nbsp;</label>
-                    <button type="button" id="cs-save">동의 기록</button>
+                    <button type="button" id="cs-save" class="btn-primary">동의 기록</button>
                 </div>
             </div>
             <p class="notice" id="cs-notice"></p>
@@ -1318,7 +1321,7 @@
             </div>
             <div class="field">
                 <label>&nbsp;</label>
-                <button type="button" id="v-submit">위반 기록 추가</button>
+                <button type="button" id="v-submit" class="btn-primary">위반 기록 추가</button>
             </div>
         </div>
         <div class="reqform">
@@ -1367,7 +1370,7 @@
             </div>
             <div class="field">
                 <label for="ba-search">&nbsp;</label>
-                <button type="button" id="ba-search">찾기</button>
+                <button type="button" id="ba-search" class="btn-primary">찾기</button>
             </div>
         </div>
         <div class="tableview" id="t-board-archive"></div>
@@ -1607,7 +1610,7 @@
             </div>
             <div class="field">
                 <label>&nbsp;</label>
-                <button type="button" id="la-submit">기록 추가</button>
+                <button type="button" id="la-submit" class="btn-primary">기록 추가</button>
             </div>
         </div>
         <p class="notice" id="la-notice"></p>
@@ -1697,7 +1700,7 @@
         <div class="reqform">
             <div class="field">
                 <label>&nbsp;</label>
-                <button type="button" id="an-submit">공지 접수</button>
+                <button type="button" id="an-submit" class="btn-primary">공지 접수</button>
             </div>
         </div>
         <p class="notice" id="an-notice"></p>
@@ -1864,7 +1867,7 @@
             </details>
             <div class="field">
                 <label>&nbsp;</label>
-                <button type="button" id="ads-save">추가</button>
+                <button type="button" id="ads-save" class="btn-primary">추가</button>
             </div>
         </div>
         <p class="notice" id="ads-notice"></p>
@@ -2284,7 +2287,7 @@
             </div>
             <div class="field">
                 <label>&nbsp;</label>
-                <button type="button" id="tk-submit">업무 접수</button>
+                <button type="button" id="tk-submit" class="btn-primary">업무 접수</button>
             </div>
         </div>
         <p class="notice" id="tk-notice"></p>
@@ -2399,7 +2402,7 @@
             </div>
             <div class="field">
                 <label>&nbsp;</label>
-                <button type="button" id="pa-submit">승인 등록</button>
+                <button type="button" id="pa-submit" class="btn-primary">승인 등록</button>
             </div>
         </div>
         <p class="notice" id="pa-notice"></p>
@@ -2449,7 +2452,7 @@
             </div>
             <div class="field">
                 <label>&nbsp;</label>
-                <button type="button" id="rc-save">수신처 저장</button>
+                <button type="button" id="rc-save" class="btn-primary">수신처 저장</button>
             </div>
         </div>
         <p class="notice" id="rc-notice"></p>
@@ -2535,7 +2538,7 @@
         <p class="hint">달 하나를 골라 전 매장의 청구·입금 현황을 보고, 그 달 청구를 만드는 곳입니다. '청구 생성·갱신'은 없는 청구는 만들고 있는 청구는 지금 매출×요율로 다시 계산합니다 — 본사에서 받은 청구(표의 '본사 확정')는 바뀌지 않습니다.</p>
         <div class="cardsearch">
             <select id="st-ym"></select>
-            <button type="button" id="st-generate">청구 생성·갱신</button>
+            <button type="button" id="st-generate" class="btn-primary">청구 생성·갱신</button>
             <button type="button" class="ghost" id="st-rate-edit">로열티 수정</button>
             <span class="meta" id="st-generate-msg"></span>
             <!-- 매장 상태 필터(#160) — 표만 걸러집니다. 타일·안내문은 서버 총계
@@ -2609,7 +2612,7 @@
             </div>
             <div class="field">
                 <label>&nbsp;</label>
-                <button type="button" id="pay-submit">입금 기록</button>
+                <button type="button" id="pay-submit" class="btn-primary">입금 기록</button>
             </div>
         </div>
         <p class="notice" id="pay-notice"></p>

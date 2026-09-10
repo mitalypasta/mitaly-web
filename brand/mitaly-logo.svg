@@ -1,0 +1,18 @@
+<!-- 미태리 가로 조합 로고 (심볼 + 워드마크) — 2026-09-10
+     최소 사용 크기 96×24. 심볼과 워드마크 사이 여백은 심볼 폭의 1/3(8) 고정.
+     워드마크는 Pretendard Bold 자간 -3% 를 아웃라인이 아니라 텍스트로 둡니다
+     (웹에서 폰트가 이미 실려 있어 파일이 가볍고, 고칠 때 다시 그릴 필요가 없습니다).
+     인쇄·외부 배포용 아웃라인 판이 필요하면 별도로 만드세요. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 32" width="128" height="32"
+     role="img" aria-label="미태리 매출 대시보드">
+  <rect width="32" height="32" rx="8" fill="#4d5eff"/>
+  <g stroke="#ffffff" stroke-width="5" stroke-linecap="round" fill="none">
+    <path d="M9 23 V19"/>
+    <path d="M16 23 V15"/>
+    <path d="M23 23 V10"/>
+  </g>
+  <text x="40" y="22"
+        font-family="'Pretendard Variable', Pretendard, system-ui, sans-serif"
+        font-size="19" font-weight="700" letter-spacing="-0.03em"
+        fill="currentColor">미태리</text>
+</svg>

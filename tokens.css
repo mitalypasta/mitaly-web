@@ -1,0 +1,510 @@
+/* 미태리 디자인 시스템 — 토큰 (2026-09-10 정립)
+ * ============================================================================
+ *
+ * 3계층입니다. 위에서 아래로만 참조합니다 — 거꾸로는 절대 안 됩니다.
+ *
+ *   1계층 원시(primitive)  --c-gray-50, --c-indigo-600, --sz-4  … 값 그 자체. 뜻 없음.
+ *   2계층 의미(semantic)   --bg-page, --text-primary, --action-primary … 결정.
+ *   3계층 컴포넌트(component) --btn-primary-bg, --card-bg … 그 자리에서만 쓰는 예외.
+ *
+ * 규칙
+ *   - 컴포넌트 CSS 는 2·3계층만 씁니다. 1계층(--c-*)을 직접 쓰면 테마가 깨집니다.
+ *   - 다크는 2계층만 덮습니다. 1계층 램프는 두 테마가 같은 값을 공유합니다.
+ *   - 여기 없는 색·크기·간격을 새로 만들지 않습니다. 필요하면 여기에 추가하세요.
+ *
+ * 근거
+ *   - 색 대비는 전부 WCAG 2.1 계산값입니다(눈으로 고르지 않았습니다).
+ *     본문 4.5:1 이상을 통과하는 단계만 의미 토큰에 올렸습니다.
+ *   - 데이터 팔레트 8색은 색각이상(protan/deutan/tritan) 분리도 검증기를 통과한
+ *     순서 그대로입니다. **순서가 안전장치입니다 — 임의로 바꾸지 마세요.**
+ *   - 행동색(인디고)과 데이터색(파랑·주황…)을 분리했습니다. 예전에는 둘이 같은
+ *     #686cff 라 버튼과 차트 막대가 같은 색으로 보였습니다.
+ */
+
+/* ==========================================================================
+   1계층 — 원시 토큰 (값. 뜻 없음. 테마 무관)
+   ========================================================================== */
+
+:root {
+    /* ---- 무채 (웜 뉴트럴) ---- */
+    --c-white:      #ffffff;
+    --c-gray-25:    #faf9f7;
+    --c-gray-50:    #f6f6f4;
+    --c-gray-100:   #eef0f3;
+    --c-gray-200:   #e2e4e8;
+    --c-gray-300:   #d3d5d9;
+    --c-gray-400:   #a8acb4;
+    --c-gray-500:   #636b78;
+    --c-gray-600:   #495057;
+    --c-gray-700:   #343a40;
+    --c-gray-800:   #212529;
+    --c-gray-900:   #14171a;
+
+    /* ---- 다크 지면 ---- */
+    --c-ink-900:    #101116;
+    --c-ink-800:    #1a1c23;
+    --c-ink-700:    #22242c;
+    --c-ink-600:    #262933;
+    --c-ink-500:    #3a3e4a;
+    --c-ink-400:    #868e9e;
+    --c-ink-300:    #b9bdc9;
+    --c-ink-100:    #f2f3f7;
+
+    /* ---- 인디고 = 브랜드·행동 (데이터에는 쓰지 않습니다) ---- */
+    --c-indigo-100: #eeeeff;
+    --c-indigo-200: #d6d7ff;
+    --c-indigo-300: #a6a8ff;
+    --c-indigo-400: #868aff;
+    --c-indigo-500: #686cff;   /* 브랜드 마크. 글자를 얹지 않는 자리 전용 */
+    --c-indigo-600: #4d5eff;   /* 흰 글자 4.82:1 — 버튼 배경은 여기부터 */
+    --c-indigo-700: #3a49d9;
+    --c-indigo-800: #2c37a8;
+
+    /* ---- 상태 (흰 글자 4.5:1 통과 단계만) ---- */
+    --c-green-500:  #12bc7f;
+    --c-green-600:  #0a7d55;   /* 흰 글자 5.15:1 */
+    --c-green-700:  #07734d;
+    --c-amber-600:  #b45309;   /* 흰 글자 5.02:1 */
+    --c-amber-700:  #a34a08;
+    --c-red-500:    #e5484d;
+    --c-red-600:    #cc2f34;   /* 흰 글자 5.22:1 */
+    --c-red-700:    #c02328;
+
+    /* 다크 지면(#1a1c23)에서 4.5:1 이상 통과 단계 */
+    --c-indigo-dk:  #8285ff;   /* 5.47:1 */
+    --c-green-dk:   #2bd695;   /* 9.04:1 */
+    --c-amber-dk:   #d98a2b;   /* 6.17:1 */
+    --c-red-dk:     #ff6369;   /* 5.87:1 */
+
+    /* ---- 데이터 범주 8색 ----
+       검증기 전 항목 통과(인접쌍 CVD ΔE 9.1 / 정상시야 ΔE 19.6).
+       순서가 안전장치입니다. 9번째 계열은 만들지 말고 '기타'로 접거나 분할하세요.
+       aqua·yellow·magenta 는 흰 지면 대비 3:1 미만이라 반드시 직접 라벨이나
+       표를 함께 냅니다(구제 규칙). */
+    --c-data-blue:      #2a78d6;   --c-data-blue-dk:      #3987e5;
+    --c-data-orange:    #eb6834;   --c-data-orange-dk:    #d95926;
+    --c-data-aqua:      #1baf7a;   --c-data-aqua-dk:      #199e70;
+    --c-data-yellow:    #eda100;   --c-data-yellow-dk:    #c98500;
+    --c-data-magenta:   #e87ba4;   --c-data-magenta-dk:   #d55181;
+    --c-data-green:     #008300;   --c-data-green-dk:     #008300;
+    --c-data-violet:    #4a3aa7;   --c-data-violet-dk:    #9085e9;
+    --c-data-red:       #e34948;   --c-data-red-dk:       #e66767;
+
+    /* ---- 순차 램프(파랑) — 히트맵·단계 표현. 밝음=작음, 진함=큼 ---- */
+    --c-seq-100:    #cde2fb;
+    --c-seq-200:    #9ec5f4;
+    --c-seq-300:    #6da7ec;
+    --c-seq-400:    #3987e5;
+    --c-seq-500:    #256abf;
+    --c-seq-600:    #184f95;
+    --c-seq-700:    #0d366b;
+
+    /* ---- 타이포 ----
+       정본은 Pretendard 입니다. 자간 -2% 가 기본(담당자 지정 2026-09-10).
+       Figma 에는 Pretendard 가 없어 Inter(라틴)+Noto Sans KR(한글)로 대역합니다. */
+    --font-sans: "Pretendard Variable", Pretendard, system-ui, -apple-system,
+                 "Segoe UI", "Malgun Gothic", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Consolas, "D2Coding", monospace;
+
+    /* 8단 스케일. 이 밖의 font-size 신규 금지 (기존 15종을 8종으로 수렴) */
+    --sz-1:  11px;   /* 배지·미세 라벨 */
+    --sz-2:  12px;   /* 각주·축 라벨·표 머리 */
+    --sz-3:  13px;   /* 표 본문·조밀 영역 */
+    --sz-4:  14px;   /* 기본 본문 */
+    --sz-5:  16px;   /* 카드 제목 */
+    --sz-6:  20px;   /* 화면 제목 */
+    --sz-7:  28px;   /* 구역 대표 숫자 */
+    --sz-8:  36px;   /* hero 답 숫자 */
+
+    --fw-regular:  400;
+    --fw-medium:   500;
+    --fw-semibold: 600;
+    --fw-bold:     700;
+
+    --lh-tight:   1.25;   /* 큰 숫자·제목 */
+    --lh-base:    1.5;    /* 본문 */
+    --lh-relaxed: 1.7;    /* 긴 안내문 */
+
+    /* 자간 — 한글은 음수 자간이 기본입니다 */
+    --track-base:  -0.02em;   /* 전역 기본 */
+    --track-tight: -0.03em;   /* 큰 숫자·제목 */
+    --track-wide:   0em;      /* 숫자표·영문 코드 */
+    --track-label:  0.02em;   /* 작은 대문자류 구획 라벨은 양수 자간 */
+
+    /* ---- 간격 — 2/4px 리듬 13단 (기존 24종에서 수렴) ---- */
+    --sp-0:   0;
+    --sp-1:   2px;
+    --sp-2:   4px;
+    --sp-3:   6px;
+    --sp-4:   8px;
+    --sp-5:  10px;
+    --sp-6:  12px;
+    --sp-7:  16px;
+    --sp-8:  20px;
+    --sp-9:  24px;
+    --sp-10: 32px;
+    --sp-11: 40px;
+    --sp-12: 64px;
+
+    /* ---- 라운드 — 5단 (기존 13종에서 수렴) ---- */
+    --r-none: 0;
+    --r-sm:   4px;    /* 칩·표 안 작은 요소 */
+    --r-md:   8px;    /* 버튼·입력 */
+    --r-lg:  12px;    /* 카드·패널 */
+    --r-full: 999px;  /* 알약·점 */
+
+    /* ---- 테두리 두께 ---- */
+    --bw-hair: 1px;
+    --bw-thick: 2px;
+
+    /* ---- 모션 ---- */
+    --dur-fast: 120ms;
+    --dur-base: 180ms;
+    --ease-out: cubic-bezier(0.2, 0, 0, 1);
+
+    /* ---- 층위 ---- */
+    --z-sticky:  10;
+    --z-popover: 100;
+    --z-modal:   1000;
+    --z-toast:   2000;
+}
+
+/* ==========================================================================
+   2계층 — 의미 토큰 (라이트)
+   컴포넌트는 여기서부터만 씁니다.
+   ========================================================================== */
+
+:root {
+    color-scheme: light;
+
+    /* 지면·표면 */
+    --bg-page:        var(--c-gray-50);
+    --bg-surface:     var(--c-white);
+    --bg-subtle:      var(--c-gray-25);
+    --bg-inset:       var(--c-gray-100);
+    --bg-overlay:     rgba(18, 25, 38, 0.45);
+
+    /* 글자 */
+    --text-primary:   var(--c-gray-800);
+    --text-secondary: var(--c-gray-600);
+    --text-muted:     var(--c-gray-500);   /* 흰 5.38:1 · 지면 4.97:1 */
+    --text-on-accent: var(--c-white);
+    --text-link:      var(--c-indigo-600);
+
+    /* 경계 — 만질 수 있는 것은 한 단 진하게 */
+    --border-subtle:  var(--c-gray-100);
+    --border-default: rgba(18, 25, 38, 0.09);
+    --border-strong:  var(--c-gray-300);
+    --border-focus:   var(--c-indigo-600);
+
+    /* 행동 — 화면당 주 행동 하나만 primary */
+    --action-primary:        var(--c-indigo-600);
+    --action-primary-hover:  var(--c-indigo-700);
+    --action-primary-fg:     var(--c-white);
+    --action-soft:           var(--c-indigo-100);
+    --action-soft-fg:        var(--c-indigo-700);
+
+    /* 상태 3색 — 뜻 고정. 여기서 벗어나는 상태 표현 신규 금지 */
+    --status-good:        var(--c-green-600);
+    --status-good-fg:     var(--c-white);
+    --status-good-tint:   rgba(10, 125, 85, 0.10);
+    --status-attn:        var(--c-amber-600);
+    --status-attn-fg:     var(--c-white);
+    --status-attn-tint:   rgba(180, 83, 9, 0.10);
+    --status-critical:      var(--c-red-600);
+    --status-critical-fg:   var(--c-white);
+    --status-critical-tint: rgba(204, 47, 52, 0.10);
+
+    /* 데이터 — 행동색과 완전히 분리된 계열 */
+    --data-1: var(--c-data-blue);      /* 홀 */
+    --data-2: var(--c-data-orange);    /* 배달 */
+    --data-3: var(--c-data-aqua);
+    --data-4: var(--c-data-yellow);
+    --data-5: var(--c-data-magenta);
+    --data-6: var(--c-data-green);
+    --data-7: var(--c-data-violet);
+    --data-8: var(--c-data-red);
+    --data-muted:  var(--c-gray-300);  /* 강조에서 뺀 계열 */
+    --rating-star: #9c6400;            /* 별점 — 흰 4.96:1 · 지면 4.58:1 (옛 #f0a500 은 2.08 실패) */
+    --data-grid:   var(--c-gray-100);
+    --data-axis:   var(--c-gray-300);
+
+    /* 히트맵 7단 — 배경과 그 위 글자는 반드시 짝으로 바꿉니다 */
+    --heat-0: var(--c-gray-100);  --heat-ink-0: var(--c-gray-600);
+    --heat-1: var(--c-seq-100);   --heat-ink-1: var(--c-gray-600);
+    --heat-2: var(--c-seq-200);   --heat-ink-2: var(--c-gray-800);
+    --heat-3: var(--c-seq-300);   --heat-ink-3: var(--c-gray-800);
+    --heat-4: var(--c-seq-400);   --heat-ink-4: #14243d;
+    --heat-5: var(--c-seq-500);   --heat-ink-5: var(--c-white);
+    --heat-6: var(--c-seq-600);   --heat-ink-6: var(--c-white);
+
+    /* 그림자 — 경계는 그림자보다 선. 떠 있는 것에만 raise */
+    --shadow-card:  0 1px 2px rgba(18, 25, 38, 0.03);
+    --shadow-raise: 0 2px 4px rgba(18, 25, 38, 0.06),
+                    0 10px 28px rgba(18, 25, 38, 0.10);
+}
+
+/* ---- 다크 — 2계층만 덮습니다 ---- */
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        color-scheme: dark;
+
+        --bg-page:        var(--c-ink-900);
+        --bg-surface:     var(--c-ink-800);
+        --bg-subtle:      var(--c-ink-700);
+        --bg-inset:       var(--c-ink-600);
+        --bg-overlay:     rgba(0, 0, 0, 0.6);
+
+        --text-primary:   var(--c-ink-100);
+        --text-secondary: var(--c-ink-300);
+        --text-muted:     var(--c-ink-400);   /* 5.17:1 — 예전 #7d8290 은 4.43 실패 */
+        --text-on-accent: var(--c-white);
+        --text-link:      var(--c-indigo-dk);
+
+        --border-subtle:  var(--c-ink-600);
+        --border-default: rgba(255, 255, 255, 0.08);
+        --border-strong:  var(--c-ink-500);
+        --border-focus:   var(--c-indigo-dk);
+
+        --action-primary:       var(--c-indigo-dk);
+        --action-primary-hover: #9a9dff;
+        --action-primary-fg:    #101116;
+        --action-soft:          rgba(130, 133, 255, 0.16);
+        --action-soft-fg:       #9a9dff;
+
+        --status-good:          var(--c-green-dk);
+        --status-good-fg:       #101116;
+        --status-good-tint:     rgba(43, 214, 149, 0.16);
+        --status-attn:          var(--c-amber-dk);
+        --status-attn-fg:       #101116;
+        --status-attn-tint:     rgba(217, 138, 43, 0.16);
+        --status-critical:      var(--c-red-dk);
+        --status-critical-fg:   #101116;
+        --status-critical-tint: rgba(255, 99, 105, 0.16);
+
+        --data-1: var(--c-data-blue-dk);
+        --data-2: var(--c-data-orange-dk);
+        --data-3: var(--c-data-aqua-dk);
+        --data-4: var(--c-data-yellow-dk);
+        --data-5: var(--c-data-magenta-dk);
+        --data-6: var(--c-data-green-dk);
+        --data-7: var(--c-data-violet-dk);
+        --data-8: var(--c-data-red-dk);
+        --data-muted: var(--c-ink-500);
+        --rating-star: #f0b429;   /* 다크 지면 8.4:1 */
+        --data-grid:  var(--c-ink-600);
+        --data-axis:  var(--c-ink-500);
+
+        /* 다크는 어두운 지면에서 시작해 값이 클수록 밝아집니다(단순 반전 아님) */
+        --heat-0: var(--c-ink-700);  --heat-ink-0: var(--c-ink-300);
+        --heat-1: #232d40;           --heat-ink-1: var(--c-ink-300);
+        --heat-2: #29466e;           --heat-ink-2: var(--c-ink-100);
+        --heat-3: #30619c;           --heat-ink-3: var(--c-ink-100);
+        --heat-4: #3577be;           --heat-ink-4: var(--c-white);
+        --heat-5: #74a9e8;           --heat-ink-5: #14243d;
+        --heat-6: #b7d3f6;           --heat-ink-6: #14243d;
+
+        --shadow-card:  0 1px 2px rgba(0, 0, 0, 0.3);
+        --shadow-raise: 0 2px 4px rgba(0, 0, 0, 0.4),
+                        0 10px 28px rgba(0, 0, 0, 0.4);
+    }
+}
+
+/* 화면 전환 버튼이 명시적으로 고른 다크 — OS 설정과 무관하게 이깁니다 */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --bg-page:        var(--c-ink-900);
+    --bg-surface:     var(--c-ink-800);
+    --bg-subtle:      var(--c-ink-700);
+    --bg-inset:       var(--c-ink-600);
+    --bg-overlay:     rgba(0, 0, 0, 0.6);
+
+    --text-primary:   var(--c-ink-100);
+    --text-secondary: var(--c-ink-300);
+    --text-muted:     var(--c-ink-400);
+    --text-on-accent: var(--c-white);
+    --text-link:      var(--c-indigo-dk);
+
+    --border-subtle:  var(--c-ink-600);
+    --border-default: rgba(255, 255, 255, 0.08);
+    --border-strong:  var(--c-ink-500);
+    --border-focus:   var(--c-indigo-dk);
+
+    --action-primary:       var(--c-indigo-dk);
+    --action-primary-hover: #9a9dff;
+    --action-primary-fg:    #101116;
+    --action-soft:          rgba(130, 133, 255, 0.16);
+    --action-soft-fg:       #9a9dff;
+
+    --status-good:          var(--c-green-dk);
+    --status-good-fg:       #101116;
+    --status-good-tint:     rgba(43, 214, 149, 0.16);
+    --status-attn:          var(--c-amber-dk);
+    --status-attn-fg:       #101116;
+    --status-attn-tint:     rgba(217, 138, 43, 0.16);
+    --status-critical:      var(--c-red-dk);
+    --status-critical-fg:   #101116;
+    --status-critical-tint: rgba(255, 99, 105, 0.16);
+
+    --data-1: var(--c-data-blue-dk);
+    --data-2: var(--c-data-orange-dk);
+    --data-3: var(--c-data-aqua-dk);
+    --data-4: var(--c-data-yellow-dk);
+    --data-5: var(--c-data-magenta-dk);
+    --data-6: var(--c-data-green-dk);
+    --data-7: var(--c-data-violet-dk);
+    --data-8: var(--c-data-red-dk);
+    --data-muted: var(--c-ink-500);
+    --rating-star: #f0b429;   /* 다크 지면 8.4:1 */
+    --data-grid:  var(--c-ink-600);
+    --data-axis:  var(--c-ink-500);
+
+    --heat-0: var(--c-ink-700);  --heat-ink-0: var(--c-ink-300);
+    --heat-1: #232d40;           --heat-ink-1: var(--c-ink-300);
+    --heat-2: #29466e;           --heat-ink-2: var(--c-ink-100);
+    --heat-3: #30619c;           --heat-ink-3: var(--c-ink-100);
+    --heat-4: #3577be;           --heat-ink-4: var(--c-white);
+    --heat-5: #74a9e8;           --heat-ink-5: #14243d;
+    --heat-6: #b7d3f6;           --heat-ink-6: #14243d;
+
+    --shadow-card:  0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-raise: 0 2px 4px rgba(0, 0, 0, 0.4),
+                    0 10px 28px rgba(0, 0, 0, 0.4);
+}
+
+/* ==========================================================================
+   3계층 — 컴포넌트 토큰
+   그 컴포넌트 안에서만 뜻이 있는 값. 2계층을 가리킵니다.
+   ========================================================================== */
+
+:root {
+    /* 카드 */
+    --card-bg:       var(--bg-surface);
+    --card-border:   var(--border-default);
+    --card-radius:   var(--r-lg);
+    --card-pad-x:    var(--sp-9);
+    --card-pad-y:    var(--sp-9);
+    --card-gap:      var(--sp-8);
+
+    /* 버튼 — 4종만. 이 밖의 버튼 모양 신규 금지 */
+    --btn-radius:      var(--r-md);
+    --btn-pad-y:       var(--sp-4);
+    --btn-pad-x:       var(--sp-6);
+    /* 주 행동은 가로를 한 단 넓혀 크기로도 계급이 드러나게 합니다 */
+    --btn-primary-pad-x: var(--sp-8);
+    /* sm — 표 안 행동 버튼. 밀도는 표 안에서만(카드 사이는 넉넉히) */
+    --btn-sm-pad-y:    var(--sp-3);
+    --btn-sm-pad-x:    var(--sp-6);
+    --btn-sm-font-size: var(--sz-3);
+    --btn-sm-min-h:    28px;
+    --btn-font-size:   var(--sz-4);
+    --btn-font-weight: var(--fw-semibold);
+    --btn-min-h:       34px;
+
+    --btn-primary-bg:    var(--action-primary);
+    --btn-primary-fg:    var(--action-primary-fg);
+    --btn-primary-bd:    transparent;
+    --btn-secondary-bg:  var(--bg-surface);
+    --btn-secondary-fg:  var(--text-primary);
+    --btn-secondary-bd:  var(--border-strong);
+    --btn-ghost-bg:      transparent;
+    --btn-ghost-fg:      var(--text-secondary);
+    --btn-ghost-bd:      transparent;
+    --btn-danger-bg:     var(--status-critical);
+    --btn-danger-fg:     var(--status-critical-fg);
+
+    /* 입력 — 만질 수 있는 것은 경계가 한 단 진합니다 */
+    --input-bg:       var(--bg-surface);
+    --input-fg:       var(--text-primary);
+    --input-bd:       var(--border-strong);
+    --input-radius:   var(--r-md);
+    --input-pad-y:    var(--sp-3);
+    --input-pad-x:    var(--sp-5);
+    --input-font-size: var(--sz-4);
+    --input-min-h:    34px;
+    --input-placeholder: var(--text-muted);
+
+    /* 표 — 밀도의 이중 기준: 표 안은 촘촘, 카드 사이는 넉넉 */
+    --table-font-size:   var(--sz-3);
+    --table-head-size:   var(--sz-2);
+    --table-cell-pad-y:  var(--sp-3);
+    --table-cell-pad-x:  var(--sp-4);
+    --table-row-border:  var(--border-subtle);
+    --table-head-bg:     var(--bg-subtle);
+
+    /* 배지·칩 */
+    --badge-radius:    var(--r-full);
+    --badge-pad-y:     var(--sp-1);
+    --badge-pad-x:     var(--sp-4);
+    --badge-font-size: var(--sz-1);
+    --badge-font-weight: var(--fw-semibold);
+
+    /* 네비게이션 */
+    --nav-item-radius: var(--r-md);
+    --nav-item-pad-y:  var(--sp-4);
+    --nav-item-pad-x:  var(--sp-6);
+    --nav-item-size:   var(--sz-4);
+
+    /* 포커스 링 — 키보드 사용자가 어디 있는지 항상 보여야 합니다 */
+    --focus-ring:        0 0 0 2px var(--bg-surface), 0 0 0 4px var(--border-focus);
+    --focus-ring-offset: 2px;
+}
+
+/* ==========================================================================
+   레거시 다리 (bridge) — 2026-09-10
+   --------------------------------------------------------------------------
+   styles.css 3,261줄이 예전 이름으로 쓰여 있습니다. 한 번에 다 고치면 어디서
+   깨졌는지 알 수 없으므로, 옛 이름을 새 의미 토큰으로 이어 둡니다.
+   새 CSS 는 이 이름들을 쓰지 마세요 — 오른쪽(2·3계층)을 직접 씁니다.
+   구역이 새 이름으로 옮겨갈 때마다 여기서 한 줄씩 지웁니다.
+
+   ⚠️ --bg / --bg-card 는 '정의된 적이 없는' 토큰이었습니다.
+      styles.css 14곳이 var(--bg-card, #fff) 폴백으로만 굴러가
+      매장 정보 DB 표·게시판 아카이브가 다크에서 흰 바탕으로 굳어 있었습니다.
+      여기서 정의하면 그 14곳이 자동으로 다크를 탑니다.
+   ========================================================================== */
+
+:root {
+    /* 지면·표면 */
+    --page:           var(--bg-page);
+    --surface-1:      var(--bg-surface);
+    --surface-2:      var(--bg-subtle);
+    --bg:             var(--bg-page);      /* 미정의였음 */
+    --bg-card:        var(--bg-surface);   /* 미정의였음 */
+
+    /* 선 */
+    --gridline:       var(--border-subtle);
+    --baseline:       var(--border-strong);
+    --border:         var(--border-default);
+
+    /* 행동 */
+    --primary:        var(--action-primary);
+    --primary-strong: var(--action-primary-hover);
+    --primary-soft:   var(--action-soft);
+
+    /* 상태 */
+    --good:           var(--status-good);
+    --critical:       var(--status-critical);
+    --attn:           var(--status-attn);
+    --good-tint:      var(--status-good-tint);
+    --attn-tint:      var(--status-attn-tint);
+    --urgent-tint:    var(--status-critical-tint);
+
+    /* 데이터 — 옛 이름은 행동색과 같은 인디고였습니다. 이제 데이터 계열입니다. */
+    --series-1:       var(--data-1);
+    --series-2:       var(--data-2);
+    --de-emphasis:    var(--data-muted);
+
+    /* 크기 */
+    --radius:         var(--r-lg);
+    --radius-sm:      var(--r-md);
+    --radius-pill:    var(--r-full);
+    --gap:            var(--sp-8);
+
+    --fs-hero:        var(--sz-8);
+    --fs-title:       var(--sz-5);
+    --fs-body:        var(--sz-3);
+    --fs-meta:        var(--sz-2);
+}

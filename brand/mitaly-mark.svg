@@ -1,0 +1,13 @@
+<!-- 미태리 심볼 마크 — 2026-09-10
+     면 세 가닥이 오른쪽으로 올라가는 형태. '매출 추이'와 '파스타 면'을 겹쳐 읽습니다.
+     16px 파비콘까지 뭉개지지 않도록 획 굵기 5, 간격 4 로 고정했습니다.
+     색은 브랜드 인디고 한 가지 — 데이터 팔레트를 쓰지 않습니다. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"
+     role="img" aria-label="미태리">
+  <rect width="32" height="32" rx="8" fill="#4d5eff"/>
+  <g stroke="#ffffff" stroke-width="5" stroke-linecap="round" fill="none">
+    <path d="M9 23 V19"/>
+    <path d="M16 23 V15"/>
+    <path d="M23 23 V10"/>
+  </g>
+</svg>
