@@ -2637,9 +2637,28 @@ tr.diag-drow td { white-space: normal; }
     .navitem { text-align: left; width: 100%; }
 }
 
+/* 아이콘 스프라이트 자체는 안 보입니다 — <use> 로만 꺼내 씁니다. */
+.iconset { display: none; }
+
+/* 메뉴 아이콘 — 이모지를 대신합니다(2026-09-10).
+   currentColor 라 글자색을 그대로 따라갑니다: 평소 muted, 활성이면 인디고,
+   다크에서도 알아서 맞습니다. 이모지는 이게 안 됐습니다. */
+.navicon {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    opacity: 0.85;
+}
+.navitem.is-on .navicon { opacity: 1; }
+
 .navitem {
     position: relative;
     appearance: none;
+    /* 아이콘과 글자를 한 줄에. 폭·정렬은 넓은 화면 블록이 이미 정합니다 —
+       여기서 width:100% 를 주면 좁은 화면의 가로 메뉴가 세로로 쌓입니다. */
+    display: flex;
+    align-items: center;
+    gap: var(--sp-5);
     background: transparent;
     border: var(--bw-hair) solid transparent;
     border-radius: var(--nav-item-radius);
