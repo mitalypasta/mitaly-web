@@ -1738,7 +1738,7 @@ button.ghost:focus-visible {
 .modal {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.45);
+    background: var(--bg-overlay);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2099,7 +2099,7 @@ th.sortable[aria-sort="ascending"]::after { content: " ▴"; }
 .alerts-exp:hover { color: var(--text-primary); }
 
 /* 펼쳐진 홀/배달 채널 행 — 매장 행과 구분되게 들여 쓰고 살짝 가라앉힙니다. */
-tr.alerts-chrow td { background: var(--bg-subtle, rgba(127, 127, 127, 0.06)); }
+tr.alerts-chrow td { background: var(--bg-subtle); }
 tr.alerts-chrow td:first-child { padding-left: var(--sp-10); }
 
 /* ---- 매장 진단 (카드 #141 — 텍스트 다이어트) --------------------------
@@ -2210,7 +2210,7 @@ tr.diag-drow td { white-space: normal; }
     padding: var(--sp-4) var(--sp-5);
     background: var(--bg-surface);
     border-left: 3px solid var(--border-strong);
-    border-radius: 0 6px 6px 0;
+    border-radius: 0 var(--r-md) var(--r-md) 0;
     font-size: var(--sz-3);
 }
 
@@ -2343,6 +2343,14 @@ tr.diag-drow td { white-space: normal; }
 #sd-kpis { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 
 /* 매장 미선택 안내 — 빈칸 대신 다음 행동이 보이게(2026-08-21 담당자 지시). */
+/* 매장 미선택 — 이 화면의 유일한 행동은 '매장 고르기' 하나입니다.
+   그전에는 종속 카드 10개가 제목 + '크게 보기' 만 남은 껍데기로 서 있었고,
+   그중 하나는 400px 빈 공간을 그냥 차지했습니다(2026-09-10 진단 B절 03).
+   빈 껍데기를 세우는 대신 감추고, 무엇이 나올지는 아래 안내 한 줄이 말합니다.
+   ⚠️ 카드를 지우는 것이 아니라 이 상태에서만 감춥니다 — 매장을 고르면 그대로
+   돌아옵니다(전 항목 유지 원칙). */
+.sd-no-store [data-needs-store] { display: none; }
+
 .sd-empty {
     grid-column: 1 / -1;
     padding: var(--sp-11) var(--sp-8);
@@ -2352,6 +2360,14 @@ tr.diag-drow td { white-space: normal; }
     color: var(--text-muted);
     background: var(--bg-subtle);
     border-radius: var(--r-lg);
+}
+
+.sd-empty .sd-empty-sub {
+    display: block;
+    margin-top: var(--sp-4);
+    font-size: var(--sz-3);
+    font-weight: var(--fw-regular);
+    color: var(--text-muted);
 }
 
 /* 주차 라벨 옆 실제 날짜 범위 — 목~수 경계 확인용 보조 표기. */
@@ -2972,7 +2988,7 @@ tr.diag-drow td { white-space: normal; }
     position: fixed;
     inset: 0;
     z-index: 110;                  /* 모달(50)·env-badge(100) 위 */
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--bg-overlay);
     opacity: 0;
     transition: opacity 0.22s ease;
 }

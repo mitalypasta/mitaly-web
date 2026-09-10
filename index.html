@@ -217,7 +217,7 @@
              (api_store_dashboard)의 weekly·daily, 시간대·요일은 시간대 카드
              묶음(api_by_hour·api_by_weekday, 기준월) — 새 SQL 없음
              (store_dash.js drawSvt). 아래 개별 카드들은 그대로 둡니다. -->
-        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="svt-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" data-needs-store id="svt-card">
             <header>
                 <h2>매출 추이</h2>
                 <span class="meta" id="svt-meta"></span>
@@ -237,7 +237,7 @@
             <p class="hint" id="svt-note"></p>
         </section>
 
-        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-pnl-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" data-needs-store id="sd-pnl-card">
             <header>
                 <h2>기준월 추정 손익</h2>
                 <span class="meta" id="sd-pnl-meta"></span>
@@ -246,7 +246,7 @@
             <p class="hint" id="sd-pnl-note"></p>
         </section>
 
-        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-year-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" data-needs-store id="sd-year-card">
             <header>
                 <h2>연도별 월간 추이</h2>
                 <select id="sd-year"></select>
@@ -262,7 +262,7 @@
         <!-- 분기별 매출 (2026-08-21 담당자 지시) — 이 매장의 전체 기간을
              분기로 접습니다. 원천은 api_monthly(매장 필터)라 새 SQL 없음
              (store_dash.js renderQuarterly). 표기는 1분기~4분기(담당자 지시). -->
-        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-quarter-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" data-needs-store id="sd-quarter-card">
             <header>
                 <h2>분기별 매출</h2>
                 <span class="meta" id="sd-q-meta"></span>
@@ -270,7 +270,7 @@
             <div class="tableview" id="t-sd-quarter"></div>
         </section>
 
-        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-weekly-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" data-needs-store id="sd-weekly-card">
             <header>
                 <h2>주간 매출 추이</h2>
                 <span class="meta" id="sd-wk-meta"></span>
@@ -278,7 +278,7 @@
             <div class="tableview" id="t-sd-weekly"></div>
         </section>
 
-        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-daily-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" data-needs-store id="sd-daily-card">
             <header>
                 <h2>일간 매출 — 최근 28일</h2>
                 <span class="meta" id="sd-daily-meta"></span>
@@ -295,7 +295,7 @@
              f-store 가 이미 받는 인자 — 새 SQL 없음, store_dash.js).
              기준일이 바뀌면 기준월이 따라 바뀌므로 이 카드들도 닻과 같이
              움직입니다. 표 기본(탭 정리 라운드 관례). ================== -->
-        <section data-area="sales" data-sub="선택 매장 매출" class="card" id="sd-hour-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card" data-needs-store id="sd-hour-card">
             <header>
                 <h2>시간대별 매출</h2>
                 <span class="meta" id="sd-hour-meta"></span>
@@ -303,7 +303,7 @@
             <div class="tableview" id="t-sd-hour"></div>
         </section>
 
-        <section data-area="sales" data-sub="선택 매장 매출" class="card" id="sd-menu-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card" data-needs-store id="sd-menu-card">
             <header>
                 <h2>메뉴 판매량</h2>
                 <span class="meta" id="sd-menu-meta"></span>
@@ -311,7 +311,7 @@
             <div class="tableview tall" id="t-sd-menu"></div>
         </section>
 
-        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-mweek-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" data-needs-store id="sd-mweek-card">
             <header>
                 <h2>메뉴 × 요일</h2>
                 <span class="meta" id="sd-mweek-meta"></span>
@@ -319,7 +319,7 @@
             <div class="tableview tall" id="t-sd-mweek"></div>
         </section>
 
-        <section data-area="sales" data-sub="선택 매장 매출" class="card full" id="sd-mpart-card">
+        <section data-area="sales" data-sub="선택 매장 매출" class="card full" data-needs-store id="sd-mpart-card">
             <header>
                 <h2>메뉴 × 시간대</h2>
                 <span class="meta" id="sd-mpart-meta"></span>

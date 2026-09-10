@@ -73,13 +73,22 @@ function currentArgs() {
 
 async function refresh() {
     const args = currentArgs();
+    // 매장을 골랐는가에 따라 이 화면의 모양이 통째로 갈립니다.
+    // 안 골랐으면 종속 카드 10개(추이·손익·메뉴 …)를 감춥니다 — 그전에는
+    // 제목 + '크게 보기' 만 남은 껍데기로 서 있었고, 그중 하나는 400px 빈 공간을
+    // 그냥 차지했습니다. 화면의 유일한 행동이 하나면 그것만 보여야 합니다.
+    // 지우는 것이 아니라 이 상태에서만 감춥니다(전 항목 유지 원칙).
+    document.documentElement.classList.toggle("sd-no-store", !args);
     if (!args) {
-        // 아무것도 안 골랐을 때 빈칸이 아니라 다음 행동이 보이게(담당자 지시).
         $("sd-meta").textContent = "";
         $("sd-info").textContent = "";
+        // 감춘 카드들이 '무엇을 볼 수 있는지' 를 알려 주던 몫까지 여기서 받습니다.
         $("sd-kpis").innerHTML =
-            '<div class="sd-empty">매장을 선택하세요 — 위 매장 칸에 이름을 치면 검색됩니다.</div>';
-        drawSvt();   // 추이 단위 줄에도 같은 안내가 자리를 잡습니다(#149).
+            '<div class="sd-empty">매장을 고르세요'
+            + '<span class="sd-empty-sub">위 매장 칸에 이름을 치면 검색됩니다. '
+            + '고르면 KPI · 추정 손익 · 추이 7단위(연도·분기·월·주간·일·시간대·요일) · '
+            + '메뉴 판매가 이 아래에 그려집니다.</span></div>';
+        drawSvt();
         return;
     }
     // 매장을 바꿨으면 연도 선택은 기준월의 연도로 되돌립니다 — 옛 매장에서
