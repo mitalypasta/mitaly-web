@@ -1430,36 +1430,42 @@
 
     <!-- 종료 처리 되돌리기 — 26_violation_reopen.sql, 큐 #14. 24가 "종료 처리"만
          만들고 되돌리기는 범위 밖으로 남긴 것(D28)을 잇습니다. -->
-    <section data-area="notices" class="card full" id="violation-resolved-card">
-        <header>
+    <!-- 원장(접힘) — 종료된 위반은 지나간 기록입니다 — 진행 중인 건이 먼저 보여야 합니다. -->
+    <details data-area="notices" class="card ledger" id="violation-resolved-card">
+        <summary>
             <h2>최근 종료된 위반</h2>
             <span class="meta">최근 20건만 보여줍니다</span>
-        </header>
-        <div class="tableview" id="t-violations-resolved"></div>
-    </section>
+        </summary>
+        <div class="ledger-body">
+            <div class="tableview" id="t-violations-resolved"></div>
+        </div>
+    </details>
 
     <!-- 과거 공문 아카이브 — 7번. 미태리샵 게시판(board_no=5) 138건을 글자로
          옮겨 담은 것(60_board_archive.sql). 공문 초안을 쓸 때 '전에 어떻게
          썼더라' 를 여기서 찾습니다. 본문의 81%가 원래 A4 이미지라 OCR 을
          거쳤고, 그래서 '확인필요' 표시가 붙는 건이 있습니다. -->
-    <section data-area="notices" class="card full" id="board-archive-card">
-        <header>
+    <!-- 원장(접힘) — 138건 아카이브. 검색해서 꺼내 보는 원장이라 평소에는 접어 둡니다. -->
+    <details data-area="notices" class="card ledger" id="board-archive-card">
+        <summary>
             <h2>과거 공문 아카이브</h2>
             <span class="meta" id="ba-summary"></span>
-        </header>
-        <div class="reqform">
-            <div class="field">
-                <label for="ba-q">검색어</label>
-                <input type="search" id="ba-q" placeholder="예) 우삼겹 · 원산지 · 260806_01">
+        </summary>
+        <div class="ledger-body">
+            <div class="reqform">
+                <div class="field">
+                    <label for="ba-q">검색어</label>
+                    <input type="search" id="ba-q" placeholder="예) 우삼겹 · 원산지 · 260806_01">
+                </div>
+                <div class="field">
+                    <label for="ba-search">&nbsp;</label>
+                    <button type="button" id="ba-search" class="btn-primary">찾기</button>
+                </div>
             </div>
-            <div class="field">
-                <label for="ba-search">&nbsp;</label>
-                <button type="button" id="ba-search" class="btn-primary">찾기</button>
-            </div>
+            <div class="tableview" id="t-board-archive"></div>
+            <div id="ba-detail" hidden></div>
         </div>
-        <div class="tableview" id="t-board-archive"></div>
-        <div id="ba-detail" hidden></div>
-    </section>
+    </details>
 
     <!-- 방문·점검 기록 — 9번 영역(방문 및 점검 관리). SV·매장 배정 축은
          아직 없어(scope-2026.md 9번) 방문자는 자유 텍스트입니다. 매장을
@@ -1618,17 +1624,20 @@
         <div class="tableview" id="t-visit-due"></div>
     </section>
 
-    <section data-area="visits" class="card full" id="visit-list-card">
-        <header>
+    <!-- 원장(접힘) — 지난 방문 기록. 이 화면의 답은 '다음에 어디를 갈까' 입니다. -->
+    <details data-area="visits" class="card ledger" id="visit-list-card">
+        <summary>
             <h2>방문 이력</h2>
             <span class="meta" id="visit-summary"></span>
-        </header>
-        <!-- 사진 열(카드 #155): 썸네일은 서명 URL 로 새 창. '보고 복사' 는
-             글만 복사되므로(카카오톡 단톡방 붙여넣기) 사진이 안 실린다는
-             안내를 여기 한 줄로 둡니다. -->
-        <p class="hint" id="vp-hint">사진은 썸네일을 누르면 새 창에서 열립니다. '보고 복사' 는 글만 복사됩니다 — 사진은 단톡방에 따로 올려 주세요.</p>
-        <div class="tableview" id="t-visits"></div>
-    </section>
+        </summary>
+        <div class="ledger-body">
+            <!-- 사진 열(카드 #155): 썸네일은 서명 URL 로 새 창. '보고 복사' 는
+                 글만 복사되므로(카카오톡 단톡방 붙여넣기) 사진이 안 실린다는
+                 안내를 여기 한 줄로 둡니다. -->
+            <p class="hint" id="vp-hint">사진은 썸네일을 누르면 새 창에서 열립니다. '보고 복사' 는 글만 복사됩니다 — 사진은 단톡방에 따로 올려 주세요.</p>
+            <div class="tableview" id="t-visits"></div>
+        </div>
+    </details>
 
     <!-- 오픈·폐점 관리 — 8번 영역. 27_store_lifecycle.sql, 큐 #15.
          scope-2026.md 판정("매장에 생애주기 개념이 없다")만 좁혀서 채웁니다.
@@ -1751,14 +1760,17 @@
         <div class="tableview" id="t-lifecycle-status"></div>
     </section>
 
-    <section data-area="lifecycle" class="card full" id="lifecycle-history-card">
-        <header>
+    <!-- 원장(접힘) — 전체 이력. 진행 중인 건은 위 카드가 보여 줍니다. -->
+    <details data-area="lifecycle" class="card ledger" id="lifecycle-history-card">
+        <summary>
             <h2>오픈·폐점 이력</h2>
             <span class="meta" id="lifecycle-history-summary"></span>
-        </header>
-        <p class="notice" id="lifecycle-mismatch" hidden></p>
-        <div class="tableview" id="t-lifecycle"></div>
-    </section>
+        </summary>
+        <div class="ledger-body">
+            <p class="notice" id="lifecycle-mismatch" hidden></p>
+            <div class="tableview" id="t-lifecycle"></div>
+        </div>
+    </details>
 
     <!-- 공지 — 12번 영역(소통·공지). 53_announcements.sql 위의 화면입니다.
          자리는 카카오 채널이고(docs/area12-comms.md) 웹은 작성·승인·이력만
