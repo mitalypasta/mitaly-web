@@ -3,7 +3,7 @@
 
 import { won, wonFull, int } from "./format.js";
 import { escape, debounce } from "./util.js";
-import { $, table } from "./dom.js";
+import { $, table, setHero, heroFail } from "./dom.js";
 import { db } from "./client.js";
 import { refreshTasksSummary, refreshTaskList, taskStatusTag } from "./tasks.js";
 
@@ -378,10 +378,26 @@ export async function refreshPosMenuRequests() {
     if (error) {
         $("t-posmenu-requests").innerHTML =
             '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + "</p>";
+        heroFail("posmenu-hero", error.message);
         return;
     }
     const rows = Array.isArray(data) ? data : [];
     $("pm-req-meta").textContent = rows.length ? `${int(rows.length)}건` : "";
+
+    // ---- hero: 이 화면의 답 -------------------------------------------
+    // 답 = 담당자가 눌러야 실행으로 넘어가는 것 = 승인 대기 요청.
+    // 이미 승인됐거나 실행된 건은 오늘 새로 잡을 일이 아니라 근거로 내립니다.
+    const waiting = rows.filter((r) => r.task_status === "waiting_approval").length;
+    const executed = rows.filter((r) => Number(r.executions) > 0).length;
+    setHero("posmenu-hero", {
+        num: `${int(waiting)}건`,
+        tone: waiting > 0 ? "critical" : "good",
+        badge: waiting > 0 ? "승인 필요" : "정상",
+        facts: rows.length
+            ? `전체 요청 ${int(rows.length)}건 · 실행 이력 있는 건 ${int(executed)}`
+              + " — 승인해도 실제 반영은 실행 단계에서 따로 일어납니다."
+            : "아직 변경 요청이 없습니다.",
+    });
     // 목록을 다시 그리면 열려 있던 이력 패널은 옛 요청 것이라 닫습니다.
     $("posmenu-exec-panel").hidden = true;
     if (!rows.length) {

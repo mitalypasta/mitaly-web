@@ -4,7 +4,7 @@
 
 import { int } from "./format.js";
 import { escape } from "./util.js";
-import { $, table } from "./dom.js";
+import { $, table, setHero, heroFail } from "./dom.js";
 import { db, fetchStores } from "./client.js";
 import { showArea } from "./nav.js";
 import { TASK_STATUS_LABEL, refreshTasksSummary, refreshTaskList } from "./tasks.js";
@@ -516,6 +516,7 @@ export async function refreshViolations() {
     if (error) {
         $("t-violations").innerHTML =
             '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
+        heroFail("notices-hero", error.message);
         return;
     }
     const list = Array.isArray(data) ? data : [];
@@ -527,6 +528,25 @@ export async function refreshViolations() {
         liveTask.set(`${t.violation_id}|${t.stage}`, t);
     }
     $("violation-summary").textContent = list.length ? `${int(list.length)}건 진행 중` : "";
+
+    // ---- hero: 이 화면의 답 -------------------------------------------
+    // 답 = **지금 발송 승인을 요청할 수 있는 건**. 단계가 잡혔는데(stage) 아직
+    // 살아 있는 승인 업무가 없는 것 — 화면에서 '발송 승인 요청' 버튼이 보이는
+    // 것과 같은 기준입니다(noticeActions). 이미 요청된 건은 담당자가 또 누를
+    // 일이 아니라서 뺍니다.
+    const canRequest = list.filter(
+        (v) => v.stage && !liveTask.has(`${v.event_id}|${v.stage}`)).length;
+    const manual = list.filter((v) => v.needs_manual_review).length;
+    const stage3 = list.filter((v) => Number(v.stage) >= 3).length;
+    setHero("notices-hero", {
+        num: `${int(canRequest)}건`,
+        tone: canRequest > 0 ? "critical" : manual > 0 ? "attn" : "good",
+        badge: canRequest > 0 ? "조치 필요" : manual > 0 ? "확인" : "정상",
+        facts: list.length
+            ? `진행 중 ${int(list.length)}건 · 담당자 확인 ${int(manual)} · `
+              + `3단계 이상 ${int(stage3)} — 단계는 계산 결과이지 발송 승인이 아닙니다.`
+            : "진행 중인 위반이 없습니다.",
+    });
 
     if (!list.length) {
         $("t-violations").innerHTML =

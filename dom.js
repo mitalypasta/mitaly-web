@@ -451,3 +451,40 @@ async function exportCard(card) {
     const safe = title.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
     XLSX.writeFile(wb, `미태리_${safe}_${day}.xlsx`);
 }
+
+/* ---------------------------------------------------------------- hero 카드
+ *
+ * 화면의 '답' 카드를 채웁니다(디자인 시스템 v1 · 카드 3계급의 맨 위 계급).
+ * 화면마다 배지 색·문구 규칙을 다시 쓰면 곧 제각각이 됩니다 — 여기 한 곳입니다.
+ *
+ *   setHero("리뷰-hero", { num: "3건", tone: "critical", badge: "조치 필요",
+ *                          facts: "미답변 12건 · 평균 4.1점" })
+ *
+ * tone 은 상태 3색과 같은 말을 씁니다: good · attn · critical.
+ * tone 을 안 주면 배지를 감춥니다(상태가 없는 조회형 화면).
+ * 불러오지 못했을 때는 fail() 로 — '집계 중…' 에 멈춰 있으면 사람은 아직
+ * 계산 중인 줄 압니다. 모른다는 것은 모른다고 말해야 합니다.
+ */
+const HERO_TONE = { good: "hb-good", attn: "hb-attn", critical: "hb-critical" };
+
+export function setHero(id, { num, tone, badge, facts } = {}) {
+    const numEl = $(`${id}-num`);
+    if (!numEl) return;                       // 아직 hero 가 없는 화면
+    numEl.textContent = num == null ? "—" : String(num);
+    const badgeEl = $(`${id}-badge`);
+    if (badgeEl) {
+        const cls = HERO_TONE[tone];
+        badgeEl.hidden = !cls;
+        if (cls) {
+            badgeEl.className = `hero-badge ${cls}`;
+            badgeEl.textContent = badge
+                || (tone === "critical" ? "조치 필요" : tone === "attn" ? "확인" : "정상");
+        }
+    }
+    const factsEl = $(`${id}-facts`);
+    if (factsEl) factsEl.textContent = facts || "";
+}
+
+export function heroFail(id, message) {
+    setHero(id, { num: "—", facts: `불러오지 못했습니다: ${message}` });
+}

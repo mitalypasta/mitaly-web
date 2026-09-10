@@ -25,7 +25,7 @@
 import { db, fetchStores } from "./client.js";
 import { int } from "./format.js";
 import { escape } from "./util.js";
-import { table, $ } from "./dom.js";
+import { table, $, setHero, heroFail } from "./dom.js";
 
 // 이벤트 종류(store_lifecycle_events.event_type) 표기 — 103 의 check 4값.
 const TYPE_LABEL = {
@@ -272,6 +272,26 @@ function renderLifecycleStatus() {
         : "";
     $("lc159-planned-opens").textContent = int(counts.planned_open);
     $("lc159-planned-closes").textContent = int(counts.planned_close);
+
+    // ---- hero: 이 화면의 답 -------------------------------------------
+    // 답 = 아직 안 끝난 건 = 오픈 예정 + 폐점 예정. 운영·폐점은 이미 끝난
+    // 상태라 답이 아니라 배경입니다.
+    // 매출이 끊겼는데 폐점 기록이 없는 매장(gapRows)은 **판정이 아니라 후보**라
+    // 답 숫자에 넣지 않고 '확인' 신호로만 냅니다 — 넣으면 사람이 폐점으로
+    // 읽습니다.
+    const inFlight = counts.planned_open + counts.planned_close;
+    setHero("lifecycle-hero", {
+        num: `${int(inFlight)}건`,
+        tone: gapRows.length > 0 ? "attn" : inFlight > 0 ? "attn" : "good",
+        badge: gapRows.length > 0 ? "확인" : inFlight > 0 ? "진행 중" : "정상",
+        facts: rows.length
+            ? `오픈 예정 ${int(counts.planned_open)} · 폐점 예정 ${int(counts.planned_close)}`
+              + ` — 전 매장 ${int(rows.length)}곳 중 상태 미상 ${int(counts.unknown)}`
+              + (gapRows.length
+                  ? ` · 매출 끊겼는데 폐점 기록 없는 곳 ${int(gapRows.length)} (후보일 뿐 판정 아님)`
+                  : "")
+            : "매장 상태 기록이 없습니다.",
+    });
     $("lc159-unknown").textContent = int(counts.unknown);
     $("lc159-unknown-sub").textContent = gapRows.length
         ? `그중 매출 끊김 ${int(gapRows.filter((r) => r.state === "unknown").length)}곳`

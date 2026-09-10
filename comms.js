@@ -3,7 +3,7 @@
 
 import { int } from "./format.js";
 import { escape, clip } from "./util.js";
-import { $, table } from "./dom.js";
+import { $, table, setHero, heroFail } from "./dom.js";
 import { db, fetchStores } from "./client.js";
 import { refreshTasksSummary, refreshTaskList, taskStatusTag } from "./tasks.js";
 
@@ -117,10 +117,27 @@ export async function refreshAnnouncements() {
     if (error) {
         $("t-announcements").innerHTML =
             '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
+        heroFail("comms-hero", error.message);
         return;
     }
     const rows = Array.isArray(data) ? data : [];
     $("comms-summary").textContent = rows.length ? `${int(rows.length)}건` : "";
+
+    // ---- hero: 이 화면의 답 -------------------------------------------
+    // 답 = 담당자가 눌러야 나가는 건 = 승인 대기. 이미 발송된 것과 반려된 것은
+    // 오늘 할 일이 아닙니다.
+    const waiting = rows.filter((a) => a.task_status === "waiting_approval").length;
+    const sentAny = rows.filter((a) => Number(a.sent) > 0).length;
+    const failedAny = rows.reduce((n, a) => n + (Number(a.failed) || 0), 0);
+    setHero("comms-hero", {
+        num: `${int(waiting)}건`,
+        tone: waiting > 0 ? "critical" : failedAny > 0 ? "attn" : "good",
+        badge: waiting > 0 ? "승인 필요" : failedAny > 0 ? "확인" : "정상",
+        facts: rows.length
+            ? `전체 ${int(rows.length)}건 · 발송됨 ${int(sentAny)}`
+              + (failedAny ? ` · 발송 실패 ${int(failedAny)}` : "")
+            : "아직 공지가 없습니다.",
+    });
     if (!rows.length) {
         $("t-announcements").innerHTML =
             '<p class="hint">아직 공지가 없습니다. 위 폼에서 접수하면 여기 나타납니다.</p>';

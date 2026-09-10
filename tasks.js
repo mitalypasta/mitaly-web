@@ -4,7 +4,7 @@
 
 import { int } from "./format.js";
 import { escape, clip } from "./util.js";
-import { $, table } from "./dom.js";
+import { $, table, setHero, heroFail } from "./dom.js";
 import { db, fetchStores } from "./client.js";
 import { refreshViolations } from "./notices.js";
 import { refreshAnnouncements } from "./comms.js";
@@ -195,10 +195,7 @@ export async function refreshTasksSummary() {
     const { data, error } = await db.rpc("api_tasks_summary");
     if (error) {
         $("tasks-summary-meta").textContent = "불러오지 못했습니다: " + error.message;
-        $("tasks-hero-num").textContent = "—";
-        $("tasks-hero-badge").hidden = true;
-        $("tasks-hero-facts").textContent =
-            "업무 현황을 불러오지 못했습니다: " + error.message;
+        heroFail("tasks-hero", error.message);
         return;
     }
     const by = data.by_status || {};
@@ -226,19 +223,16 @@ export async function refreshTasksSummary() {
     const overdue = Number(data.overdue || 0);
     const days = Number(data.overdue_days || 0);
 
-    $("tasks-hero-num").textContent = `${need}건`;
-    const badge = $("tasks-hero-badge");
-    badge.hidden = false;
-    badge.className = "hero-badge "
-        + (overdue > 0 ? "hb-critical" : need > 0 ? "hb-attn" : "hb-good");
-    badge.textContent = overdue > 0 ? "조치 필요" : need > 0 ? "확인" : "정상";
-
-    $("tasks-hero-facts").textContent = need > 0
-        ? `미처리 ${overdue}건 먼저 (접수 후 ${days}일 초과 · 상태 무관)`
-            + ` · 승인 대기 ${waiting} · 접수 ${received}`
-            + ` — 처리 중 ${Number(by.in_progress || 0)} · 이관 ${Number(by.escalated || 0)} 제외`
-            + " (이미 손이 가 있는 건)"
-        : "지금 새로 손댈 건이 없습니다.";
+    setHero("tasks-hero", {
+        num: `${need}건`,
+        tone: overdue > 0 ? "critical" : need > 0 ? "attn" : "good",
+        facts: need > 0
+            ? `미처리 ${overdue}건 먼저 (접수 후 ${days}일 초과 · 상태 무관)`
+                + ` · 승인 대기 ${waiting} · 접수 ${received}`
+                + ` — 처리 중 ${Number(by.in_progress || 0)} · 이관 ${Number(by.escalated || 0)} 제외`
+                + " (이미 손이 가 있는 건)"
+            : "지금 새로 손댈 건이 없습니다.",
+    });
 
     // 홈 '오늘 할 일' 타일. 같은 숫자를 두 번 묻지 않으려고 여기서 같이 채웁니다.
     const homeTasks = $("home-tasks");

@@ -542,6 +542,18 @@
         <div class="tableview" id="t-ta-history"></div>
     </section>
 
+    <!-- 설정 화면의 답. 답 = 그 기간에 수집이 빠진 달이 있는 매장 수 — 아래 표의 '누락' 열과 같은 기준이고, 그 표 주석대로 백필 작업의 지도입니다. 매핑표는 유지 작업이라 근거 층으로 둡니다. app.js drawCoverage 가 채웁니다. -->
+    <section data-area="settings" class="card hero-card" id="settings-hero">
+        <header class="hero-head">
+            <div class="hero-q">수집이 빠진 데 있나?</div>
+            <span class="hero-badge" id="settings-hero-badge" hidden></span>
+        </header>
+        <div class="hero-answer">
+            <span class="hero-num" id="settings-hero-num">—</span>
+        </div>
+        <p class="hero-facts" id="settings-hero-facts">집계 중…</p>
+    </section>
+
     <section data-area="settings" class="card full" id="mapping-card">
         <header>
             <h2>메뉴 매핑표</h2>
@@ -745,6 +757,18 @@
              매장을 아는 기존 rpc(api_pending_drafts, 14_reply_drafts.sql)를
              매장을 골랐을 때 한 번 더 받습니다.
              ============================================================ -->
+        <!-- 리뷰 화면의 답. 답 = 사람이 봐야 넘어가는 AI 답글 초안. 미답변·별점은 근거 줄로 내립니다. app.js drawReviews 가 채웁니다. -->
+        <section data-area="reviews" class="card hero-card" id="reviews-hero">
+            <header class="hero-head">
+                <div class="hero-q">검토할 초안 몇 건, 터진 곳은?</div>
+                <span class="hero-badge" id="reviews-hero-badge" hidden></span>
+            </header>
+            <div class="hero-answer">
+                <span class="hero-num" id="reviews-hero-num">—</span>
+            </div>
+            <p class="hero-facts" id="reviews-hero-facts">집계 중…</p>
+        </section>
+
         <section data-area="reviews" class="card full" id="rv-store-card">
             <header>
                 <h2>매장 리뷰 보기</h2>
@@ -1277,6 +1301,18 @@
     <!-- 위반 기록 — 7번 영역(공문 및 안내문). 판정 함수(api_notice_stage_status,
          23_notice_determination.sql)는 이미 있었지만 계산할 원본(violation_events)이
          이 화면 전에는 아무 데도 입력할 곳이 없었습니다. -->
+    <!-- 위반·공문 화면의 답. 답 = **지금 발송 승인을 요청할 수 있는 건** — 단계가 잡혔는데 아직 승인 업무가 없는 것. 이미 요청된 건은 뺍니다 (버튼이 보이는 것과 같은 기준). notices.js refreshViolations 가 채웁니다. -->
+    <section data-area="notices" class="card hero-card" id="notices-hero">
+        <header class="hero-head">
+            <div class="hero-q">단계 올릴 매장 있나?</div>
+            <span class="hero-badge" id="notices-hero-badge" hidden></span>
+        </header>
+        <div class="hero-answer">
+            <span class="hero-num" id="notices-hero-num">—</span>
+        </div>
+        <p class="hero-facts" id="notices-hero-facts">집계 중…</p>
+    </section>
+
     <section data-area="notices" class="card full" id="violation-form-card">
         <header>
             <h2>위반 기록 추가</h2>
@@ -1391,6 +1427,18 @@
          작성일|조회|좋아요 (공지 고정 행) → 페이지네이션·기간 필터·검색. 제목을 누르면 상세(제목·작성자·
          첨부 목록·본문·사진·목록/이전글/다음글). 자료: 111 api_visit_board · 110 api_visit_body · 101 사진.
          전역 담당자 필터는 행의 data-store 로 걸립니다(svfilter.js). -->
+    <!-- 방문·점검 화면의 답. 답 = 지금 가야 하는 곳(미방문 + 주기 초과) 수. SV 필터가 걸리면 그 담당 몫만 셉니다. app.js refreshVisitDue 가 채웁니다. -->
+    <section data-area="visits" class="card hero-card" id="visits-hero">
+        <header class="hero-head">
+            <div class="hero-q">다음 방문은 어디부터?</div>
+            <span class="hero-badge" id="visits-hero-badge" hidden></span>
+        </header>
+        <div class="hero-answer">
+            <span class="hero-num" id="visits-hero-num">—</span>
+        </div>
+        <p class="hero-facts" id="visits-hero-facts">집계 중…</p>
+    </section>
+
     <section data-area="visits" class="card full" id="daou-board-card">
         <header>
             <h2 id="dbo-name">매장 방문 리포트</h2>
@@ -1538,6 +1586,18 @@
          scope-2026.md 판정("매장에 생애주기 개념이 없다")만 좁혀서 채웁니다.
          체크리스트 상세(구글시트, 비공개)와 폐점 시 계정 삭제 알림
          (21_store_accounts.sql 게이트 확정 전)은 범위 밖입니다. -->
+    <!-- 오픈·폐점 화면의 답. 답 = 아직 안 끝난 건(오픈 예정 + 폐점 예정). 매출이 끊겼는데 폐점 기록이 없는 매장은 '확인' 신호로 함께 냅니다. lifecycle.js renderLifecycleStatus 가 채웁니다. -->
+    <section data-area="lifecycle" class="card hero-card" id="lifecycle-hero">
+        <header class="hero-head">
+            <div class="hero-q">진행 중 건은 어디까지 왔나?</div>
+            <span class="hero-badge" id="lifecycle-hero-badge" hidden></span>
+        </header>
+        <div class="hero-answer">
+            <span class="hero-num" id="lifecycle-hero-num">—</span>
+        </div>
+        <p class="hero-facts" id="lifecycle-hero-facts">집계 중…</p>
+    </section>
+
     <section data-area="lifecycle" class="card full" id="lifecycle-summary-card">
         <header>
             <h2>오픈·폐점 현황</h2>
@@ -1656,6 +1716,18 @@
          자리는 카카오 채널이고(docs/area12-comms.md) 웹은 작성·승인·이력만
          맡습니다. 실발송은 tools/send_announcements.py — 발송 수단이 연결되기
          전까지 dry-run 입니다. -->
+    <!-- 공지 화면의 답. 답 = 담당자가 눌러야 나가는 승인 대기 건. comms.js refreshAnnouncements 가 채웁니다. -->
+    <section data-area="comms" class="card hero-card" id="comms-hero">
+        <header class="hero-head">
+            <div class="hero-q">발송 대기 있나?</div>
+            <span class="hero-badge" id="comms-hero-badge" hidden></span>
+        </header>
+        <div class="hero-answer">
+            <span class="hero-num" id="comms-hero-num">—</span>
+        </div>
+        <p class="hero-facts" id="comms-hero-facts">집계 중…</p>
+    </section>
+
     <section data-area="comms" class="card full" id="comms-form-card">
         <header>
             <h2>공지 작성</h2>
@@ -2050,6 +2122,18 @@
          실행 순서입니다. 승인이 곧 실행이 아니라서 실행 상태를 따로 보여줍니다
          (docs/pos-write-plan.md). 배달앱 메뉴와의 불일치 감지(6번)가 이 현황을
          재료로 씁니다. -->
+    <!-- POS 메뉴 화면의 답. 답 = 담당자가 눌러야 실행으로 넘어가는 변경 요청. 이미 승인·실행된 건은 오늘 할 일이 아닙니다. pos.js 가 채웁니다. -->
+    <section data-area="posmenu" class="card hero-card" id="posmenu-hero">
+        <header class="hero-head">
+            <div class="hero-q">승인 대기 변경 있나?</div>
+            <span class="hero-badge" id="posmenu-hero-badge" hidden></span>
+        </header>
+        <div class="hero-answer">
+            <span class="hero-num" id="posmenu-hero-num">—</span>
+        </div>
+        <p class="hero-facts" id="posmenu-hero-facts">집계 중…</p>
+    </section>
+
     <section data-area="posmenu" class="card full" id="posmenu-card">
         <header>
             <h2>POS 메뉴 현황</h2>

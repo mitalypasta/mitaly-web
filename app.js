@@ -10,7 +10,8 @@
 import { won, wonFull, int, ymLabel, catLabel, ymDash } from "./format.js";
 import { escape, clip, debounce, niceTicks, monthsBetween } from "./util.js";
 import { S } from "./state.js";
-import { table, $, monthPicker, searchify, loadSheetJS, showTip, hideTip } from "./dom.js";
+import { table, $, monthPicker, searchify, loadSheetJS, showTip, hideTip,
+         setHero } from "./dom.js";
 import { palette, renderHeat, drawLine, drawBars } from "./charts.js";
 import { initSvFilter, svCurrent } from "./svfilter.js";
 
@@ -1832,6 +1833,21 @@ function drawReviews(d, c) {
         : "";
     $("draft-note").hidden = !(pending || approved);
 
+    // ---- hero: 이 화면의 답 -------------------------------------------
+    // 답 = 사람이 봐야 넘어가는 것 = 검토 대기 초안. 승인된 초안은 이미 손이
+    // 갔고, 미답변 리뷰는 초안이 없으면 아직 할 일이 아니라 재료입니다.
+    // 미답변·평균 별점은 근거 줄로 내립니다.
+    const unanswered = Number(summary.unanswered) || 0;
+    setHero("reviews-hero", {
+        num: `${int(pending)}건`,
+        tone: pending > 0 ? "critical" : unanswered > 0 ? "attn" : "good",
+        badge: pending > 0 ? "검토 필요" : unanswered > 0 ? "확인" : "정상",
+        facts: total
+            ? `승인됨 ${int(approved)} · 미답변 ${int(unanswered)} · `
+              + `이 기간 리뷰 ${int(total)}건 · 평균 ${summary.avg_rating ?? "—"}점`
+            : "이 기간에 받아온 리뷰가 없습니다.",
+    });
+
     // 리뷰 수집 현황. 배민 답글 기한이 대략 30일이라, 답글 달 수 있는 리뷰가
     // 적은데 전체 리뷰는 많다면 수집이 늦었다는 신호입니다.
     const sync = d.reviewSync || {};
@@ -2202,6 +2218,23 @@ function drawCoverage(d) {
             amount: Number(r.total) || 0,
             months: r.months || {},
         };
+    });
+
+    // ---- hero: 설정 화면의 답 -----------------------------------------
+    // 답 = 그 기간에 빠진 달이 있는 매장 수. 아래 표의 '누락' 열과 같은 기준이고,
+    // 그 표 주석대로 백필 작업의 지도입니다. 기간 중간에 연 매장도 '누락' 으로
+    // 세지는데, 이 표가 원래 그렇게 세고 있어 기준을 바꾸지 않았습니다 —
+    // 바꾸려면 표와 함께 바꿔야 합니다(같은 숫자가 두 값이 되면 안 됩니다).
+    const gapStores = rows.filter((r) => r.missing > 0).length;
+    const gapMonths = rows.reduce((n, r) => n + r.missing, 0);
+    setHero("settings-hero", {
+        num: `${int(gapStores)}곳`,
+        tone: gapStores > 0 ? "attn" : "good",
+        badge: gapStores > 0 ? "확인" : "정상",
+        facts: rows.length
+            ? `전 매장 ${int(rows.length)}곳 · 빠진 달 합계 ${int(gapMonths)}개`
+              + ` — ${total}개월 기준. 아래 '빠진 달' 열이 백필 지도입니다.`
+            : "수집 기록이 없습니다.",
     });
 
     table($("t-coverage"), ["매장", "수집된 달", "누락", "빠진 달", "누적 매출"],
@@ -3660,6 +3693,20 @@ async function refreshVisitDue() {
     $("visit-due-summary").textContent =
         `${sv ? sv + " 담당 " : ""}${int(rows.length)}곳 중 미방문 ${int(never)} · `
         + `기한 초과 ${int(overdue)}`;
+
+    // ---- hero: 이 화면의 답 -------------------------------------------
+    // 답 = 지금 가야 하는 곳 = 미방문 + 주기 초과. SV 필터가 걸리면 그 담당
+    // 몫만 셉니다(위 rows 가 이미 걸러져 있습니다).
+    const due = never + overdue;
+    setHero("visits-hero", {
+        num: `${int(due)}곳`,
+        tone: never > 0 ? "critical" : overdue > 0 ? "attn" : "good",
+        badge: never > 0 ? "조치 필요" : overdue > 0 ? "확인" : "정상",
+        facts: due > 0
+            ? `한 번도 안 간 곳 ${int(never)} · ${VISIT_CYCLE_DAYS}일 주기 초과 `
+              + `${int(overdue)} — ${sv ? sv + " 담당 " : "전"} ${int(rows.length)}곳 기준`
+            : `${sv ? sv + " 담당 " : "전"} ${int(rows.length)}곳 모두 주기 안에 있습니다.`,
+    });
 
     const showAll = $("vd-all").checked;
     const shown = rows
