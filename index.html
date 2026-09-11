@@ -1467,6 +1467,13 @@
                     <button type="button" id="ba-search" class="btn-primary">찾기</button>
                 </div>
             </div>
+            <!-- '몇 건 보는 중' 줄은 표 바깥입니다(WP3, 2026-09-11). 전에는
+                 notices.js 가 이 줄을 .tableview 안에 쓰고, table() 의
+                 innerHTML 이 그것을 지우지 않게 표를 맨 <div> 로 한 겹 더
+                 감쌌습니다. 그 div 에는 스크롤 장치가 없어서 넓은 표가
+                 '접근 불가' 로 잡혔습니다 — 줄을 밖으로 내보내면 표가
+                 .tableview(overflow:auto) 에 직접 담겨 그 겹이 사라집니다. -->
+            <p class="hint" id="ba-shown" hidden></p>
             <div class="tableview" id="t-board-archive"></div>
             <div id="ba-detail" hidden></div>
         </div>

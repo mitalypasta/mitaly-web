@@ -449,14 +449,33 @@ header.top h1::before {
 }
 
 /* 배달 지도(6번) — 카카오맵이 이 컨테이너를 채웁니다. 높이가 0이면 지도가
-   안 보이므로 고정 높이가 필요합니다. */
+ * 안 보이므로 고정 높이가 필요합니다.
+ *
+ * [가로 넘침 판단 — WP3, 2026-09-11] 지도는 '넓은 표' 가 아닙니다.
+ * 실측(1440x900, 실 SDK 로드): SDK 가 컨테이너 안에 만드는 캔버스 뿌리 div 가
+ * scrollWidth 3,084 / clientWidth 1,028 입니다. 타일판이 틀보다 3배 넓은 것은
+ * 결함이 아니라 지도의 정의이고, **틀 밖으로 나간 부분은 끌기·확대로 봅니다**
+ * — 지도 자신이 스크롤 장치입니다. 그래서 여기서는 자르는 것이 맞습니다.
+ *
+ * 그 자르기를 지금까지는 SDK 가 인라인 스타일로만 해 왔습니다. 우리 CSS 가
+ * 말하지 않으면 (a) SDK 가 아직 안 붙은 첫 순간과 (b) SDK 로드 실패 시에
+ * 캔버스가 카드를 뚫습니다 — 픽스처에서 그 경우 section.card 까지 3,117px 로
+ * 번지는 것을 확인했습니다. 그래서 우리가 명시합니다.
+ *
+ * 자르는 자리는 두 곳 다 **같은 상자**라 화면은 한 픽셀도 안 바뀝니다:
+ * 틀(#dmap-container)과 SDK 캔버스 뿌리(> div)의 clientWidth 가 같습니다.
+ * 안쪽 타일 레이어까지 내려가 자르면 안 됩니다 — 타일은 제 부모 상자 밖에
+ * 절대배치되는 것이 정상이라 지도가 조각납니다. 뿌리 한 겹만 자릅니다. */
 #dmap-container {
     width: 100%;
     height: 480px;
     border: 1px solid var(--border-default);
     border-radius: var(--r-md);
     background: var(--bg-surface);
+    overflow: hidden;
 }
+
+#dmap-container > div { overflow: hidden; }
 
 /* 지도 마커 팝업 (S17). 카카오맵 CustomOverlay 의 content 라 카드 밖 좌표계에
    뜹니다 — 테마 변수로 칠해 라이트/다크를 같이 따라갑니다. yAnchor:1 로 창의
@@ -1541,6 +1560,23 @@ body.bigtable-open { overflow: hidden; }
     gap: var(--sp-6);
     margin-top: var(--sp-2);
 }
+
+/* [가로 넘침 판단 — WP3, 2026-09-11] 광고 화면의 넘침 1건이 여기였습니다:
+ * `div.reqfold-fields` 가 207px 를 요구하는데 119px 만 가짐.
+ *
+ * 표가 넓은 것도, 문장이 안 접힌 것도 아닙니다. **닫힌 접기의 속살**입니다.
+ * 크롬 131+ 부터 닫힌 <details> 의 내용도 레이아웃을 잡습니다
+ * (::details-content + content-visibility:hidden — 여는 전환을 애니메이션할 수
+ * 있게 하려는 변경). 그런데 .reqfold 는 닫혀 있을 때 폼 한 줄에 끼어드는
+ * 요약 글줄 폭(119px)밖에 없고, 속살은 칸 3개라 207px 가 필요합니다.
+ * 그래서 **닫힌 채로 짓눌린 상자**가 하나 생깁니다.
+ *
+ * 열면 `.reqfold[open] { flex-basis: 100% }` 가 제 줄을 통째로 줘서 넉넉히
+ * 들어갑니다 — 즉 사람이 보는 화면에는 원래 문제가 없었고, 안 보이는 자리에
+ * 잘못된 기하만 남아 있었습니다. 닫힌 접기의 패널은 레이아웃에서 빼는 것이
+ * 맞습니다(크롬 130 이전이 하던 그대로). 내용은 요약을 누르면 그대로 옵니다 —
+ * 감추는 것이 아니라, 안 보이는 것을 재지 않게 하는 것입니다. */
+.reqfold:not([open]) > .reqfold-fields { display: none; }
 
 .reqform input[type="date"] {
     font: inherit;
@@ -2981,7 +3017,39 @@ tr.diag-drow td { white-space: normal; }
     border-radius: var(--r-md);
 }
 
-/* 목록의 발췌 줄 — 제목 아래 회색 한 줄. 두 줄을 넘기면 표가 성기어집니다. */
+/* 목록의 제목 칸 — 제목 한 줄 + 발췌 두 줄.
+ *
+ * [가로 넘침 판단 — WP3, 2026-09-11] 위반·공문 화면의 넘침 1건(실측
+ * 1,740px 요구 / 1,015px 보유)이 여기였습니다. 원인은 **표가 넓은 것이
+ * 아니라 문장이 안 접힌 것**입니다: 발췌는 SQL 이 본문 앞 160자를 잘라 주는
+ * 값인데(60_board_archive), 전역 `th, td { white-space: nowrap }` 에 걸려
+ * 한글 160자가 한 줄로 늘어섭니다 — 그것만 2,000px 가까이 됩니다.
+ *
+ * 바로 아래 두 줄 자르기(-webkit-line-clamp: 2)는 원래부터 있었는데
+ * **한 번도 일한 적이 없었습니다** — 줄이 안 바뀌니 자를 줄도 없었던 것.
+ * 그래서 자르기를 늘리는 대신 이 칸에서만 nowrap 을 풀어, 있던 규칙이
+ * 제 일을 하게 합니다. 그러면 표가 그릇 안에 들어옵니다.
+ *
+ * 폭은 **고정**입니다(남는 칸 — 작성일·문서번호·첨부·표시 — 을 뺀 자리).
+ * 상한만 두고 풀어 놓으면 좁은 화면에서 표가 이 칸부터 쥐어짜, 제목이 한 줄에
+ * 두세 글자로 흐르고 행 높이가 419px 까지 솟습니다(390px 실측). 읽기 폭을
+ * 고정하면 좁은 화면에서는 대신 표가 .tableview(overflow:auto) 안에서
+ * 가로로 굴러갑니다 — 좁을 때 줄여야 하는 것은 글이 아니라 보는 창입니다.
+ *
+ * 한국어는 낱말 중간에서 끊으면 못 읽으므로 keep-all 로 낱말 단위로만 끊되,
+ * 낱말 하나가 칸보다 길면(OCR 이 만든 '────' 줄 같은 것) 그때만 아무 데서나
+ * 끊습니다(overflow-wrap: anywhere) — keep-all 만 두면 그런 한 덩어리가
+ * 칸을 다시 밀어냅니다.
+ * 잘린 발췌를 볼 방법은 이미 있습니다 — 제목을 누르면 아래 #ba-detail 이
+ * 본문 전문을 폅니다(그래서 '잘림' 이 아니라 '요약' 입니다). */
+.ba-cell {
+    display: block;
+    width: 460px;
+    white-space: normal;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+}
+
 #t-board-archive .meta {
     display: -webkit-box;
     -webkit-line-clamp: 2;

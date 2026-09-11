@@ -147,11 +147,25 @@ function initBoardArchive() {
     });
 }
 
+// 표는 .tableview 에 **직접** 담습니다(WP3, 2026-09-11).
+//
+// 전에는 '몇 건 보는 중' 줄을 .tableview 안에 innerHTML 로 쓰고, table() 이
+// 그 줄을 지우지 않게 표를 맨 <div> 에 한 겹 더 담았습니다. 그 div 에는
+// 스크롤 장치가 없어서 넓은 표(실측 1,740px / 그릇 1,015px)가 '접근 불가'
+// 로 잡혔습니다. 이제 그 줄은 표 밖 #ba-shown 이 맡고, 표는 스크롤되는
+// 그릇에 바로 들어갑니다.
+function baShow(text) {
+    const line = $("ba-shown");
+    line.textContent = text || "";
+    line.hidden = !text;
+}
+
 async function refreshBoardArchive(q) {
     const box = $("t-board-archive");
     const { data, error } = await db.rpc("api_board_notices",
         { p_q: q || null, p_limit: 60 });
     if (error) {
+        baShow("");
         box.innerHTML = '<p class="hint">불러오지 못했습니다: '
             + escape(error.message) + "</p>";
         return;
@@ -164,6 +178,7 @@ async function refreshBoardArchive(q) {
         : "";
 
     if (!rows.length) {
+        baShow("");
         box.innerHTML = q
             ? `<p class="hint">'${escape(q)}' 로 찾은 공문이 없습니다.</p>`
             : '<p class="hint">아직 반입된 공문이 없습니다.</p>';
@@ -172,22 +187,25 @@ async function refreshBoardArchive(q) {
     }
 
     const shown = q ? `${int(data.matched)}건 중 ${rows.length}건` : `최근 ${rows.length}건`;
-    box.innerHTML = `<p class="hint">${shown} 보는 중`
+    baShow(`${shown} 보는 중`
         + (data.need_review ? ` · 확인필요 ${int(data.need_review)}건` : "")
-        + (data.unlisted ? ` · 게시판 목록에 안 뜨는 글 ${int(data.unlisted)}건` : "")
-        + "</p>";
-    const view = document.createElement("div");
-    box.append(view);
+        + (data.unlisted ? ` · 게시판 목록에 안 뜨는 글 ${int(data.unlisted)}건` : ""));
 
-    table(view,
+    table(box,
         ["작성일", "문서번호", "제목", "첨부", "표시"],
         rows.map((r) => [
             r.posted_on || "—",
             r.doc_no
                 ? escape(r.doc_no) + (r.verified ? "" : ' <span class="flag">날짜 불일치</span>')
                 : "—",
-            `<a href="#" data-ba-open="${r.article_no}">${escape(r.title)}</a>`
-            + `<br><span class="meta">${escape(r.excerpt || "")}</span>`,
+            // 제목+발췌는 .ba-cell 로 감쌉니다 — 표 칸의 전역 nowrap 을 이
+            // 칸에서만 풀어 160자 발췌가 줄바꿈하게 하려는 것입니다
+            // (styles.css 의 .ba-cell 주석 참고). <br> 은 발췌를 제 줄로
+            // 내리려던 것인데 .meta 가 이미 블록(-webkit-box)이라 뺍니다 —
+            // 두면 빈 줄이 하나 더 생깁니다.
+            `<div class="ba-cell">`
+            + `<a href="#" data-ba-open="${r.article_no}">${escape(r.title)}</a>`
+            + `<span class="meta">${escape(r.excerpt || "")}</span></div>`,
             (r.attachments || []).length ? int(r.attachments.length) + "개" : "—",
             [r.need_review ? '<span class="flag">확인필요</span>' : "",
              r.listed ? "" : '<span class="tag h-warn">목록에 안 뜸</span>'].join(" ").trim() || "—",

@@ -520,7 +520,7 @@ async function load(onFirstPaint) {
     ];
 
     // 초안 요약 — 리뷰 화면 hero 의 큰 숫자입니다. **위 필터를 그대로 따릅니다**
-    // (112_review_draft_summary_filtered.sql, 인자는 api_review_summary 와 같은 4개).
+    // (114_review_draft_summary_filtered.sql, 인자는 api_review_summary 와 같은 4개).
     //
     // 왜 바꿨나 (담당자 실측 2026-09-11, 라이브): 여기서 `api_draft_summary` 를
     // **인자 없이** 부르고 있었습니다. 14 의 그 함수는 인자를 아예 안 받아

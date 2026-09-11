@@ -2622,7 +2622,7 @@ const HANDLERS = {
         return { ok: true, done: !!p_done };
     },
 
-    // 초안 요약 — 리뷰 화면 hero (112_review_draft_summary_filtered.sql).
+    // 초안 요약 — 리뷰 화면 hero (114_review_draft_summary_filtered.sql).
     // api_review_summary 와 **같은 인자 4개**라 같은 리뷰 집합에서 셉니다.
     // 매장·플랫폼을 바꾸면 hero 숫자가 따라 바뀌어야 하는데, 옛 코드는 인자
     // 없는 api_draft_summary 를 불러 전사 값에 붙박여 있었습니다(2026-09-11
