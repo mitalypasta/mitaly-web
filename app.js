@@ -3745,6 +3745,12 @@ async function initVisits() {
     $("t-visit-due").addEventListener("click", async (event) => {
         const button = event.target.closest("button[data-act='visit-pick']");
         if (!button) return;
+        // 수정 중에 누르면 폼은 '수정 저장' 인 채 매장만 바뀝니다 — 그대로
+        // 저장하면 update 가 **남의 기록을 이 매장으로 옮깁니다**(위 저장은
+        // 수정 모드면 id 로 update 합니다). 새 기록 모드로 되돌리고, 되불러
+        // 온 남의 점검 메모도 함께 지웁니다 — 안 지우면 그 글이 그대로 새
+        // 매장의 기록으로 들어갑니다(2026-09-11 감사).
+        if (visitEditId !== null) cancelVisitEdit();
         storeSelect.value = button.dataset.storeId;
         await refreshVisits();
         await refreshVisitStoreMetrics();

@@ -145,6 +145,13 @@ async function refreshSettlementMonth() {
     const paySelect = $("pay-invoice");
     const keep = paySelect.value;
     paySelect.innerHTML = "";
+    // 맨 앞 빈 값 — 없으면 가나다순 첫 매장이 고른 것처럼 앉아 있고, 아래
+    // '매장을 고르세요' 검사(invoiceId===0)가 영영 안 걸립니다. 금액만 넣고
+    // 누른 입금이 엉뚱한 매장 청구에 붙었습니다(2026-09-11 감사).
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "매장을 고르세요";
+    paySelect.append(blank);
     for (const s of stRows.filter((r) => r.invoice_id != null)) {
         const option = document.createElement("option");
         option.value = String(s.invoice_id);

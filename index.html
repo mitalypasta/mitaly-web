@@ -1295,8 +1295,7 @@
             <div class="tableview" id="ct-table"></div>
 
             <h3>연락처 수정</h3>
-            <p class="note">표에서 '수정'을 누르면 그 매장의 값이 아래 칸에 채워집니다.
-               저장은 칸에 보이는 값 그대로 덮어씁니다.</p>
+            <p class="note">저장은 보이는 값 그대로 덮어씁니다 — 빈 칸은 지웁니다.</p>
             <div class="filters">
                 <div class="field">
                     <label for="ct-f-store">매장</label>
@@ -1997,7 +1996,7 @@
             </div>
             <div class="field">
                 <label for="ads-in-cost">광고비 (원)</label>
-                <input type="number" id="ads-in-cost" min="0" step="1" placeholder="0">
+                <input type="number" id="ads-in-cost" min="0" step="1">
             </div>
             <!-- 필수가 아닌 실적 칸은 접어 둡니다 — '캠페인·클릭·주문이 뭔지
                  모르겠다' 는 피드백(3라운드)의 답. 아는 사람만 열어 넣습니다. -->
@@ -2828,7 +2827,9 @@
         <div class="reqform">
             <div class="field">
                 <label for="pay-invoice">매장 (그 달 청구)</label>
-                <select id="pay-invoice"></select>
+                <select id="pay-invoice">
+                    <option value="">매장을 고르세요</option>
+                </select>
             </div>
             <div class="field">
                 <label for="pay-date">입금일</label>

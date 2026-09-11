@@ -53,6 +53,11 @@ async function ctOpen() {
         $("ct-gate").hidden = true;
         $("ct-body").hidden = false;
         drawContacts();
+        // 폼은 매장 칸이 이미 첫 매장을 가리킨 채 열립니다. 나머지 11칸이
+        // 빈 채로 두면 그대로 누른 저장이 그 매장 연락처를 통째로 지웁니다
+        // (덮어쓰기 upsert). 열 때 한 번 맞춰 둡니다 — 포커스는 암호 칸에서
+        // 옮기지 않습니다.
+        ctSyncFormToStore({ focus: false });
     } finally {
         $("ct-open").disabled = false;
     }
@@ -99,7 +104,23 @@ function drawContacts() {
     }
 }
 
-function ctFillForm(r) {
+// 저장 버튼에 대상 매장을 박아 둡니다 — 이 폼은 칸이 11개라 맨 위 매장
+// 칸이 화면 밖으로 밀려나고, 누르는 순간 어느 매장을 덮어쓰는지가 안
+// 보였습니다(2026-09-11 감사).
+function ctLabelSave() {
+    const store = $("ct-f-store").value;
+    $("ct-save").textContent = store ? `저장 · ${store}` : "저장";
+}
+
+// 매장 칸이 가리키는 매장의 값을 폼에 다시 올립니다. 그 매장 행이 없으면
+// 나머지 칸을 비웁니다 — 앞 매장 값이 남으면 저장(save_store_contact)이
+// 전 열 덮어쓰기 upsert 라 그 값이 새 매장에 그대로 박힙니다.
+function ctSyncFormToStore(opts) {
+    const store = $("ct-f-store").value;
+    ctFillForm(ctRows.find((r) => r.store_name === store) || { store_name: store }, opts);
+}
+
+function ctFillForm(r, { focus = true } = {}) {
     $("ct-f-store").value = r.store_name;
     $("ct-f-owner").value = r.owner_name || "";
     $("ct-f-owner-phone").value = r.owner_phone || "";
@@ -111,7 +132,8 @@ function ctFillForm(r) {
     $("ct-f-bizno").value = r.business_number || "";
     $("ct-f-contract").value = r.contract_period || "";
     $("ct-f-transfer").value = r.transfer_note || "";
-    $("ct-f-owner").focus();
+    ctLabelSave();
+    if (focus) $("ct-f-owner").focus();
 }
 
 async function ctSave() {
@@ -165,6 +187,9 @@ export function initContacts(storeNames) {
     });
     $("ct-lock").addEventListener("click", ctLock);
     $("ct-store").addEventListener("change", drawContacts);
+    // 매장만 바꿨을 때 나머지 칸이 앞 매장 값 그대로 남던 것을 막습니다.
+    $("ct-f-store").addEventListener("change", () => ctSyncFormToStore());
     $("ct-save").addEventListener("click", ctSave);
+    ctLabelSave();
     ctSummary();
 }

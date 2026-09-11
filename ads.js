@@ -150,6 +150,17 @@ async function saveAd() {
         return v === "" ? null : Number(v);
     };
 
+    // 광고비 빈 칸은 막습니다. 여기서 0 으로 바꿔 보내면 '모름' 이 '집행이
+    // 없었음' 으로 굳습니다 — 113 이 null 과 0 을 갈라 놓은 이유가 그것이고,
+    // 손입력은 '모름' 이 나올 자리가 아니라 0 이상을 요구합니다(113 머리주석).
+    const cost = num("ads-in-cost");
+    if (cost === null) {
+        notice.className = "notice error";
+        notice.textContent = "광고비를 넣으세요 — 실제로 0원이면 0 을 직접 입력하세요.";
+        $("ads-in-cost").focus();
+        return;
+    }
+
     // 이중 제출 방지 — 공지·위반 카드와 같은 패턴(버튼을 잠그고 끝나면 풉니다).
     button.disabled = true;
     notice.className = "notice";
@@ -159,7 +170,7 @@ async function saveAd() {
         p_store:       $("ads-in-store").value,
         p_ym:          ym,
         p_channel:     channel,
-        p_cost:        num("ads-in-cost") ?? 0,
+        p_cost:        cost,
         p_campaign:    $("ads-in-campaign").value,
         p_impressions: num("ads-in-impressions"),
         p_clicks:      num("ads-in-clicks"),

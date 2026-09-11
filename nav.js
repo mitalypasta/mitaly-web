@@ -143,6 +143,26 @@ export function showSalesSub(sub) {
     window.scrollTo({ top: 0, behavior: "instant" });
 }
 
+// 좁은 화면(≤620px)의 가로 내비에서 **지금 있는 영역**을 보이는 데로 끌어옵니다.
+//
+// [실측 390px, 2026-09-11 WP4] 내비 16개가 한 줄로 눕는데 필요폭 1,440px ·
+// 가진폭 342px 이라 첫 화면에 4개만 보입니다. 5번째부터는 `is-on` 강조가
+// **화면 밖**이라, '매장 정보'(13번째)에 들어가도 내비에는 홈·업무·매출·정산만
+// 보이고 아무것도 강조돼 있지 않습니다 — 사용자가 지금 어디 있는지 모릅니다.
+//
+// CSS 로는 못 합니다(스크롤 위치는 스타일이 아닙니다). 그래서 여기서 밀어 줍니다.
+// 조건을 두 개 답니다:
+//   · 실제로 넘칠 때만 — 넓은 화면의 세로 메뉴에서 부르면 아무 일도 안 하지만,
+//     괜히 스크롤 계산을 돌릴 이유가 없습니다.
+//   · `block: "nearest"` — 이것을 빼면 브라우저가 **페이지 세로 스크롤까지**
+//     같이 움직여 방금 연 화면의 머리가 잘립니다(showArea 는 맨 위로 올립니다).
+function revealActiveNav() {
+    const nav = document.querySelector(".sidenav");
+    if (!nav || nav.scrollWidth <= nav.clientWidth + 2) return;
+    const on = nav.querySelector(".navitem.is-on");
+    if (on && on.scrollIntoView) on.scrollIntoView({ inline: "center", block: "nearest" });
+}
+
 export function showArea(area) {
     // 매장 정보에서 나가면 암호를 버립니다(위 credLock 주석 참조).
     if (area !== "stores" && typeof S.credPass !== "undefined" && S.credPass) credLock();
@@ -163,6 +183,7 @@ export function showArea(area) {
         b.classList.toggle("is-on", b.dataset.go === area);
         b.setAttribute("aria-current", b.dataset.go === area ? "page" : "false");
     }
+    revealActiveNav();
     const salesOnly = area === "sales";
     // 필터 줄(기간·매장)은 매출·리뷰에서만 보입니다. 홈은 3라운드 피드백
     // 1번으로 필터와 무관해졌습니다(전체 기간·전 매장 고정 — app.js loadHome)

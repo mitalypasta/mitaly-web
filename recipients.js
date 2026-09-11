@@ -142,11 +142,59 @@ function rcFillForm(recipient) {
         `${base.display_name || recipient} 을(를) 위 칸에 올렸습니다 — 고친 뒤 저장을 누르세요.`;
 }
 
+// 저장은 사람 단위라(72 설계 판단 [2]) 체크 안 한 종류가 전부 꺼지고,
+// 이름·SV·메모도 빈칸이면 null 로 덮입니다. 그래서 **이미 있는 주소를 빈
+// 폼에 직접 치고** '공지' 하나만 체크해 저장하면, 그 사람의 보고서·부정
+// 리뷰 수신이 조용히 꺼집니다(2026-09-11 감사). 표의 '고치기' 로 들어오면
+// 안 겪는 길이라 눈에 안 띄었습니다.
+//
+// 서버가 lower(trim(...)) 으로 주소를 맞추므로(72:53) 여기서도 같게 봅니다.
+const rcNorm = (mail) => String(mail || "").trim().toLowerCase();
+
+function rcExistingRows(mail) {
+    const key = rcNorm(mail);
+    if (!key) return [];
+    return rcItems.filter((r) => r.channel === "mail" && rcNorm(r.recipient) === key);
+}
+
+// 메일 칸에서 손을 떼면 이미 있는 주소인지 보고, 맞으면 지금 상태를
+// 올려 줍니다 — 체크가 미리 채워지면 '안 건드린 종류' 가 꺼질 일이 없습니다.
+function rcPrefillFromMail() {
+    const rows = rcExistingRows($("rc-mail").value);
+    if (!rows.length) return;
+    rcFillForm(rows[0].recipient);
+    const on = rows.filter((r) => r.enabled).map((r) => NOTIFY_KIND_LABEL[r.kind] || r.kind);
+    $("rc-notice").textContent = `이미 있는 주소입니다 — 지금 받는 것: `
+        + (on.length ? on.join(", ") : "없음") + ". 고친 뒤 저장을 누르세요.";
+}
+
+// 저장이 무엇을 끄고 무엇을 지우는지 미리 셉니다(빈 폼 저장의 안전망 —
+// 위 채우기를 안 거치고 바로 누르는 길이 남아 있습니다).
+function rcOverwriteWarning(kinds) {
+    const rows = rcExistingRows($("rc-mail").value);
+    if (!rows.length) return null;
+    const off = rows.filter((r) => r.enabled && !kinds.includes(r.kind))
+        .map((r) => NOTIFY_KIND_LABEL[r.kind] || r.kind);
+    const base = rows.find((r) => r.enabled) || rows[0];
+    const wiped = [["이름", base.display_name, "rc-name"],
+                   ["담당 SV", base.sv_name, "rc-sv"],
+                   ["메모", base.note, "rc-note"]]
+        .filter(([, had, id]) => had && !$(id).value.trim())
+        .map(([label]) => label);
+    if (!off.length && !wiped.length) return null;
+    return [`${rcNorm($("rc-mail").value)} 은(는) 이미 있습니다.`,
+            off.length ? `끕니다: ${off.join(", ")}` : null,
+            wiped.length ? `지웁니다: ${wiped.join(", ")}` : null,
+            "그대로 저장할까요?"].filter(Boolean).join("\n");
+}
+
 async function saveRecipient() {
     const notice = $("rc-notice");
     notice.textContent = "";
     const kinds = [...$("rc-kinds").querySelectorAll("input:checked")]
         .map((box) => box.value);
+    const warning = rcOverwriteWarning(kinds);
+    if (warning && !window.confirm(warning)) return;
     // RPC 대기 중 버튼을 잠급니다 — 이중 제출 방지(행 버튼들과 같은 패턴).
     // 저장은 업서트라 중복 행은 안 생기지만, 연타가 같은 요청을 겹쳐 보냅니다.
     const button = $("rc-save");
@@ -183,6 +231,9 @@ async function saveRecipient() {
 
 export async function initRecipients() {
     $("rc-save").addEventListener("click", saveRecipient);
+    // change = 칸에서 손을 뗐을 때. input(한 글자마다)이면 치는 도중에
+    // 폼이 덮여 사용자와 싸웁니다.
+    $("rc-mail").addEventListener("change", rcPrefillFromMail);
     $("t-recipients").addEventListener("click", (event) => {
         const button = event.target.closest("button[data-act='edit']");
         if (!button) return;
