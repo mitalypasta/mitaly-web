@@ -557,10 +557,17 @@ async function drawMap(r) {
     const center = new kakao.maps.LatLng(r.geo.y, r.geo.x);
     const map = new kakao.maps.Map(box, { center, level: r.radius > 500 ? 7 : 6 });
     new kakao.maps.Marker({ map, position: center });
+    // 카카오 SDK 는 CSS 변수를 못 받습니다 — 실제 값을 읽어 넘깁니다.
+    // 토큰은 --map-overlay 하나뿐이고 테마를 따라가지 않습니다(지도 타일이
+    // 항상 밝아서 — tokens.css 의 그 토큰 주석 참조).
+    // 기본값을 적어 두지 않습니다 — 같은 색이 두 군데 생기면 어느 쪽을 고쳐야
+    // 하는지 아무도 모르게 됩니다(CLAUDE.md 실수 13). 토큰이 없으면 린트가 잡습니다.
+    const overlay = getComputedStyle(document.documentElement)
+        .getPropertyValue("--map-overlay").trim();
     const circle = new kakao.maps.Circle({
         map, center, radius: r.radius,
-        strokeWeight: 2, strokeColor: "#4f46e5", strokeOpacity: 0.8,
-        fillColor: "#4f46e5", fillOpacity: 0.08,
+        strokeWeight: 2, strokeColor: overlay, strokeOpacity: 0.8,
+        fillColor: overlay, fillOpacity: 0.08,
     });
     map.setBounds(circle.getBounds(), 24, 24, 24, 24);
 }

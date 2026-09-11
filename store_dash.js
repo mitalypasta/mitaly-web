@@ -414,9 +414,9 @@ function drawStackedBars(svg, c, bars) {
     for (const t of ticks) {
         parts.push(
             `<line x1="${pad.left}" y1="${y(t)}" x2="${pad.left + plotW}" y2="${y(t)}"`
-            + ` stroke="${c.grid}" stroke-width="1"/>`,
+            + ` style="stroke:${c.grid}" stroke-width="1"/>`,
             `<text x="${pad.left - 8}" y="${y(t) + 4}" text-anchor="end" font-size="11"`
-            + ` fill="${c.muted}" style="font-variant-numeric:tabular-nums">${won(t)}</text>`
+            + ` style="fill:${c.muted};font-variant-numeric:tabular-nums">${won(t)}</text>`
         );
     }
 
@@ -429,19 +429,20 @@ function drawStackedBars(svg, c, bars) {
             const h = Math.max(1, y(acc) - y1);
             parts.push(
                 `<rect x="${cx - barW / 2}" y="${y1}" width="${barW}" height="${h}" rx="2"`
-                + ` fill="${seg.color}" data-tip="${escape(bar.label)} ${escape(seg.name)}|${seg.value}"/>`
+                + ` style="fill:${seg.color}"`
+                + ` data-tip="${escape(bar.label)} ${escape(seg.name)}|${seg.value}"/>`
             );
             acc += seg.value;
         }
         parts.push(
             `<text x="${cx}" y="${height - 8}" text-anchor="middle" font-size="11"`
-            + ` fill="${c.muted}">${escape(bar.label)}</text>`
+            + ` style="fill:${c.muted}">${escape(bar.label)}</text>`
         );
     });
 
     parts.push(
         `<line x1="${pad.left}" y1="${pad.top + plotH}" x2="${pad.left + plotW}"`
-        + ` y2="${pad.top + plotH}" stroke="${c.base}" stroke-width="1"/>`
+        + ` y2="${pad.top + plotH}" style="stroke:${c.base}" stroke-width="1"/>`
     );
 
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);

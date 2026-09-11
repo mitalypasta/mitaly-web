@@ -9,19 +9,33 @@ import { won, wonFull } from "./format.js";
 import { escape, clip, niceTicks } from "./util.js";
 import { showTip, hideTip } from "./dom.js";
 
-// 시리즈 색은 CSS 변수에서 읽습니다. 라이트/다크 전환 시 같이 바뀝니다.
-const cssVar = (name) =>
-    getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-
+// 색은 **CSS 변수 참조 그대로** 넘깁니다 — 계산한 값이 아닙니다.
+//
+// 🔴 2026-09-11 (WP5) 이전에는 여기서 getComputedStyle 로 hex 를 읽어 SVG
+//    속성(fill="#2a78d6")에 박았습니다. 그리면 그 순간의 테마가 굳습니다.
+//    '화면 전환' 버튼은 홈만 다시 그리므로(app.js 의 draw(S.lastData)) 다른
+//    화면의 차트는 라이트 색을 그대로 안고 다크 지면에 남았습니다. 실측
+//    (다크 면 #1a1c23 기준):
+//        격자   --data-grid  1.17:1  →  낡은 #eef0f3 로 **14.9:1** (글자보다 밝음)
+//        축     --data-axis  1.59:1  →  낡은 #d3d5d9 로 11.58:1
+//        축라벨 --text-muted 5.17:1  →  낡은 #636b78 로 **3.16:1** (기준 미달)
+//        값라벨 --text-secondary 9.06:1 → 낡은 #495057 로 **2.08:1** (거의 안 보임)
+//        끝점테 --bg-surface 1.0:1   →  낡은 #ffffff 로 17.01:1 (흰 테가 생김)
+//    7개 차트 중 6개가 이 상태였습니다(전사 매출만 홈 재그리기에 얹혀 살아남음).
+//
+//    그래서 값을 안 읽습니다. var(--data-1) 을 그대로 넘기고 **인라인 style**
+//    로 칠합니다 — SVG 표현 속성(fill=)은 var() 를 못 받지만 style 은 받습니다.
+//    이러면 다시 그리지 않아도 테마를 따라갑니다. OS 테마가 저절로 바뀌는
+//    경우(해 질 녘)까지 같이 해결됩니다 — 그 경로에는 토글 핸들러도 없습니다.
 export const palette = () => ({
-    s1: cssVar("--data-1"),
-    s2: cssVar("--data-2"),
-    grid: cssVar("--data-grid"),
-    base: cssVar("--data-axis"),
-    muted: cssVar("--text-muted"),
-    secondary: cssVar("--text-secondary"),
-    primary: cssVar("--text-primary"),
-    surface: cssVar("--bg-surface"),
+    s1: "var(--data-1)",
+    s2: "var(--data-2)",
+    grid: "var(--data-grid)",
+    base: "var(--data-axis)",
+    muted: "var(--text-muted)",
+    secondary: "var(--text-secondary)",
+    primary: "var(--text-primary)",
+    surface: "var(--bg-surface)",
 });
 
 // ---- 히트맵 ----------------------------------------------------------
@@ -106,10 +120,10 @@ export function drawLine(svg, { xLabels, series, colors, fmt = won, fmtFull = wo
     for (const t of ticks) {
         parts.push(
             `<line x1="${pad.left}" y1="${y(t)}" x2="${pad.left + plotW}" y2="${y(t)}"` +
-            ` stroke="${colors.grid}" stroke-width="1"/>`,
+            ` style="stroke:${colors.grid}" stroke-width="1"/>`,
             `<text x="${pad.left - 8}" y="${y(t) + 4}" text-anchor="end"` +
-            ` font-size="11" fill="${colors.muted}"` +
-            ` style="font-variant-numeric:tabular-nums">${fmt(t)}</text>`
+            ` font-size="11"` +
+            ` style="fill:${colors.muted};font-variant-numeric:tabular-nums">${fmt(t)}</text>`
         );
     }
 
@@ -119,14 +133,14 @@ export function drawLine(svg, { xLabels, series, colors, fmt = won, fmtFull = wo
         if (i % step && i !== xLabels.length - 1) return;
         parts.push(
             `<text x="${x(i)}" y="${height - 8}" text-anchor="middle"` +
-            ` font-size="11" fill="${colors.muted}">${escape(label)}</text>`
+            ` font-size="11" style="fill:${colors.muted}">${escape(label)}</text>`
         );
     });
 
     for (const s of series) {
         const path = s.values.map((v, i) => `${i ? "L" : "M"}${x(i)},${y(v)}`).join(" ");
         parts.push(
-            `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2"` +
+            `<path d="${path}" fill="none" style="stroke:${s.color}" stroke-width="2"` +
             ` stroke-linejoin="round" stroke-linecap="round"/>`
         );
 
@@ -134,23 +148,24 @@ export function drawLine(svg, { xLabels, series, colors, fmt = won, fmtFull = wo
         const last = s.values.length - 1;
         parts.push(
             `<circle cx="${x(last)}" cy="${y(s.values[last])}" r="4.5"` +
-            ` fill="${s.color}" stroke="${colors.surface}" stroke-width="2"/>`,
+            ` style="fill:${s.color};stroke:${colors.surface}" stroke-width="2"/>`,
             `<text x="${x(last) + 10}" y="${y(s.values[last]) + 4}"` +
-            ` font-size="11" fill="${colors.secondary}"` +
-            ` style="font-variant-numeric:tabular-nums">${fmt(s.values[last])}</text>`
+            ` font-size="11"` +
+            ` style="fill:${colors.secondary};font-variant-numeric:tabular-nums">` +
+            `${fmt(s.values[last])}</text>`
         );
     }
 
     // 기준선
     parts.push(
         `<line x1="${pad.left}" y1="${pad.top + plotH}" x2="${pad.left + plotW}"` +
-        ` y2="${pad.top + plotH}" stroke="${colors.base}" stroke-width="1"/>`
+        ` y2="${pad.top + plotH}" style="stroke:${colors.base}" stroke-width="1"/>`
     );
 
     // 마우스를 올린 위치의 세로선 (기본은 숨김)
     parts.push(
         `<line class="crosshair" y1="${pad.top}" y2="${pad.top + plotH}"` +
-        ` stroke="${colors.base}" stroke-width="1" opacity="0"/>`
+        ` style="stroke:${colors.base}" stroke-width="1" opacity="0"/>`
     );
     parts.push(`<rect x="${pad.left}" y="${pad.top}" width="${plotW}" height="${plotH}" fill="transparent"/>`);
 
@@ -216,13 +231,15 @@ export function drawBars(svg, { rows, color, horizontal, colors, unit = "",
             const barW = Math.max(2, (plotW * row.value) / max);
             parts.push(
                 // 막대 끝만 둥글게, 기준선 쪽은 각지게
-                `<path d="${roundedRight(pad.left, top, barW, 24, 4)}" fill="${color}"` +
+                `<path d="${roundedRight(pad.left, top, barW, 24, 4)}"` +
+                ` style="fill:${color}"` +
                 ` data-tip="${escape(row.label)}|${row.value}"` +
                 (unitSuffix ? ` data-suffix="${escape(unitSuffix)}"` : "") + "/>",
                 `<text x="${pad.left - 8}" y="${top + 16}" text-anchor="end"` +
-                ` font-size="12" fill="${colors.secondary}">${escape(clip(row.label, 12))}</text>`,
+                ` font-size="12" style="fill:${colors.secondary}">` +
+                `${escape(clip(row.label, 12))}</text>`,
                 `<text x="${pad.left + barW + 8}" y="${top + 16}" font-size="11"` +
-                ` fill="${colors.secondary}" style="font-variant-numeric:tabular-nums">` +
+                ` style="fill:${colors.secondary};font-variant-numeric:tabular-nums">` +
                 `${fmt(row.value)}</text>`
             );
         });
@@ -241,9 +258,10 @@ export function drawBars(svg, { rows, color, horizontal, colors, unit = "",
         for (const t of ticks) {
             parts.push(
                 `<line x1="${pad.left}" y1="${y(t)}" x2="${pad.left + plotW}" y2="${y(t)}"` +
-                ` stroke="${colors.grid}" stroke-width="1"/>`,
+                ` style="stroke:${colors.grid}" stroke-width="1"/>`,
                 `<text x="${pad.left - 8}" y="${y(t) + 4}" text-anchor="end" font-size="11"` +
-                ` fill="${colors.muted}" style="font-variant-numeric:tabular-nums">${won(t)}</text>`
+                ` style="fill:${colors.muted};font-variant-numeric:tabular-nums">` +
+                `${won(t)}</text>`
             );
         }
 
@@ -253,21 +271,22 @@ export function drawBars(svg, { rows, color, horizontal, colors, unit = "",
             const cx = pad.left + slot * i + slot / 2;
             const h = Math.max(2, plotH * (row.value / top));
             parts.push(
-                `<path d="${roundedTop(cx - barW / 2, y(row.value), barW, h, 4)}" fill="${color}"` +
+                `<path d="${roundedTop(cx - barW / 2, y(row.value), barW, h, 4)}"` +
+                ` style="fill:${color}"` +
                 ` data-tip="${escape(row.label + unit)}|${row.value}"` +
                 (unitSuffix ? ` data-suffix="${escape(unitSuffix)}"` : "") + "/>"
             );
             if (rows.length <= 12 || i % Math.ceil(rows.length / 12) === 0) {
                 parts.push(
                     `<text x="${cx}" y="${height - 8}" text-anchor="middle" font-size="11"` +
-                    ` fill="${colors.muted}">${escape(row.label)}</text>`
+                    ` style="fill:${colors.muted}">${escape(row.label)}</text>`
                 );
             }
             // 최고치 하나만 직접 표시합니다.
             if (row === peak && row.value > 0) {
                 parts.push(
                     `<text x="${cx}" y="${y(row.value) - 7}" text-anchor="middle" font-size="11"` +
-                    ` fill="${colors.secondary}" style="font-variant-numeric:tabular-nums">` +
+                    ` style="fill:${colors.secondary};font-variant-numeric:tabular-nums">` +
                     `${fmt(row.value)}</text>`
                 );
             }
@@ -275,7 +294,7 @@ export function drawBars(svg, { rows, color, horizontal, colors, unit = "",
 
         parts.push(
             `<line x1="${pad.left}" y1="${pad.top + plotH}" x2="${pad.left + plotW}"` +
-            ` y2="${pad.top + plotH}" stroke="${colors.base}" stroke-width="1"/>`
+            ` y2="${pad.top + plotH}" style="stroke:${colors.base}" stroke-width="1"/>`
         );
     }
 

@@ -619,19 +619,19 @@ function miniTrend(rows) {
         parts.push(
             `<g><title>${escape(tip)}</title>`,
             `<rect x="${cx - barW / 2}" y="${base - hH}" width="${barW}"`
-                + ` height="${Math.max(1, hH)}" fill="${colors.s1}" rx="1"/>`,
+                + ` height="${Math.max(1, hH)}" style="fill:${colors.s1}" rx="1"/>`,
             `<rect x="${cx - barW / 2}" y="${base - hH - dH}" width="${barW}"`
-                + ` height="${Math.max(1, dH)}" fill="${colors.s2}" rx="1"/>`,
+                + ` height="${Math.max(1, dH)}" style="fill:${colors.s2}" rx="1"/>`,
             `<text x="${cx}" y="${base - hH - dH - 4}" text-anchor="middle" font-size="10"`
-                + ` fill="${colors.secondary}"`
-                + ` style="font-variant-numeric:tabular-nums">${won(total)}</text>`,
+                + ` style="fill:${colors.secondary};font-variant-numeric:tabular-nums">`
+                + `${won(total)}</text>`,
             "</g>",
             `<text x="${cx}" y="${height - 5}" text-anchor="middle" font-size="10"`
-                + ` fill="${colors.muted}">${ymLabel(ym)}</text>`,
+                + ` style="fill:${colors.muted}">${ymLabel(ym)}</text>`,
         );
     });
     parts.push(`<line x1="0" y1="${height - padBottom}" x2="${width}"`
-        + ` y2="${height - padBottom}" stroke="${colors.base}" stroke-width="1"/>`);
+        + ` y2="${height - padBottom}" style="stroke:${colors.base}" stroke-width="1"/>`);
 
     const wrap = document.createElement("div");
     wrap.className = "dmap-trend";

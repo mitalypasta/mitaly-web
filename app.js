@@ -3271,7 +3271,9 @@ async function vpShrinkImage(file) {
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#fff";              // png 투명 → 흰 배경(JPEG 는 알파가 없음)
+    // JPEG 에는 알파가 없어 png 의 투명 부분을 메워야 합니다. 화면 색이 아니라
+    // 인코딩 값이라 테마와 무관합니다.
+    ctx.fillStyle = "#fff";   // lint-ok: 화면 색이 아니라 JPEG 인코딩 값
     ctx.fillRect(0, 0, width, height);
     ctx.drawImage(source, 0, 0, width, height);
     if (source.close) source.close();

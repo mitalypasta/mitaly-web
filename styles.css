@@ -612,8 +612,8 @@ header.top h1::before {
     border-radius: var(--r-full);
     font-variant-numeric: tabular-nums;
 }
-.dmap-tag-up { color: var(--status-good); background: var(--status-good-tint); }
-.dmap-tag-down { color: var(--status-critical); background: var(--status-critical-tint); }
+.dmap-tag-up { color: var(--status-good-on-tint); background: var(--status-good-tint); }
+.dmap-tag-down { color: var(--status-critical-on-tint); background: var(--status-critical-tint); }
 
 /* 부가 정보 한 줄 — 평균 단가·리뷰. */
 .dmap-detail-meta {
@@ -1336,9 +1336,9 @@ h2.hero-q {
     font-weight: var(--badge-font-weight);
     white-space: nowrap;
 }
-.hero-badge.hb-good     { color: var(--status-good);     background: var(--status-good-tint); }
-.hero-badge.hb-attn     { color: var(--status-attn);     background: var(--status-attn-tint); }
-.hero-badge.hb-critical { color: var(--status-critical); background: var(--status-critical-tint); }
+.hero-badge.hb-good     { color: var(--status-good-on-tint);     background: var(--status-good-tint); }
+.hero-badge.hb-attn     { color: var(--status-attn-on-tint);     background: var(--status-attn-tint); }
+.hero-badge.hb-critical { color: var(--status-critical-on-tint); background: var(--status-critical-tint); }
 
 /* 답 숫자 묶음 — kpis 그리드와 같은 리듬이되 타일 테두리 없이 카드 안에 폅니다. */
 .hero-stats {
