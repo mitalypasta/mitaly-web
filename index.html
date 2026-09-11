@@ -846,6 +846,13 @@
                 시안이 아직 없는 미답변 리뷰에는 'AI 시안 준비 전'이 표시됩니다.</p>
             <p class="hint" id="draft-note"></p>
             <p class="hint" id="review-sync-note"></p>
+            <!-- 수집 범위(117 api_review_coverage). 고른 기간이 수집 범위를
+                 벗어났거나, 리뷰를 아예 안 걷는 플랫폼이 있거나, 작성일이 없어
+                 어느 기간에도 안 걸리는 리뷰가 있을 때만 보입니다. 할 말이
+                 없으면 줄 자체가 없습니다 — app.js drawReviews 가 채웁니다.
+                 '0건' 을 "플랫폼에 리뷰가 없다" 로 오해해 잘못 판단하는 것을
+                 막는 문구입니다(제보 2026-09-11). -->
+            <p class="hint" id="review-range-note" hidden></p>
 
             <div class="cardsearch">
                 <label class="recheck">

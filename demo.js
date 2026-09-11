@@ -75,7 +75,90 @@ const DEMO_REVIEWS = [
       order_count: 1, menus: [{ name: "봉골레 파스타" }],
       images: [], delivery_review: null, can_reply: true, can_report: null,
       hidden_at: "2026-07-25T09:12:00+09:00", replies: [], drafts: [] },
+    // 작성일이 없는 리뷰(네이버 대량 반입분의 결함 — 115 머리주석 [1]).
+    // **어느 기간 필터에도 안 걸립니다.** 목록에서는 영영 안 보이고 수집 범위
+    // 줄에서만 "작성일이 없어 기간에 안 걸리는 리뷰 1건" 으로 드러나야 합니다.
+    { id: 7, platform: "네이버", store: "샘플01점", rating: 4,
+      contents: "재료가 신선해요. (이 리뷰는 작성일이 비어 있습니다)",
+      author_name: "샘플닉네임7", written_at: null,
+      order_count: 1, menus: [], images: [], delivery_review: null,
+      can_reply: true, can_report: null, replies: [], drafts: [] },
 ];
+
+// 리뷰의 연월(KST). 픽스처의 written_at 은 전부 +09:00 표기라 앞 7글자로
+// 충분합니다. 작성일이 없으면 null — 실제 함수도 그런 행은 기간에서 뺍니다.
+function demoYm(iso) {
+    if (!iso) return null;
+    const m = String(iso).match(/^(\d{4})-(\d{2})/);
+    return m ? Number(m[1]) * 100 + Number(m[2]) : null;
+}
+
+// 리뷰 수집 범위 픽스처(117_review_coverage.sql).
+//
+// ⚠️ 이 픽스처의 목적은 **결함을 담는 것**입니다. 데모가 '다 정상' 으로
+//    보이면 화면의 결함이 안 잡힙니다(2026-09-11 실제로 밟은 함정 — 그전
+//    픽스처는 기간 필터를 무시해 '수집 범위 밖' 이 재현되지 않았습니다).
+//    그래서 prod 실측(docs/review-mismatch-2026-09-11.md)과 같은 모양의
+//    구멍을 넣어 둡니다:
+//      · 배달앱 리뷰는 특정 날짜 이전이 통째로 없음 → 그 이전 기간은 '0건'이
+//        아니라 '수집 범위 밖'
+//      · 먹깨비·땡겨요 = 매출은 걷는데 리뷰 수집기가 없음(reviews 0)
+//      · 구글·카카오맵 = 매출도 리뷰도 없음
+//      · 샘플01점·샘플03점 = 답글이 한 건도 수집된 적 없는 매장
+//      · 샘플01점 = 요기요 리뷰가 한 건도 없음(계정이 없는 매장의 모습)
+// 플랫폼별 첫 리뷰·마지막 리뷰는 DEMO_REVIEWS 에서 셉니다 — 픽스처를
+// 고쳐도 두 값이 어긋나지 않게.
+function demoReviewCoverage(store) {
+    const ISO = (s) => (s ? new Date(s).toISOString() : null);
+    const collectedAt = ISO(new Date(Date.now() - 5 * 3600_000));
+    const agg = (rows) => {
+        const dates = rows.map((r) => r.written_at).filter(Boolean).sort();
+        return {
+            reviews: rows.length,
+            answered: rows.filter((r) => (r.replies || []).length).length,
+            no_written_at: rows.filter((r) => !r.written_at).length,
+            first_written_at: ISO(dates[0]),
+            last_written_at: ISO(dates[dates.length - 1]),
+        };
+    };
+    // name, 매출 출처가 이어져 있는가(review_platforms.source_id)
+    const PLATFORMS = [
+        ["배민", true], ["쿠팡이츠", true], ["요기요", true],
+        ["먹깨비", true], ["땡겨요", true],
+        ["네이버", false], ["구글", false], ["카카오맵", false],
+    ];
+    const forPlatform = (name, rows) => {
+        const mine = rows.filter((r) => r.platform === name);
+        return { platform: name, ...agg(mine),
+                 stores: new Set(mine.map((r) => r.store)).size,
+                 last_collected_at: mine.length ? collectedAt : null };
+    };
+    const byStore = new Map();
+    for (const r of DEMO_REVIEWS) {
+        const v = byStore.get(r.store) || { reviews: 0, answered: 0 };
+        v.reviews += 1;
+        if ((r.replies || []).length) v.answered += 1;
+        byStore.set(r.store, v);
+    }
+    const mine = store ? DEMO_REVIEWS.filter((r) => r.store === store) : [];
+    return {
+        platforms: PLATFORMS.map(([name, hasSales]) => ({
+            has_sales_source: hasSales, ...forPlatform(name, DEMO_REVIEWS),
+        })).sort((a, b) => b.reviews - a.reviews),
+        stores_no_reply: [...byStore.entries()]
+            .filter(([, v]) => v.reviews > 0 && v.answered === 0)
+            .map(([name, v], i) => ({ store_id: i + 1, store: name, reviews: v.reviews })),
+        stores_with_reviews: byStore.size,
+        store: store ? {
+            store,
+            reviews: mine.length,
+            answered: mine.filter((r) => (r.replies || []).length).length,
+            platforms: PLATFORMS.map(([name]) => ({
+                platform: name, ...agg(mine.filter((r) => r.platform === name)),
+            })),
+        } : null,
+    };
+}
 
 // 레시피 데모(32_recipes.sql) — 실제 원가분석 반입분과 같은 필드 이름을 씁니다.
 // 메뉴 이름은 위 MENUS 와 겹치게 둡니다(이론 사용량 계산이 이걸 씁니다).
@@ -2498,7 +2581,21 @@ const HANDLERS = {
     // 리뷰 — 화면 배치 확인용 가짜 데이터입니다.
     // 실제 응답과 같은 모양(jsonb 한 줄)으로 돌려줍니다.
     api_reviews: (args) => {
-        let rows = DEMO_REVIEWS;
+        // ⚠️ 기간 필터는 2026-09-11 에 들어왔습니다. 그전에는 이 픽스처가
+        //    p_ym_from·p_ym_to 를 **통째로 무시**해서, 7월 리뷰가 6월 필터에도
+        //    그대로 보였습니다. 그래서 "수집 범위 밖인데 0건이라고 단정한다"
+        //    는 결함이 데모에서 재현되지 않았고, 화면을 데모로만 본 사람은
+        //    "다 정상" 이라고 판단했습니다. 실제 함수(13_reviews_api.sql)는
+        //    written_at 을 KST 월 경계로 자릅니다(102).
+        //    작성일이 없는 리뷰는 실제 함수에서도 **어느 기간에도 안 걸립니다**
+        //    (written_at >= … 가 null 을 떨굽니다). 그래서 여기서도 뺍니다 —
+        //    그게 '있는데 화면에서 사라진 리뷰' 의 정체입니다(115 머리주석).
+        let rows = DEMO_REVIEWS.filter((r) => {
+            const ym = demoYm(r.written_at);
+            return ym !== null
+                && (args.p_ym_from == null || ym >= args.p_ym_from)
+                && (args.p_ym_to == null || ym <= args.p_ym_to);
+        });
         // 미답변 = 답글 없음 + 아직 플랫폼에 떠 있음(105 와 같은 판정).
         if (args.p_unanswered_only) rows = rows.filter((r) => !r.replies.length && !r.hidden_at);
         if (args.p_platform) rows = rows.filter((r) => r.platform === args.p_platform);
@@ -2558,6 +2655,11 @@ const HANDLERS = {
             reviews_openable: openable,
         } }];
     },
+
+    // 리뷰 수집 범위(117_review_coverage.sql). 화면이 "수집한 적 없는 것"을
+    // 0 으로 단정하지 않게 하는 근거. 위 demoReviewCoverage 가 결함을 담습니다.
+    api_review_coverage: ({ p_store } = {}) =>
+        [{ coverage: demoReviewCoverage(p_store || null) }],
 
     // 검토 대기 초안 목록(14_reply_drafts.sql). 실제 함수와 같은 규칙:
     // draft·approved 만, 별점 낮은 것부터. 승인·반려가 메모리에서 바뀌면

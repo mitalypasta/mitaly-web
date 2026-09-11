@@ -555,6 +555,19 @@ async function load(onFirstPaint) {
         .then((r) => (r.error ? {} : ((r.data || [])[0] || {}).status || {}))
         .catch(() => ({}));
 
+    // 리뷰 '수집 범위'(117_review_coverage.sql) — 플랫폼·매장별로 **언제부터
+    // 언제까지 수집됐나**. 화면이 "수집한 적 없는 것" 을 0 으로 단정하지 않게
+    // 하는 근거입니다(담당자 제보 2026-09-11: 기간을 2026-06 으로 잡으면
+    // "이 기간에 받아온 리뷰가 없습니다" 가 뜨는데, 진실은 "배달앱 리뷰는
+    // 2026-07-14 이전을 수집한 적이 없다" 였습니다).
+    //
+    // 못 받으면 **null** 입니다 — 117 적용 전이거나 조회가 실패한 상태에서
+    // 빈 객체를 주면 화면이 "수집기 없음·범위 밖" 을 거꾸로 단정합니다.
+    // null 이면 아래 reviewCoverageFacts 가 아무 말도 안 합니다(모르면 침묵).
+    const reviewCoverage = db.rpc("api_review_coverage", { p_store: args.p_store })
+        .then((r) => (r.error ? null : ((r.data || [])[0] || {}).coverage || null))
+        .catch(() => null);
+
     // ('매장 리뷰 보기'(카드 #132)의 검토 대기 초안은 api_pending_drafts 로
     //  목록 1,000건을 받아 브라우저에서 매장별로 세고 있었습니다 — 위
     //  draftSummary 가 매장을 몰라서 쓴 우회로였습니다. 112 로 draftSummary 가
@@ -574,9 +587,10 @@ async function load(onFirstPaint) {
     // 늦게 오면 2차 그리기에 반영됩니다.
     // draftSummary 의 첫값이 null 인 것은 의도입니다 — 1차 그리기 때는 아직
     // 안 와 있고, 그때 0 을 쓰면 hero 가 잠깐 '0건 · 정상' 을 스치고 지나갑니다.
-    const pending = { draftSummary: null, reviewSync: {} };
+    const pending = { draftSummary: null, reviewSync: {}, reviewCoverage: null };
     draftSummary.then((v) => { pending.draftSummary = v; });
     reviewSync.then((v) => { pending.reviewSync = v; });
+    reviewCoverage.then((v) => { pending.reviewCoverage = v; });
 
     // ⚠️ 필터를 연달아 바꾸면 load() 가 여러 번 겹칩니다. 2단계로 나눈 뒤로는
     //    옛 조회의 2차가 새 조회보다 늦게 끝나 **옛 결과가 화면을 덮어쓰는**
@@ -644,6 +658,7 @@ function pack(results, args, pending) {
         compare: ((d(18))[0] || {}).compare || {},
         draftSummary: pending.draftSummary,
         reviewSync: pending.reviewSync,
+        reviewCoverage: pending.reviewCoverage,
     };
 }
 
@@ -1183,6 +1198,12 @@ function drawCompanyTrend() {
 
 let homeLoadedAt = 0;
 
+// 홈이 쓰는 리뷰 수집 범위(117 — 전 매장 기준). 리뷰 화면과 같은 근거를
+// 홈에서도 씁니다: 홈 타일도 '수집 안 된 것' 을 0·"없습니다" 로 말할 수
+// 있는 자리이기 때문입니다. 못 받으면 null 이고, null 이면 홈은 예전과
+// 똑같이 그립니다(모르면 침묵).
+let homeCoverage = null;
+
 // ---- 홈 hero — "지금 조치할 게 있나?" (카드 #118, docs/web-hierarchy.md) --
 //
 // 타일 5개(미처리·승인 대기·문의 검토·초안 검토·진단 대상)의 합을 한 숫자로
@@ -1283,7 +1304,7 @@ async function loadHome() {
     db.rpc("api_sv_daily", { p_day: null })
         .then(drawHomeSv, (e) => drawHomeSv({ error: e }));
 
-    const [cmpRes, alertRes, negRes, negSumRes] = await Promise.all([
+    const [cmpRes, alertRes, negRes, negSumRes, covRes] = await Promise.all([
         db.rpc("api_sales_compare", { p_ym: baseYm, p_store: null }),
         db.rpc("api_sales_alerts", { p_ym: baseYm, p_store: null }),
         // 서버가 ≤3 만 골라 주므로 limit 이 부정 리뷰 자체에 걸립니다.
@@ -1297,15 +1318,26 @@ async function loadHome() {
             p_ym_from: reviewFromYm, p_ym_to: nowYm,
             p_store: null, p_platform: null,
         }),
+        // 수집 범위(117). 실패해도 홈은 그대로 떠야 하므로 error 를 값으로
+        // 받습니다 — 117 적용 전에는 그냥 아무 말도 안 하면 됩니다.
+        db.rpc("api_review_coverage", { p_store: null })
+            .then((r) => r, (e) => ({ error: e })),
     ]);
     // 실패한 채로 10분을 묵히지 않습니다 — 다음 홈 진입이 다시 시도합니다.
+    // (수집 범위는 '있으면 좋은 것' 이라 재시도 사유에 넣지 않습니다.)
     if (cmpRes.error || alertRes.error || negRes.error || negSumRes.error) {
         homeLoadedAt = 0;
     }
 
+    homeCoverage = (covRes && !covRes.error
+        && ((covRes.data || [])[0] || {}).coverage) || null;
+
     drawHomeSales(cmpRes, baseYm);
     drawHomeDeclining(alertRes, baseYm);
-    drawHomeNegReviews(negRes, negSumRes);
+    drawHomeNegReviews(negRes, negSumRes, reviewFromYm, nowYm);
+    // 담당자 카드는 따로 도착합니다 — 이미 그려져 있으면 수집 범위를 반영해
+    // 한 번 다시 그립니다('미답변' 행 표시가 여기에 걸려 있습니다).
+    if (svData) renderSv();
 }
 
 // 6행 넘으면 '외 N건 더 보기'로 잘렸음을 알립니다(조용한 잘림 방지).
@@ -1380,7 +1412,7 @@ function drawHomeDeclining(res, baseYm) {
         : '<p class="home-anom-empty">급감으로 판정된 매장이 없습니다.</p>';
 }
 
-function drawHomeNegReviews(negRes, sumRes) {
+function drawHomeNegReviews(negRes, sumRes, fromYm, toYm) {
     const listEl = $("home-anom-reviews");
     if (negRes.error) {
         $("home-reviews-h").textContent = "";
@@ -1401,22 +1433,38 @@ function drawHomeNegReviews(negRes, sumRes) {
         .filter((r) => Number(r.rating) <= 3)
         .reduce((sum, r) => sum + (Number(r.count) || 0), 0) || rows.length;
 
+    // 이 타일도 '수집 안 된 것' 을 0·"없습니다" 로 말할 수 있는 자리입니다
+    // (리뷰 화면과 같은 병 — 제보 2026-09-11). 최근 두 달 중 수집 전 구간이
+    // 있으면 숫자 옆에 단서를 달고, 목록이 비면 '언제까지 걷힌 상태에서
+    // 없는 것인가' 를 같이 적습니다. 117 을 못 받았으면 예전 그대로입니다.
+    const covFacts = reviewCoverageFacts(
+        homeCoverage, { p_ym_from: fromYm, p_ym_to: toYm }, null);
     $("home-reviews-h").textContent =
-        `${int(negative)}건 · 최근 두 달 · 별점 3점 이하`;
+        `${int(negative)}건 · 최근 두 달 · 별점 3점 이하`
+        + (covFacts && covFacts.startLine ? " · 앞 구간은 수집 전" : "");
 
     const md = (iso) => {
         const when = new Date(iso);
         return Number.isNaN(when.getTime()) ? "" : `${when.getMonth() + 1}/${when.getDate()}`;
     };
     // '왜 떴는지' 를 행이 문장으로 알립니다 — 언제 들어온 몇 점짜리 리뷰인지.
-    listEl.innerHTML = rows.length
+    // 수집 범위 단서 — 할 말이 있을 때만 붙습니다.
+    //  · 목록이 비었을 때: "없습니다" 가 "플랫폼에 없다" 로 읽히지 않게
+    //    언제까지 걷힌 상태인지 같이 적습니다.
+    //  · 최근 두 달 앞쪽이 수집 전이면 그 사실을(목록이 있어도) 적습니다.
+    const covNote = covFacts && covFacts.startLine
+        ? `<p class="home-anom-empty">${escape(covFacts.startLine)}</p>` : "";
+    const emptyText = "최근 두 달에 새로 들어온 부정 리뷰가 없습니다."
+        + (covFacts && covFacts.lastDay
+            ? ` 리뷰는 ${covFacts.lastDay} 까지 수집됐습니다.` : "");
+    listEl.innerHTML = (rows.length
         ? rows.slice(0, 6).map((r) =>
             `<button type="button" class="home-anom-row" data-go="reviews" data-kind="review" data-card="review-card" data-store="${escape(r.store || "")}">
                <span class="ar-main">${escape(r.store || "")} — ${md(r.written_at)} <span class="ar-star">★${r.rating ?? "—"}</span> 새 리뷰</span>
                <span class="ar-side ar-text">${escape(clip(r.contents || "내용 없음", 34))}</span>
              </button>`).join("")
           + homeMoreRow(negative - Math.min(6, rows.length), "reviews", "review", "review-card")
-        : '<p class="home-anom-empty">최근 두 달에 새로 들어온 부정 리뷰가 없습니다.</p>';
+        : `<p class="home-anom-empty">${escape(emptyText)}</p>`) + covNote;
 }
 
 // ---- 담당자별 오늘 확인 필요 (카드 #168) ---------------------------------
@@ -1441,11 +1489,27 @@ const SV_ITEMS = [
 ];
 let svData = null;      // 마지막 응답 (필터 변경 때 다시 그리기용)
 
+// 답글이 한 건도 수집된 적 없는 매장인가(117). 수집 범위를 못 받았으면
+// 언제나 false — 모르는 상태에서 '미수집' 이라고 단정하지 않습니다.
+function svStoreNoReply(store) {
+    if (!store || !homeCoverage) return false;
+    return (homeCoverage.stores_no_reply || []).some((r) => r.store === store);
+}
+
 function svRowText(key, r) {
     switch (key) {
     case "bad_reviews":
-    case "unanswered":
         return `${escape(r.platform || "")} <span class="ar-star">★${r.rating ?? "—"}</span> ${escape(clip(r.snippet || "내용 없음", 30))}`;
+    case "unanswered": {
+        // '미답변' 은 답글이 걷히는 매장에서만 판정입니다. 답글이 한 건도
+        // 수집된 적 없는 매장이면 답글을 안 단 것인지 못 걷은 것인지 모릅니다
+        // (117 stores_no_reply — 전 매장 55곳 중 23곳이 정확히 0건이었습니다).
+        // 표시를 붙이는 만큼 본문을 줄여 칸 길이는 그대로 둡니다 — 이 칸은
+        // 좁은 화면에서 이미 줄바꿈이 아슬아슬합니다(WP1).
+        const flag = svStoreNoReply(r.store);
+        return `${escape(r.platform || "")} <span class="ar-star">★${r.rating ?? "—"}</span> ${escape(clip(r.snippet || "내용 없음", flag ? 22 : 30))}`
+            + (flag ? " · 답글 미수집" : "");
+    }
     case "no_sales":
         return r.last_day ? `마지막 매출 ${escape(String(r.last_day))}` : "매출 기록 없음";
     case "drops":
@@ -1721,6 +1785,145 @@ function ratingStars(value) {
     return "★".repeat(n) + "☆".repeat(Math.max(0, 5 - n));
 }
 
+// ---- 리뷰 수집 범위 — '없다' 와 '모른다' 를 가릅니다 --------------------
+//
+// 담당자 제보(2026-09-11) "시스템 리뷰와 실제 플랫폼 리뷰가 일치하지 않는다"
+// 를 파 보니, 불일치의 큰 덩어리가 **화면이 '모르는 것' 을 '0' 이라고 단정**
+// 해서 생겼습니다(docs/review-mismatch-2026-09-11.md A·E·G).
+//
+//   · 기간을 2026-06 으로 잡으면 "이 기간에 받아온 리뷰가 없습니다" 가 떴습니다.
+//     진실은 "배달앱 리뷰는 2026-07-14 이전을 수집한 적이 없다" 입니다.
+//   · 먹깨비·땡겨요는 매출만 걷고 리뷰 수집기가 없는데, 화면에서는 그냥
+//     안 보여서 '리뷰 0' 과 구분이 안 됐습니다.
+//   · 답글이 통째로 안 걷히는 매장 23곳은 늘 "미답변 100%" 였습니다.
+//
+// **0 은 "플랫폼에 리뷰가 없다" 는 뜻이어야 합니다.** 수집한 적 없는 것을
+// 0 으로 보이면 사람이 그 숫자로 잘못된 판단을 합니다.
+//
+// 날짜는 **전부 데이터에서 옵니다**(117 api_review_coverage — 플랫폼별
+// min(written_at)·max(collected_at)). 코드에 박지 않습니다: 7/14 는 오늘의
+// 실측값일 뿐이고 백필이 한 번 돌면 바뀝니다. 박아 두면 116 이 지운
+// '계정 91곳' 처럼 낡은 값이 사람을 계속 속입니다.
+
+// 타임스탬프의 KST 연월(YYYYMM)과 날짜(YYYY-MM-DD).
+// 기간 필터가 KST 월 경계라(102) 여기도 KST 로 읽어야 하루 차로 어긋나지
+// 않습니다. 브라우저 시간대에 기대지 않고 +9h 로 직접 옮깁니다.
+function kstParts(iso) {
+    if (!iso) return null;
+    const t = new Date(iso);
+    if (Number.isNaN(t.getTime())) return null;
+    const k = new Date(t.getTime() + 9 * 3600_000);
+    const y = k.getUTCFullYear();
+    const m = k.getUTCMonth() + 1;
+    return {
+        ym: y * 100 + m,
+        day: `${y}-${String(m).padStart(2, "0")}-${String(k.getUTCDate()).padStart(2, "0")}`,
+    };
+}
+
+// 고른 기간이 수집 범위와 어떻게 겹치는지 판정합니다.
+//   cov  117 의 coverage (못 받았으면 null — 그러면 아무 말도 안 합니다)
+//   args currentFilters() 결과 (p_ym_from·p_ym_to)
+//   pick rv-platform 선택값 (플랫폼을 고르면 그 플랫폼만 말합니다)
+function reviewCoverageFacts(cov, args, pick) {
+    if (!cov) return null;
+    const from = Number(args.p_ym_from);
+    const to = Number(args.p_ym_to);
+    const all = (cov.platforms || [])
+        .filter((p) => !pick || p.platform === pick);
+
+    // 한 건이라도 수집된 적 있는 플랫폼 / 한 건도 없는 플랫폼.
+    // '수집기가 없다' 를 목록으로 적지 않고 관측으로 가릅니다 — 목록은 tools/
+    // 와 어긋날 자리가 하나 더 생기고, 관측보다 늦게 틀립니다(117 머리 [3]).
+    const collected = all.filter((p) => Number(p.reviews) > 0);
+    const salesOnly = all
+        .filter((p) => !Number(p.reviews) && p.has_sales_source)
+        .map((p) => p.platform);
+
+    // 시작일이 기간 시작보다 뒤인 플랫폼 = 고른 기간의 앞쪽이 수집 범위 밖.
+    // 작성일이 전부 비어 있는 플랫폼은 '시작일을 모르는' 것이라 이 비교에서
+    // 뺍니다 — 그건 아래 no_written_at 줄이 따로 말합니다.
+    const dated = collected.filter((p) => kstParts(p.first_written_at));
+    const late = dated
+        .map((p) => ({ platform: p.platform, ...kstParts(p.first_written_at) }))
+        .filter((x) => x.ym > from);
+    // 고른 기간 **전체**가 수집 시작 전 = 그 기간의 0 은 아무 뜻도 없습니다.
+    const coversNone = dated.length > 0
+        && late.length === dated.length
+        && late.every((x) => x.ym > to);
+
+    const lines = [];
+    let startLine = "";
+    if (late.length) {
+        // 시작일이 같은 플랫폼끼리 묶습니다. 한 덩어리면 한 문장으로,
+        // 여럿이면 플랫폼마다 날짜를 답니다(배민 7/14 · 쿠팡이츠 7/15 처럼
+        // 며칠씩 다른 것을 하나로 뭉뚱그리면 그것도 거짓이 됩니다).
+        const byDay = new Map();
+        for (const x of late) {
+            if (!byDay.has(x.day)) byDay.set(x.day, []);
+            byDay.get(x.day).push(x.platform);
+        }
+        const groups = [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+        startLine = groups.length === 1
+            ? `${groups[0][1].join("·")} 리뷰는 ${groups[0][0]} 부터 수집됐습니다 — 그 이전은 수집 범위 밖입니다.`
+            : `리뷰 수집 시작 — ${groups.map(([d, n]) => `${n.join("·")} ${d}`).join(" · ")}. 그 이전은 수집 범위 밖입니다.`;
+        lines.push(startLine);
+    }
+    // 마지막으로 들어온 리뷰의 날짜(전 플랫폼 중 가장 최근). 홈이 "없습니다"
+    // 라고 말할 때 '언제까지 걷힌 상태에서 없는 것인가' 를 같이 답니다.
+    const lastDays = dated.map((p) => kstParts(p.last_written_at))
+        .filter(Boolean).map((k) => k.day).sort();
+    const lastDay = lastDays.length ? lastDays[lastDays.length - 1] : "";
+    if (salesOnly.length) {
+        lines.push(`${salesOnly.join("·")}는 매출만 수집하고 리뷰는 수집하지 않습니다.`);
+    }
+    // 작성일이 없는 리뷰는 **어느 기간 필터에도 안 걸립니다** — 있는데 화면에서
+    // 사라진 리뷰입니다(115). 0 이면 이 줄은 안 나옵니다.
+    const noWrittenAt = collected
+        .reduce((n, p) => n + (Number(p.no_written_at) || 0), 0);
+    if (noWrittenAt > 0) {
+        lines.push(`작성일이 없어 어느 기간에도 안 걸리는 리뷰가 ${int(noWrittenAt)}건 있습니다.`);
+    }
+
+    // 이 매장에서 한 건도 수집된 적 없는 플랫폼 — 회사 전체로는 걷히는데
+    // 이 매장만 없는 경우입니다(계정이 없는 매장이 그렇습니다). 계정 유무는
+    // 2차 암호 게이트 뒤에 있어(21) 우리도 모릅니다 — 그래서 '없다' 가 아니라
+    // '수집된 적 없다' 라고만 말합니다.
+    const st = cov.store;
+    const storeMissing = st
+        ? (st.platforms || [])
+            .filter((p) => !Number(p.reviews)
+                && (!pick || p.platform === pick)
+                && collected.some((c) => c.platform === p.platform))
+            .map((p) => p.platform)
+        : [];
+
+    // 답글이 한 건도 수집된 적 없는 매장 — 그 매장의 '미답변' 은 단정할 수
+    // 없는 값입니다(문서 G: 55곳 중 23곳이 정확히 0건 — 사람 행동이 아닙니다).
+    const noReplyStores = new Set(
+        (cov.stores_no_reply || []).map((r) => r.store).filter(Boolean));
+    const storeNoReply = !!(st && st.store && noReplyStores.has(st.store));
+
+    // 매장 몫은 따로 담습니다 — '매장 리뷰 보기' 카드가 이것만 쓰고 플랫폼
+    // 몫은 아래 '리뷰 관리' 카드가 씁니다. 같은 문장을 한 화면에 두 번 적으면
+    // 둘 다 안 읽힙니다.
+    const storeLines = [];
+    if (storeMissing.length) {
+        storeLines.push(`이 매장은 ${storeMissing.join("·")} 리뷰가 수집된 적 없습니다.`);
+    }
+    if (storeNoReply) {
+        storeLines.push("이 매장은 답글이 한 건도 수집된 적 없어 미답변 여부를 알 수 없습니다.");
+    }
+    // 매장을 안 골랐으면 매장별로 말할 수 없으니 규모만 알립니다 — 목록의
+    // '미답변' 총합에 판정할 수 없는 매장이 섞여 있다는 뜻입니다.
+    if (!st && noReplyStores.size) {
+        lines.push(`답글이 한 건도 수집된 적 없는 매장이 ${int(noReplyStores.size)}곳 있습니다 — 그 매장의 '미답변' 은 판정이 아닙니다.`);
+    }
+
+    return { lines, storeLines, startLine, lastDay,
+             coversNone, noReplyStores, storeNoReply };
+}
+
 // ---- 매장 리뷰 보기 (카드 #132 — 리뷰 탭의 '매장 대시보드'식 매장 보기) ----
 //
 // 새 조회 없이 load() 가 이미 받아 온 요약(api_review_summary — f-store 로
@@ -1734,7 +1937,7 @@ function ratingStars(value) {
 // 카드 머리(rvs-meta)가 이미 '매장 · 기간' 을 말하고 있으므로 기간을 따르는
 // 것이 이 자리의 옳은 답입니다.
 
-function drawReviewStoreView(d, c) {
+function drawReviewStoreView(d, c, facts) {
     const store = $("f-store").value;
     // 미러 — 필터 줄·홈 이상신호 행에서 f-store 가 바뀌어도 콤보가 따라갑니다.
     if ($("rv-store").value !== store) $("rv-store").value = store;
@@ -1769,12 +1972,22 @@ function drawReviewStoreView(d, c) {
         `<div class="tile${cls ? " " + cls : ""}"><div class="label">${escape(label)}</div>`
         + `<div class="value">${value}</div>`
         + (sub ? `<div class="sub">${sub}</div>` : "") + "</div>";
+
+    // '리뷰 0건' 이 "플랫폼에 없다" 는 뜻이 아닐 수 있습니다 — 고른 기간이
+    // 수집 범위 밖이면 그 사실을 말합니다(위 reviewCoverageFacts).
+    const outOfRange = !!(facts && facts.coversNone);
+    // 답글이 한 건도 수집된 적 없는 매장에서는 '미답변 N건' 이 단정입니다.
+    // 답글을 안 단 것인지 못 걷은 것인지 우리가 모릅니다 — 숫자 대신 그 사실을.
+    const replyUnknown = !!(facts && facts.storeNoReply);
     kpis.innerHTML = [
-        tile("리뷰", `${int(total)}건`,
-            total ? `평균 ${escape(String(s.avg_rating ?? "—"))}점` : "이 기간 리뷰 없음"),
-        tile("부정 리뷰 (3점 이하)", `${int(negative)}건`, "",
-            negative > 0 ? "t-attn" : ""),
-        tile("미답변", `${int(Number(s.unanswered) || 0)}건`, ""),
+        tile("리뷰", outOfRange ? "—" : `${int(total)}건`,
+            outOfRange ? "고른 기간은 수집 범위 밖"
+                : total ? `평균 ${escape(String(s.avg_rating ?? "—"))}점` : "이 기간 리뷰 없음"),
+        tile("부정 리뷰 (3점 이하)", outOfRange ? "—" : `${int(negative)}건`, "",
+            !outOfRange && negative > 0 ? "t-attn" : ""),
+        tile("미답변", (outOfRange || replyUnknown)
+            ? "—" : `${int(Number(s.unanswered) || 0)}건`,
+            replyUnknown ? "답글이 수집된 적 없는 매장입니다" : ""),
         tile("검토 대기 초안", sd ? `${int(draftWait)}건` : "—",
             sd ? `승인됨 ${int(draftApproved)}건` : ""),
     ].join("");
@@ -1795,17 +2008,27 @@ function drawReviewStoreView(d, c) {
     const byPlatform = s.by_platform || [];
     if (byPlatform.length) {
         table($("t-rvs-platform"), ["플랫폼", "리뷰", "미답변"],
-            byPlatform.map((p) => [p.platform, int(p.count), int(p.unanswered)]));
+            byPlatform.map((p) => [p.platform, int(p.count),
+                replyUnknown ? "—" : int(p.unanswered)]));
     } else {
         $("t-rvs-platform").innerHTML = "";
     }
 
-    $("rvs-note").textContent =
-        "기간·플랫폼은 위 필터를 따르고, 아래 리뷰 목록도 이 매장으로 좁혀져 있습니다.";
+    // 이 카드에서 이 매장에 대해 알아야 할 사실을 먼저 적고(수집 범위·답글
+    // 미수집), 그 뒤에 원래 안내를 둡니다. 모르는 것을 0 으로 읽고 지나가는
+    // 일을 막는 문구라 안내보다 앞에 옵니다.
+    $("rvs-note").textContent = [
+        ...((facts && facts.storeLines) || []),
+        "기간·플랫폼은 위 필터를 따르고, 아래 리뷰 목록도 이 매장으로 좁혀져 있습니다.",
+    ].join(" ");
 }
 
 function drawReviews(d, c) {
-    drawReviewStoreView(d, c);
+    // 수집 범위 판정을 먼저 합니다 — 이 화면의 숫자·문구 여러 곳이 "0 인가
+    // 모르는가" 를 이걸로 가릅니다(117, 위 reviewCoverageFacts).
+    const facts = reviewCoverageFacts(
+        d.reviewCoverage, d.args, $("rv-platform").value || null);
+    drawReviewStoreView(d, c, facts);
     const summary = d.reviewSummary || {};
     let rows = d.reviews || [];
     // 'AI 초안만' — 초안이 붙은 리뷰만 남깁니다 (검토가 목적일 때 매몰 방지)
@@ -1821,11 +2044,26 @@ function drawReviews(d, c) {
 
     const total = Number(summary.total) || 0;
     const hiddenCount = Number(summary.hidden) || 0;
+    // 0 건일 때 "받아온 리뷰가 없습니다" 는 고른 기간이 **수집 범위 안일 때만**
+    // 참입니다. 범위 밖이면 0 이 아니라 '받아온 적이 없는 것' 입니다.
     $("review-summary").textContent = total
         ? `${int(total)}건 · 평균 ${summary.avg_rating ?? "—"}점 · `
-          + `미답변 ${int(summary.unanswered || 0)}건`
+          // 답글이 한 건도 수집된 적 없는 매장으로 좁혀져 있으면 '미답변 N건'
+          // 은 세어 본 값이 아니라 단정입니다. 숫자 대신 모른다고 적습니다.
+          + (facts && facts.storeNoReply
+              ? "미답변 여부 모름"
+              : `미답변 ${int(summary.unanswered || 0)}건`)
           + (hiddenCount ? ` · 내려감 ${int(hiddenCount)}건` : "")
-        : "이 기간에 받아온 리뷰가 없습니다";
+        : facts && facts.coversNone
+            ? "고른 기간은 리뷰 수집 범위 밖입니다"
+            : "이 기간에 받아온 리뷰가 없습니다";
+
+    // 수집 범위 줄 — 할 말이 있을 때만 보입니다(117 을 못 받았거나 기간이
+    // 범위 안이고 구멍이 없으면 줄 자체가 없습니다).
+    const rangeNote = $("review-range-note");
+    const rangeLines = (facts && facts.lines) || [];
+    rangeNote.innerHTML = rangeLines.map((t) => escape(t)).join("<br>");
+    rangeNote.hidden = !rangeLines.length;
 
     // 플랫폼 목록은 요약이 알려주는 대로 채웁니다(수집된 것만 보이게).
     // load() 는 두 단계로 그립니다(FIRST 4칸 → 나머지). 1차 때는 요약이 아직
@@ -1893,15 +2131,31 @@ function drawReviews(d, c) {
     setHero("reviews-hero", {
         // 못 받았으면 '—'(setHero 가 배지도 감춥니다). 0 으로 눌러 '정상'
         // 이라고 말하지 않습니다 — 그건 거짓 안전입니다.
-        num: draftKnown ? `${int(pending)}건` : null,
-        tone: !draftKnown ? undefined
+        // 범위 밖이면 큰 숫자도 '—' 입니다. 받아온 적 없는 기간의 초안이
+        // 0 인 것은 당연한데, 그 0 을 큰 글씨로 띄우면 "검토할 게 없다" 로
+        // 읽힙니다 — 근거 줄이 "범위 밖" 이라고 말하는 것과 어긋납니다.
+        num: (draftKnown && !(facts && facts.coversNone))
+            ? `${int(pending)}건` : null,
+        // 수집 범위 밖이면 판정도 안 합니다. 범위 밖에서는 초안이 0 이라
+        // '정상' 배지가 붙는데, 그건 "볼 게 없어서 괜찮다" 가 아니라
+        // **애초에 받아온 적이 없다** 는 뜻입니다 — 거짓 안전입니다.
+        tone: (!draftKnown || (facts && facts.coversNone)) ? undefined
             : pending > 0 ? "critical" : unanswered > 0 ? "attn" : "good",
-        badge: pending > 0 ? "검토 필요" : unanswered > 0 ? "확인" : "정상",
+        badge: (facts && facts.coversNone) ? undefined
+            : pending > 0 ? "검토 필요" : unanswered > 0 ? "확인" : "정상",
+        // 🔴 hero 도 '없다' 와 '모른다' 를 갈라야 합니다(117). 안 그러면 바로
+        //    아래 요약 줄이 "고른 기간은 리뷰 수집 범위 밖입니다" 라고 말하는데
+        //    hero 만 "받아온 리뷰가 없습니다" 라고 해서 **한 카드에 두 말**이
+        //    됩니다. 오늘 고친 '큰 숫자만 전사' 결함과 같은 종류입니다.
+        //    답글이 한 건도 안 걷힌 매장에서는 '미답변' 도 단정하지 않습니다.
         facts: total
             ? (draftKnown ? `승인됨 ${int(approved)} · ` : "")
-              + `미답변 ${int(unanswered)} · `
+              + (facts && facts.storeNoReply
+                 ? "미답변 여부 모름 · " : `미답변 ${int(unanswered)} · `)
               + `이 기간 리뷰 ${int(total)}건 · 평균 ${summary.avg_rating ?? "—"}점`
-            : "이 기간에 받아온 리뷰가 없습니다.",
+            : facts && facts.coversNone
+                ? "고른 기간은 리뷰 수집 범위 밖입니다."
+                : "이 기간에 받아온 리뷰가 없습니다.",
     });
 
     // 리뷰 수집 현황. 배민 답글 기한이 대략 30일이라, 답글 달 수 있는 리뷰가
@@ -1934,7 +2188,12 @@ function drawReviews(d, c) {
     reviewIndex = new Map((d.reviews || []).map((r) => [Number(r.id), r]));
 
     if (!rows.length) {
-        listEl.innerHTML = '<p class="hint">조건에 맞는 리뷰가 없습니다.</p>';
+        // 목록이 비는 이유가 둘입니다. 필터가 걸러낸 것(조건에 안 맞음)과,
+        // 애초에 그 기간을 수집한 적이 없는 것. 뒤엣것을 "없습니다" 로 적으면
+        // 플랫폼에 리뷰가 없다는 뜻으로 읽힙니다 — 그게 이번 제보의 출발점입니다.
+        listEl.innerHTML = `<p class="hint">${escape(total === 0 && facts && facts.coversNone
+            ? "고른 기간은 리뷰 수집 범위 밖입니다 — 0건이 아니라 받아온 적이 없는 것입니다."
+            : "조건에 맞는 리뷰가 없습니다.")}</p>`;
         refreshDraftPanel();
         return;
     }
@@ -1951,6 +2210,9 @@ function drawReviews(d, c) {
         // 플랫폼에서 내려간 리뷰 — 답글을 달 수 없으니 '미답변' 배지 대신 회색
         // 배지, 'AI 시안 준비 전' 도 붙이지 않습니다(#154).
         const hidden = !!r.hidden_at;
+        // 답글이 한 건도 수집된 적 없는 매장이면 '미답변' 은 단정입니다 —
+        // 답글을 안 단 것인지 못 걷은 것인지 모릅니다(117 stores_no_reply).
+        const replyUnknown = !!(facts && facts.noReplyStores.has(r.store));
 
         return `<article class="rvitem${low ? " low" : ""}">
             <div class="rvhead">
@@ -1959,7 +2221,9 @@ function drawReviews(d, c) {
               <span class="rvmeta">${escape(r.store || "")} · ${escape(r.platform || "")} · ${when}</span>
               ${repeat > 1 ? `<span class="tag">재주문 ${repeat}회</span>` : ""}
               ${hidden ? '<span class="tag" title="플랫폼에서 삭제·블라인드된 리뷰">플랫폼에서 내려감</span>'
-                       : replies.length ? "" : '<span class="tag warn">미답변</span>'}
+                       : replies.length ? ""
+                       : replyUnknown ? '<span class="tag" title="이 매장은 답글이 한 건도 수집된 적 없습니다 — 미답변인지 알 수 없습니다">답글 미수집</span>'
+                       : '<span class="tag warn">미답변</span>'}
             </div>
             ${r.contents ? `<p class="rvbody">${escape(r.contents)}</p>` : ""}
             ${menus.length ? `<p class="rvmenus">${menus.join(" · ")}</p>` : ""}
