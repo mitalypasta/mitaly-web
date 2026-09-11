@@ -460,8 +460,24 @@
     --nav-item-size:   var(--sz-4);
 
     /* 포커스 — 키보드 사용자가 어디 있는지 항상 보여야 합니다.
-       box-shadow 링 대신 outline 을 씁니다(고대비 모드에서도 살아남습니다). */
-    --focus-ring-offset: 2px;
+       box-shadow 링 대신 outline 을 씁니다(고대비 모드에서도 살아남습니다).
+       색은 의미 토큰 --border-focus 가 정하고(두 다크 스코프에 각각 있습니다),
+       굵기는 --focus-ring-width 하나로 모읍니다.
+
+       ⚠️ 2026-09-11 (WP6) 전에는 styles.css 17곳이 `outline: 2px solid
+       var(--action-primary)` 를 따로 적고 있었습니다. 지금은 --action-primary 와
+       --border-focus 가 같은 값이라 결과가 같지만, 브랜드 강조색을 한 번 바꾸면
+       포커스 링만 두 색으로 갈라집니다(CLAUDE.md 실수 13 — 값이 두 군데 있으면).
+       그래서 링을 새로 그릴 일이 있으면 이 세 토큰만 쓰세요.
+
+       오프셋이 셋인 이유: 링은 요소 '밖' 에 그려지는데, 그릇이 내용을 자르는
+       자리(표 행·세그먼트 버튼)에서는 밖이 없어 잘립니다. 그 자리만 안쪽으로
+       넣습니다. tight 는 테두리가 이미 있는 입력칸 — 2px 면 테두리와 링 사이가
+       벌어져 두 줄로 보입니다. */
+    --focus-ring-width:        var(--bw-thick);
+    --focus-ring-offset:       2px;    /* 기본 — 요소 바깥 */
+    --focus-ring-offset-tight: 1px;    /* 테두리가 이미 있는 입력칸 */
+    --focus-ring-offset-inset: -2px;   /* 그릇이 자르는 자리(표 행·세그먼트) */
 }
 
 /* ==========================================================================

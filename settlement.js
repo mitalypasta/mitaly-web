@@ -3,7 +3,7 @@
 
 import { wonFull, int, ymLabel } from "./format.js";
 import { escape, monthsBetween } from "./util.js";
-import { $, table, searchify, setHero, heroFail } from "./dom.js";
+import { $, table, searchify, setHero, heroFail, trapFocus } from "./dom.js";
 import { db, fetchStores } from "./client.js";
 import { S } from "./state.js";
 import { refreshTasksSummary, refreshTaskList, taskStatusTag } from "./tasks.js";
@@ -482,8 +482,20 @@ function renderRateList() {
         }</span></button>`).join("");
 }
 
+// 열기 전 포커스로 돌려보내는 해제 함수(dom.js trapFocus). 덮개가 덮여 있는데
+// Tab 이 뒤쪽 화면으로 새 나가던 것과, 닫으면 포커스가 문서 맨 앞으로 떨어지던
+// 것을 같이 막습니다 (WP6, 2026-09-11).
+let rateReleaseFocus = null;
+
+function closeRateModal() {
+    $("royalty-modal").hidden = true;
+    if (rateReleaseFocus) { rateReleaseFocus(); rateReleaseFocus = null; }
+}
+
 async function openRateModal() {
     $("royalty-modal").hidden = false;
+    if (rateReleaseFocus) rateReleaseFocus();
+    rateReleaseFocus = trapFocus($("royalty-modal"));
     $("rate-form").hidden = true;
     $("rate-search").value = "";
     rateSelected = null;
@@ -554,9 +566,13 @@ async function saveRate(reset) {
 
 function initRoyaltyRates() {
     $("st-rate-edit").addEventListener("click", openRateModal);
-    $("rate-close").addEventListener("click", () => { $("royalty-modal").hidden = true; });
+    $("rate-close").addEventListener("click", closeRateModal);
     $("royalty-modal").addEventListener("click", (event) => {
-        if (event.target === $("royalty-modal")) $("royalty-modal").hidden = true;
+        if (event.target === $("royalty-modal")) closeRateModal();
+    });
+    // 다른 두 모달(리뷰 시안·표 전면)은 Esc 로 닫히는데 여기만 안 닫혔습니다.
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !$("royalty-modal").hidden) closeRateModal();
     });
     $("rate-search").addEventListener("input", renderRateList);
     $("rate-list").addEventListener("click", (event) => {

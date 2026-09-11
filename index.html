@@ -50,9 +50,9 @@
     <h1>미태리 매출 대시보드</h1>
     <p>회사 이메일과 비밀번호로 로그인하세요.</p>
     <form id="login-form">
-        <input type="email" id="email" placeholder="name@company.com"
+        <input type="email" id="email" aria-label="회사 이메일" placeholder="name@company.com"
                autocomplete="email" required>
-        <input type="password" id="password" placeholder="비밀번호"
+        <input type="password" id="password" aria-label="비밀번호" placeholder="비밀번호"
                autocomplete="current-password">
         <button type="submit" id="login-button" class="btn-primary">로그인</button>
     </form>
@@ -281,7 +281,7 @@
         <section data-area="sales" data-sub="선택 매장 매출" class="card full" data-needs-store id="sd-year-card">
             <header>
                 <h2>연도별 월간 추이</h2>
-                <select id="sd-year"></select>
+                <select id="sd-year" aria-label="연도 선택"></select>
             </header>
             <div class="tableview" id="t-sd-yearly"></div>
             <div class="legend" id="legend-sd-year"></div>
@@ -374,7 +374,7 @@
              ============================================================ -->
         <section data-area="sales" data-sub="전체 매장 매출" class="card hero-card" id="company-card">
             <header class="hero-head">
-                <div class="hero-q">전사 매출은 어떻게 가고 있나?</div>
+                <h2 class="hero-q">전사 매출은 어떻게 가고 있나?</h2>
                 <span class="hero-badge" id="company-badge" hidden></span>
                 <!-- 추이 단위 선택(위계 문서 5절 unitbtn 문법) — 연도·분기·
                      월·주간·일별에 시간대·요일을 더해 일곱 단위를 카드 하나가
@@ -593,10 +593,10 @@
     <!-- 설정 화면의 답. 답 = 그 기간에 수집이 빠진 달이 있는 매장 수 — 아래 표의 '누락' 열과 같은 기준이고, 그 표 주석대로 백필 작업의 지도입니다. 매핑표는 유지 작업이라 근거 층으로 둡니다. app.js drawCoverage 가 채웁니다. -->
     <section data-area="settings" class="card hero-card" id="settings-hero">
         <header class="hero-head">
-            <div class="hero-q">수집이 빠진 데 있나?</div>
+            <h2 class="hero-q">수집이 빠진 데 있나?</h2>
             <span class="hero-badge" id="settings-hero-badge" hidden></span>
         </header>
-        <div class="hero-answer">
+        <div class="hero-answer" role="status" aria-live="polite" aria-atomic="true">
             <span class="hero-num" id="settings-hero-num">—</span>
         </div>
         <p class="hero-facts" id="settings-hero-facts">집계 중…</p>
@@ -720,7 +720,7 @@
                 <!-- 매장 검색(담당자 피드백 3-2) — 표를 그 매장으로 좁힙니다.
                      datalist 로 매장명이 자동완성됩니다(공통 콤보와 같은 방식). -->
                 <input type="search" id="alerts-q" list="alerts-store-list"
-                       placeholder="매장 검색">
+                       aria-label="매장 검색" placeholder="매장 검색">
                 <datalist id="alerts-store-list"></datalist>
                 <span class="meta" id="alerts-shown"></span>
             </div>
@@ -801,17 +801,18 @@
              전역 매장 필터(f-store)를 쓰므로, 이 콤보는 f-store 의 거울입니다 —
              여기서 고르면 f-store 가 바뀌어 아래 리뷰 목록도 같은 매장으로
              좁혀지고, 카드 내용은 그 load() 가 받아 온 요약(api_review_summary)
-             에서 그립니다(app.js drawReviewStoreView). 검토 대기 초안만
-             매장을 아는 기존 rpc(api_pending_drafts, 14_reply_drafts.sql)를
-             매장을 골랐을 때 한 번 더 받습니다.
+             에서 그립니다(app.js drawReviewStoreView). 검토 대기 초안도 같은
+             필터의 요약(api_review_draft_summary, 112)에서 옵니다 — 2026-09-11
+             전에는 이 타일만 api_pending_drafts 목록을 받아 세어 기간 기준이
+             달랐습니다.
              ============================================================ -->
         <!-- 리뷰 화면의 답. 답 = 사람이 봐야 넘어가는 AI 답글 초안. 미답변·별점은 근거 줄로 내립니다. app.js drawReviews 가 채웁니다. -->
         <section data-area="reviews" class="card hero-card" id="reviews-hero">
             <header class="hero-head">
-                <div class="hero-q">검토할 초안 몇 건, 터진 곳은?</div>
+                <h2 class="hero-q">검토할 초안 몇 건, 터진 곳은?</h2>
                 <span class="hero-badge" id="reviews-hero-badge" hidden></span>
             </header>
-            <div class="hero-answer">
+            <div class="hero-answer" role="status" aria-live="polite" aria-atomic="true">
                 <span class="hero-num" id="reviews-hero-num">—</span>
             </div>
             <p class="hero-facts" id="reviews-hero-facts">집계 중…</p>
@@ -965,10 +966,10 @@
          타일을 관찰해 따라갑니다(app.js initHomeHero — 별도 조회 없음). -->
     <section data-area="home" class="card hero-card" id="home-hero">
         <header class="hero-head">
-            <div class="hero-q">지금 조치할 게 있나?</div>
+            <h2 class="hero-q">지금 조치할 게 있나?</h2>
             <span class="hero-badge" id="home-hero-badge" hidden></span>
         </header>
-        <div class="hero-answer">
+        <div class="hero-answer" role="status" aria-live="polite" aria-atomic="true">
             <span class="hero-num" id="home-hero-num">—</span>
         </div>
         <p class="hero-facts" id="home-hero-facts">집계 중…</p>
@@ -1061,7 +1062,11 @@
          — 근무인원·좌석수·월임차료·특이사항은 KPI 엑셀 02 반입분, 큐 #109),
          필터는 SV·지역. stores 에는 있는데 프로필이 없는 매장(반입 때 못
          찾음·업로더 신규)도 빈 행으로 보여 바로 채울 수 있게 합니다. -->
-    <section data-area="stores" class="card full" id="store-db-card">
+    <!-- data-no-closed-filter: 헤더의 전역 '폐점 포함' 은 이 화면에 안 겁니다 —
+         아래 '상태' 필터(sdb-status)가 이미 같은 일을 합니다. 둘이 겹쳐 걸리면
+         왜 안 나오는지 알 수 없게 됩니다(store-status-filter-2026-09-11.md).
+         담당자(SV) 필터는 그대로 걸립니다. -->
+    <section data-area="stores" class="card full" id="store-db-card" data-no-closed-filter>
         <header>
             <h2>가맹점 DB</h2>
             <span class="meta" id="sdb-summary"></span>
@@ -1352,10 +1357,10 @@
     <!-- 위반·공문 화면의 답. 답 = **지금 발송 승인을 요청할 수 있는 건** — 단계가 잡혔는데 아직 승인 업무가 없는 것. 이미 요청된 건은 뺍니다 (버튼이 보이는 것과 같은 기준). notices.js refreshViolations 가 채웁니다. -->
     <section data-area="notices" class="card hero-card" id="notices-hero">
         <header class="hero-head">
-            <div class="hero-q">단계 올릴 매장 있나?</div>
+            <h2 class="hero-q">단계 올릴 매장 있나?</h2>
             <span class="hero-badge" id="notices-hero-badge" hidden></span>
         </header>
-        <div class="hero-answer">
+        <div class="hero-answer" role="status" aria-live="polite" aria-atomic="true">
             <span class="hero-num" id="notices-hero-num">—</span>
         </div>
         <p class="hero-facts" id="notices-hero-facts">집계 중…</p>
@@ -1484,10 +1489,10 @@
     <!-- 방문·점검 화면의 답. 답 = 지금 가야 하는 곳(미방문 + 주기 초과) 수. SV 필터가 걸리면 그 담당 몫만 셉니다. app.js refreshVisitDue 가 채웁니다. -->
     <section data-area="visits" class="card hero-card" id="visits-hero">
         <header class="hero-head">
-            <div class="hero-q">다음 방문은 어디부터?</div>
+            <h2 class="hero-q">다음 방문은 어디부터?</h2>
             <span class="hero-badge" id="visits-hero-badge" hidden></span>
         </header>
-        <div class="hero-answer">
+        <div class="hero-answer" role="status" aria-live="polite" aria-atomic="true">
             <span class="hero-num" id="visits-hero-num">—</span>
         </div>
         <p class="hero-facts" id="visits-hero-facts">집계 중…</p>
@@ -1642,20 +1647,24 @@
     <!-- 오픈·폐점 관리 — 8번 영역. 27_store_lifecycle.sql, 큐 #15.
          scope-2026.md 판정("매장에 생애주기 개념이 없다")만 좁혀서 채웁니다.
          체크리스트 상세(구글시트, 비공개)와 폐점 시 계정 삭제 알림
-         (21_store_accounts.sql 게이트 확정 전)은 범위 밖입니다. -->
+         (21_store_accounts.sql 게이트 확정 전)은 범위 밖입니다.
+         ⚠️ 이 화면의 카드에는 전부 data-no-closed-filter 가 붙습니다 — 폐점
+         매장을 다루는 것이 이 화면의 본업이라, 헤더의 전역 '폐점 포함' 이
+         여기서 폐점을 숨기면 화면이 무의미해집니다(svfilter.js 머리주석).
+         담당자(SV) 필터는 그대로 걸립니다. -->
     <!-- 오픈·폐점 화면의 답. 답 = 아직 안 끝난 건(오픈 예정 + 폐점 예정). 매출이 끊겼는데 폐점 기록이 없는 매장은 '확인' 신호로 함께 냅니다. lifecycle.js renderLifecycleStatus 가 채웁니다. -->
-    <section data-area="lifecycle" class="card hero-card" id="lifecycle-hero">
+    <section data-area="lifecycle" class="card hero-card" id="lifecycle-hero" data-no-closed-filter>
         <header class="hero-head">
-            <div class="hero-q">진행 중 건은 어디까지 왔나?</div>
+            <h2 class="hero-q">진행 중 건은 어디까지 왔나?</h2>
             <span class="hero-badge" id="lifecycle-hero-badge" hidden></span>
         </header>
-        <div class="hero-answer">
+        <div class="hero-answer" role="status" aria-live="polite" aria-atomic="true">
             <span class="hero-num" id="lifecycle-hero-num">—</span>
         </div>
         <p class="hero-facts" id="lifecycle-hero-facts">집계 중…</p>
     </section>
 
-    <section data-area="lifecycle" class="card full" id="lifecycle-summary-card">
+    <section data-area="lifecycle" class="card full" id="lifecycle-summary-card" data-no-closed-filter>
         <header>
             <h2>오픈·폐점 현황</h2>
             <span class="meta" id="lifecycle-summary-year"></span>
@@ -1697,7 +1706,7 @@
         </div>
     </section>
 
-    <section data-area="lifecycle" class="card full" id="lifecycle-form-card">
+    <section data-area="lifecycle" class="card full" id="lifecycle-form-card" data-no-closed-filter>
         <header>
             <h2>오픈·폐점 기록 추가</h2>
             <span class="meta">기록하면 아래 현재 상태·이력 표에 바로 반영됩니다</span>
@@ -1733,7 +1742,7 @@
         <p class="notice" id="la-notice"></p>
     </section>
 
-    <section data-area="lifecycle" class="card full" id="lifecycle-status-card">
+    <section data-area="lifecycle" class="card full" id="lifecycle-status-card" data-no-closed-filter>
         <header>
             <h2>매장 상태</h2>
             <span class="meta" id="lifecycle-status-summary"></span>
@@ -1761,7 +1770,7 @@
     </section>
 
     <!-- 원장(접힘) — 전체 이력. 진행 중인 건은 위 카드가 보여 줍니다. -->
-    <details data-area="lifecycle" class="card ledger" id="lifecycle-history-card">
+    <details data-area="lifecycle" class="card ledger" id="lifecycle-history-card" data-no-closed-filter>
         <summary>
             <h2>오픈·폐점 이력</h2>
             <span class="meta" id="lifecycle-history-summary"></span>
@@ -1779,10 +1788,10 @@
     <!-- 공지 화면의 답. 답 = 담당자가 눌러야 나가는 승인 대기 건. comms.js refreshAnnouncements 가 채웁니다. -->
     <section data-area="comms" class="card hero-card" id="comms-hero">
         <header class="hero-head">
-            <div class="hero-q">발송 대기 있나?</div>
+            <h2 class="hero-q">발송 대기 있나?</h2>
             <span class="hero-badge" id="comms-hero-badge" hidden></span>
         </header>
-        <div class="hero-answer">
+        <div class="hero-answer" role="status" aria-live="polite" aria-atomic="true">
             <span class="hero-num" id="comms-hero-num">—</span>
         </div>
         <p class="hero-facts" id="comms-hero-facts">집계 중…</p>
@@ -2050,10 +2059,10 @@
          ingredients.js drawIngredientUsage 가 채웁니다. -->
     <section data-area="ingredients" class="card hero-card" id="ingredients-hero">
         <header class="hero-head">
-            <div class="hero-q">이론 사용량을 믿을 수 있나?</div>
+            <h2 class="hero-q">이론 사용량을 믿을 수 있나?</h2>
             <span class="hero-badge" id="ingredients-hero-badge" hidden></span>
         </header>
-        <div class="hero-answer">
+        <div class="hero-answer" role="status" aria-live="polite" aria-atomic="true">
             <span class="hero-num" id="ingredients-hero-num">—</span>
         </div>
         <p class="hero-facts" id="ingredients-hero-facts">집계 중…</p>
@@ -2215,10 +2224,10 @@
     <!-- POS 메뉴 화면의 답. 답 = 담당자가 눌러야 실행으로 넘어가는 변경 요청. 이미 승인·실행된 건은 오늘 할 일이 아닙니다. pos.js 가 채웁니다. -->
     <section data-area="posmenu" class="card hero-card" id="posmenu-hero">
         <header class="hero-head">
-            <div class="hero-q">승인 대기 변경 있나?</div>
+            <h2 class="hero-q">승인 대기 변경 있나?</h2>
             <span class="hero-badge" id="posmenu-hero-badge" hidden></span>
         </header>
-        <div class="hero-answer">
+        <div class="hero-answer" role="status" aria-live="polite" aria-atomic="true">
             <span class="hero-num" id="posmenu-hero-num">—</span>
         </div>
         <p class="hero-facts" id="posmenu-hero-facts">집계 중…</p>
@@ -2257,7 +2266,7 @@
             <select id="pm-account"><option value="">전체 계정</option></select>
             <select id="pm-store"><option value="">전체 매장</option></select>
             <select id="pm-large"><option value="">전체 분류</option></select>
-            <input type="search" id="pm-q" placeholder="메뉴명 또는 상품코드">
+            <input type="search" id="pm-q" aria-label="메뉴명 또는 상품코드 검색" placeholder="메뉴명 또는 상품코드">
             <label class="recheck">
                 <input type="checkbox" id="pm-only-unavailable">
                 <span>못 파는 것만</span>
@@ -2326,10 +2335,10 @@
          답 숫자의 정의는 tasks.js refreshTasksSummary 주석에 있습니다. -->
     <section data-area="tasks" class="card hero-card" id="tasks-hero">
         <header class="hero-head">
-            <div class="hero-q">오늘 처리할 건 몇 건, 뭐부터?</div>
+            <h2 class="hero-q">오늘 처리할 건 몇 건, 뭐부터?</h2>
             <span class="hero-badge" id="tasks-hero-badge" hidden></span>
         </header>
-        <div class="hero-answer">
+        <div class="hero-answer" role="status" aria-live="polite" aria-atomic="true">
             <span class="hero-num" id="tasks-hero-num">—</span>
             <button type="button" class="btn-primary" id="tasks-hero-act">새 업무 접수</button>
         </div>
@@ -2697,16 +2706,21 @@
          '지금 못 받은 돈 전부' 입니다. settlement.js refreshReceivables 가 채웁니다. -->
     <section data-area="settlement" class="card hero-card" id="settlement-hero">
         <header class="hero-head">
-            <div class="hero-q">미수 있나?</div>
+            <h2 class="hero-q">미수 있나?</h2>
             <span class="hero-badge" id="settlement-hero-badge" hidden></span>
         </header>
-        <div class="hero-answer">
+        <div class="hero-answer" role="status" aria-live="polite" aria-atomic="true">
             <span class="hero-num" id="settlement-hero-num">—</span>
         </div>
         <p class="hero-facts" id="settlement-hero-facts">집계 중…</p>
     </section>
 
-    <section data-area="settlement" class="card full" id="settlement-store-card">
+    <!-- data-no-closed-filter: 헤더의 전역 '폐점 포함' 은 이 카드에 안 겁니다 —
+         아래 '상태'(sts-filter)가 이미 같은 축의 필터라, 둘이 겹치면 '폐점' 을
+         골랐을 때 목록이 통째로 비어 이유를 알 수 없게 됩니다. 게다가 폐점
+         매장의 옛 청구·미수를 쫓는 것이 이 카드의 일입니다(아래 안내 문구).
+         폐점 매장은 이름 끝에 '— 폐점' 이 붙어 구분됩니다(settlement.js). -->
+    <section data-area="settlement" class="card full" id="settlement-store-card" data-no-closed-filter>
         <header>
             <h2>매장별 로열티 <span id="sts-badge" hidden></span></h2>
             <span class="meta" id="sts-meta"></span>
@@ -2741,7 +2755,7 @@
         </header>
         <p class="hint">달 하나를 골라 전 매장의 청구·입금 현황을 보고, 그 달 청구를 만드는 곳입니다. '청구 생성·갱신'은 없는 청구는 만들고 있는 청구는 지금 매출×요율로 다시 계산합니다 — 본사에서 받은 청구(표의 '본사 확정')는 바뀌지 않습니다.</p>
         <div class="cardsearch">
-            <select id="st-ym"></select>
+            <select id="st-ym" aria-label="정산 월 선택"></select>
             <button type="button" id="st-generate" class="btn-primary">청구 생성·갱신</button>
             <button type="button" class="ghost" id="st-rate-edit">로열티 수정</button>
             <span class="meta" id="st-generate-msg"></span>
@@ -2839,11 +2853,12 @@
     <!-- 로열티 수정 플로팅 — 매장을 찾아 그 매장만 다른 요율을 줍니다
          (84_royalty_store_rate.sql). 요율을 바꿔도 이미 만들어진 청구는
          그대로이고 다음 '청구 생성·갱신'부터 반영됩니다(스냅샷 규칙). -->
-    <div class="modal" id="royalty-modal" hidden>
+    <div class="modal" id="royalty-modal" hidden role="dialog" aria-modal="true"
+         aria-labelledby="rate-modal-title">
         <div class="modal-box">
             <header>
-                <h2>로열티 수정</h2>
-                <button class="linkish" id="rate-close">닫기</button>
+                <h2 id="rate-modal-title">로열티 수정</h2>
+                <button class="linkish" id="rate-close" type="button">닫기</button>
             </header>
             <div class="reqform">
                 <div class="field grow">
@@ -2877,7 +2892,7 @@
     <p class="notice" id="app-notice"></p>
 </div>
 
-<div class="tooltip" id="tooltip" hidden></div>
+<div class="tooltip" id="tooltip" role="tooltip" hidden></div>
 
 <!-- 표 전면 보기 (검수 반영 2026-08-21, 담당자 지시 — "표 하나당 큰 화면").
      매출 탭의 표 있는 카드마다 '크게 보기' 버튼이 붙고(app.js initBigtable),

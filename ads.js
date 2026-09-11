@@ -119,7 +119,8 @@ async function loadAds() {
          "광고로 들어온 주문", "광고 경유 매출", "출처", ""],
         rows.map((r) => [
             ymLabel(r.ym), escape(r.store), escape(r.channel),
-            escape(r.campaign || "—"), wonFull(r.cost),
+            escape(r.campaign || "—"),
+            r.cost == null ? "—" : wonFull(r.cost),
             r.impressions == null ? "—" : int(r.impressions),
             r.clicks == null ? "—" : int(r.clicks),
             r.orders == null ? "—" : int(r.orders),
@@ -235,7 +236,7 @@ function renderAdsStoreAds(name) {
          "광고로 들어온 주문", "광고 경유 매출", "출처"],
         mine.map((r) => [
             ymLabel(r.ym), escape(r.channel), escape(r.campaign || "—"),
-            wonFull(r.cost),
+            r.cost == null ? "—" : wonFull(r.cost),
             r.impressions == null ? "—" : int(r.impressions),
             r.clicks == null ? "—" : int(r.clicks),
             r.orders == null ? "—" : int(r.orders),

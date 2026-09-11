@@ -11,7 +11,7 @@ import { won, wonFull, int, ymLabel, catLabel, ymDash } from "./format.js";
 import { escape, clip, debounce, niceTicks, monthsBetween } from "./util.js";
 import { S } from "./state.js";
 import { table, $, monthPicker, searchify, loadSheetJS, showTip, hideTip,
-         setHero } from "./dom.js";
+         setHero, trapFocus } from "./dom.js";
 import { palette, renderHeat, drawLine, drawBars } from "./charts.js";
 import { initSvFilter, svCurrent } from "./svfilter.js";
 
@@ -519,11 +519,35 @@ async function load(onFirstPaint) {
         //  무관해지며 loadHome 으로 옮겨 갔습니다 — 아래 '홈' 절.)
     ];
 
-    // 초안 요약은 있으면 좋고 없어도 그만입니다. 위 묶음에 넣으면
-    // 14_reply_drafts.sql 적용 전에 화면이 통째로 안 뜹니다(기존 bad 검사).
-    const draftSummary = db.rpc("api_draft_summary", {})
-        .then((r) => (r.error ? {} : ((r.data || [])[0] || {}).summary || {}))
-        .catch(() => ({}));
+    // 초안 요약 — 리뷰 화면 hero 의 큰 숫자입니다. **위 필터를 그대로 따릅니다**
+    // (112_review_draft_summary_filtered.sql, 인자는 api_review_summary 와 같은 4개).
+    //
+    // 왜 바꿨나 (담당자 실측 2026-09-11, 라이브): 여기서 `api_draft_summary` 를
+    // **인자 없이** 부르고 있었습니다. 14 의 그 함수는 인자를 아예 안 받아
+    // 전 매장·전 기간 합계만 줍니다. 그래서 매장을 바꿔도 hero 는 3,807건에
+    // 붙박여 있고 바로 아래 근거 줄(api_review_summary — 필터 4개가 걸린 것)만
+    // 따라 움직여, **한 카드 안에 기준이 둘**이었습니다. 아래 '매장 리뷰 보기'
+    // 카드가 같은 매장을 두고 '13건' 이라고 말하는 것과도 정면으로 어긋났습니다.
+    //
+    // 고르는 갈래는 둘이었습니다 — (a) hero 를 필터에 맞추거나, (b) hero 질문을
+    // 전사 질문으로 바꾸고 전사임을 문구로 명시하거나. **(a) 를 골랐습니다.**
+    // 이 화면은 상단 필터가 지배하는 화면이라, 한 카드만 기준이 달라지면
+    // 문구를 붙여도 계속 오해를 부릅니다(옆 근거 줄·아래 매장 카드·목록이
+    // 전부 필터 기준이라 눈이 같은 기준으로 읽습니다).
+    //
+    // ⚠️ loadHome 의 `api_draft_summary`(인자 없음)는 **그대로 둡니다.**
+    //    홈은 전사 화면이고 그 타일의 질문은 "회사 전체에 밀린 초안이 몇 건인가"
+    //    라 전사·전기간 합계가 맞는 답입니다. 두 호출은 성격이 다르고, 그래서
+    //    112 는 오버로드가 아니라 새 이름으로 갔습니다(112 설계 판단 [1]·[2]).
+    //
+    // 위 묶음에 안 넣는 이유는 그대로입니다 — 14·112 적용 전에 화면이 통째로
+    // 안 뜨면 안 됩니다(기존 bad 검사). 다만 못 받았을 때 `{}` 가 아니라
+    // **null** 입니다: `{}` 면 hero 가 '0건 · 정상' 이라는 거짓 안전을 말합니다
+    // (112 를 prod 에 넣기 전 창 · 첫 그리기 직전). null 이면 setHero 가 '—' 로
+    // 그리고 배지를 감춥니다(dom.js — "모른다는 것은 모른다고 말해야 합니다").
+    const draftSummary = db.rpc("api_review_draft_summary", summaryArgs())
+        .then((r) => (r.error ? null : ((r.data || [])[0] || {}).summary || null))
+        .catch(() => null);
 
     // 리뷰 수집 현황도 같은 이유로 따로 뺍니다 —
     // 15_review_collect.sql 적용 전에는 화면이 안 깨지고 그냥 안 보이면 됩니다.
@@ -531,15 +555,13 @@ async function load(onFirstPaint) {
         .then((r) => (r.error ? {} : ((r.data || [])[0] || {}).status || {}))
         .catch(() => ({}));
 
-    // '매장 리뷰 보기'(카드 #132)의 검토 대기 초안 — 매장을 골랐을 때만
-    // 받습니다. api_draft_summary 는 매장을 모르는 전체 합계라, 매장을 아는
-    // 기존 rpc(api_pending_drafts, 14_reply_drafts.sql)를 재사용해 화면에서
-    // 그 매장 것만 셉니다(dev·prod 대기분 수백 건 수준 — 1,000 상한 안).
-    const pendingDrafts = args.p_store
-        ? db.rpc("api_pending_drafts", { p_limit: 1000 })
-            .then((r) => (r.error ? [] : ((r.data || [])[0] || {}).items || []))
-            .catch(() => [])
-        : Promise.resolve([]);
+    // ('매장 리뷰 보기'(카드 #132)의 검토 대기 초안은 api_pending_drafts 로
+    //  목록 1,000건을 받아 브라우저에서 매장별로 세고 있었습니다 — 위
+    //  draftSummary 가 매장을 몰라서 쓴 우회로였습니다. 112 로 draftSummary 가
+    //  매장·기간·플랫폼을 알게 되면서 그 우회로가 필요 없어졌고, 화면 안의
+    //  초안 숫자가 hero·근거 줄·매장 카드까지 **한 기준**이 됩니다. 덤으로
+    //  1,000행 상한 위에서 조용히 틀릴 자리도 사라집니다 — prod 초안이 그
+    //  숫자를 넘기면 매장 카드가 말없이 작은 값을 보였을 것입니다.)
 
     // 화면 맨 위 4개(요약·월별추이·매장별·매장비교)를 먼저 받아 그리고,
     // 나머지는 그 뒤에 채웁니다.
@@ -550,10 +572,11 @@ async function load(onFirstPaint) {
     // **보이기까지가 짧아집니다.**
     // 이 둘은 없어도 화면이 떠야 하는 것들이라 위 묶음에 안 넣었습니다.
     // 늦게 오면 2차 그리기에 반영됩니다.
-    const pending = { draftSummary: {}, reviewSync: {}, pendingDrafts: [] };
+    // draftSummary 의 첫값이 null 인 것은 의도입니다 — 1차 그리기 때는 아직
+    // 안 와 있고, 그때 0 을 쓰면 hero 가 잠깐 '0건 · 정상' 을 스치고 지나갑니다.
+    const pending = { draftSummary: null, reviewSync: {} };
     draftSummary.then((v) => { pending.draftSummary = v; });
     reviewSync.then((v) => { pending.reviewSync = v; });
-    pendingDrafts.then((v) => { pending.pendingDrafts = v; });
 
     // ⚠️ 필터를 연달아 바꾸면 load() 가 여러 번 겹칩니다. 2단계로 나눈 뒤로는
     //    옛 조회의 2차가 새 조회보다 늦게 끝나 **옛 결과가 화면을 덮어쓰는**
@@ -621,7 +644,6 @@ function pack(results, args, pending) {
         compare: ((d(18))[0] || {}).compare || {},
         draftSummary: pending.draftSummary,
         reviewSync: pending.reviewSync,
-        pendingDrafts: pending.pendingDrafts,
     };
 }
 
@@ -1703,9 +1725,14 @@ function ratingStars(value) {
 //
 // 새 조회 없이 load() 가 이미 받아 온 요약(api_review_summary — f-store 로
 // 좁혀진 것)을 매장 단면 카드로 그립니다. 부정 리뷰 기준은 앱 공통의
-// '3점 이하'(홈 타일·이상신호·rv-rating 과 같은 기준)입니다. 검토 대기
-// 초안만 매장을 아는 api_pending_drafts(전체 기간)에서 셉니다 — 기간 필터와
-// 기준이 다른 것을 타일 각주가 말합니다.
+// '3점 이하'(홈 타일·이상신호·rv-rating 과 같은 기준)입니다.
+//
+// 검토 대기 초안도 이제 같은 필터의 요약(api_review_draft_summary, 112)에서
+// 옵니다. 예전에는 이 타일만 api_pending_drafts(전체 기간) 목록을 받아 세고
+// '전체 기간 기준' 이라는 각주를 달았습니다 — 위 hero 가 전사, 이 타일이
+// 매장·전기간, 나머지가 매장·이 기간이라 한 화면에 기준이 셋이었습니다.
+// 카드 머리(rvs-meta)가 이미 '매장 · 기간' 을 말하고 있으므로 기간을 따르는
+// 것이 이 자리의 옳은 답입니다.
 
 function drawReviewStoreView(d, c) {
     const store = $("f-store").value;
@@ -1729,9 +1756,11 @@ function drawReviewStoreView(d, c) {
     const negative = byRating
         .filter((r) => Number(r.rating) <= 3)
         .reduce((a, r) => a + (Number(r.count) || 0), 0);
-    const mine = (d.pendingDrafts || []).filter((x) => x.store === store);
-    const draftWait = mine.filter((x) => x.status === "draft").length;
-    const draftApproved = mine.filter((x) => x.status === "approved").length;
+    // 이 카드가 그려질 때는 f-store 가 차 있어(위 early return) draftSummary 도
+    // 그 매장으로 좁혀져 있습니다 — 같은 currentFilters() 에서 나온 인자입니다.
+    const sd = d.draftSummary;
+    const draftWait = sd ? Number(sd.draft) || 0 : null;
+    const draftApproved = sd ? Number(sd.approved) || 0 : null;
 
     $("rvs-meta").textContent =
         `${store} · ${ymLabel(d.args.p_ym_from)} ~ ${ymLabel(d.args.p_ym_to)}`;
@@ -1746,8 +1775,8 @@ function drawReviewStoreView(d, c) {
         tile("부정 리뷰 (3점 이하)", `${int(negative)}건`, "",
             negative > 0 ? "t-attn" : ""),
         tile("미답변", `${int(Number(s.unanswered) || 0)}건`, ""),
-        tile("검토 대기 초안", `${int(draftWait)}건`,
-            `승인됨 ${int(draftApproved)}건 · 전체 기간 기준`),
+        tile("검토 대기 초안", sd ? `${int(draftWait)}건` : "—",
+            sd ? `승인됨 ${int(draftApproved)}건` : ""),
     ].join("");
 
     // 별점 분포 — 아래 목록 카드의 rv-bars 와 같은 문법(같은 요약 데이터).
@@ -1838,9 +1867,12 @@ function drawReviews(d, c) {
     $("rv-shown").textContent = rows.length ? `${int(rows.length)}건 표시` : "";
 
     // 초안 현황. 없으면 줄 자체를 감춥니다.
-    const ds = d.draftSummary || {};
-    const pending = Number(ds.draft) || 0;
-    const approved = Number(ds.approved) || 0;
+    // ds 가 null 이면 '아직 안 왔거나 112 미적용' 입니다 — 0 으로 치지 않습니다.
+    // 여기 숫자는 이제 위 필터(기간·매장·플랫폼)가 좁힌 범위입니다(112).
+    const ds = d.draftSummary;
+    const draftKnown = !!ds;
+    const pending = draftKnown ? Number(ds.draft) || 0 : null;
+    const approved = draftKnown ? Number(ds.approved) || 0 : null;
     $("draft-note").textContent = (pending || approved)
         ? `AI 답글 초안 — 검토 대기 ${int(pending)}건 · 승인됨 ${int(approved)}건`
           + (ds.tone ? ` · 말투 '${ds.tone}'` : "")
@@ -1851,13 +1883,23 @@ function drawReviews(d, c) {
     // 답 = 사람이 봐야 넘어가는 것 = 검토 대기 초안. 승인된 초안은 이미 손이
     // 갔고, 미답변 리뷰는 초안이 없으면 아직 할 일이 아니라 재료입니다.
     // 미답변·평균 별점은 근거 줄로 내립니다.
+    //
+    // 숫자도 tone·badge 도 **위 필터가 좁힌 범위**입니다(112 — load() 의
+    // draftSummary 주석). 매장을 고르면 그 매장 몫으로 바뀌고 판정도 따라
+    // 바뀝니다. 옛 코드는 전사·전기간 3,807건에 붙박여 있어 어느 매장을 봐도
+    // tone 이 critical 이었습니다 — 배지가 늘 빨간 화면은 배지가 없는 것과
+    // 같습니다.
     const unanswered = Number(summary.unanswered) || 0;
     setHero("reviews-hero", {
-        num: `${int(pending)}건`,
-        tone: pending > 0 ? "critical" : unanswered > 0 ? "attn" : "good",
+        // 못 받았으면 '—'(setHero 가 배지도 감춥니다). 0 으로 눌러 '정상'
+        // 이라고 말하지 않습니다 — 그건 거짓 안전입니다.
+        num: draftKnown ? `${int(pending)}건` : null,
+        tone: !draftKnown ? undefined
+            : pending > 0 ? "critical" : unanswered > 0 ? "attn" : "good",
         badge: pending > 0 ? "검토 필요" : unanswered > 0 ? "확인" : "정상",
         facts: total
-            ? `승인됨 ${int(approved)} · 미답변 ${int(unanswered)} · `
+            ? (draftKnown ? `승인됨 ${int(approved)} · ` : "")
+              + `미답변 ${int(unanswered)} · `
               + `이 기간 리뷰 ${int(total)}건 · 평균 ${summary.avg_rating ?? "—"}점`
             : "이 기간에 받아온 리뷰가 없습니다.",
     });
@@ -1968,6 +2010,7 @@ function draftStateNote(r, replies) {
 let reviewIndex = new Map();
 let panelReviewId = null;
 let rvListScroll = 0;      // 마지막으로 실제 목록이 있던 때의 스크롤 위치
+let rvReleaseFocus = null; // trapFocus 해제 함수 — 닫을 때 원래 자리로 돌려줍니다
 
 function openDraftPanel(reviewId) {
     panelReviewId = reviewId;
@@ -1984,6 +2027,10 @@ function openDraftPanel(reviewId) {
         backdrop.classList.add("open");
         panel.classList.add("open");
     });
+    // 덫을 먼저 겁니다 — trapFocus 가 '열기 전 포커스' 를 기억해 뒀다가
+    // 닫을 때 그리로 돌려보냅니다(목록 40번째 행이면 거기로).
+    if (rvReleaseFocus) rvReleaseFocus();
+    rvReleaseFocus = trapFocus(panel);
     $("rvpanel-close").focus();
 }
 
@@ -1994,6 +2041,7 @@ function closeDraftPanel() {
     const panel = $("rvpanel");
     backdrop.classList.remove("open");
     panel.classList.remove("open");
+    if (rvReleaseFocus) { rvReleaseFocus(); rvReleaseFocus = null; }
     // 슬라이드가 빠져나간 뒤에 숨깁니다(styles.css 의 0.22s 와 짝).
     setTimeout(() => {
         if (panelReviewId !== null) return;   // 그 사이 다시 열림
@@ -2613,6 +2661,7 @@ function drawUnmapped(d) {
 // 표의 동작이 그대로 살고, 닫으면 원래 자리(접힘 상태 포함)로 돌아갑니다.
 
 let bigtableReturn = null;   // { tv, parent, next, wasHidden }
+let bigtableReleaseFocus = null;
 
 function openBigtable(tv, title, meta) {
     if (bigtableReturn) closeBigtable();
@@ -2625,6 +2674,9 @@ function openBigtable(tv, title, meta) {
     $("bigtable-body").append(tv);
     $("bigtable").hidden = false;
     document.body.classList.add("bigtable-open");
+    // 전면 껍데기가 화면을 덮는데도 Tab 이 뒤쪽 화면으로 넘어가고 있었습니다
+    // (WP6 실측: 개발 배지까지 흘러감). 가두고, 닫으면 '크게 보기' 로 복귀.
+    bigtableReleaseFocus = trapFocus($("bigtable"));
     $("bigtable-close").focus();
 }
 
@@ -2637,6 +2689,7 @@ function closeBigtable() {
     }
     $("bigtable").hidden = true;
     document.body.classList.remove("bigtable-open");
+    if (bigtableReleaseFocus) { bigtableReleaseFocus(); bigtableReleaseFocus = null; }
 }
 
 function initBigtable() {
@@ -3211,7 +3264,7 @@ function dboRender() {
         <span class="dbo-right">${sizeSel("top")}</span>
       </div>
       <table class="dbo-table">
-        <thead><tr><th class="dbo-no">번호</th><th class="dbo-hd">${headerSel}</th><th class="tl">제목</th><th class="tl dbo-writer">작성자</th><th class="dbo-date">작성일</th><th class="dbo-num">조회</th><th class="dbo-num">좋아요</th></tr></thead>
+        <thead><tr><th scope="col" class="dbo-no">번호</th><th scope="col" class="dbo-hd">${headerSel}</th><th scope="col" class="tl">제목</th><th scope="col" class="tl dbo-writer">작성자</th><th scope="col" class="dbo-date">작성일</th><th scope="col" class="dbo-num">조회</th><th scope="col" class="dbo-num">좋아요</th></tr></thead>
         <tbody>
         ${dbo.notices.map((n) => `<tr class="dbo-notice">
             <td class="dbo-no"><span class="dbo-mega" title="공지">📢</span></td>
@@ -3430,6 +3483,21 @@ async function initVisits() {
         await refreshVisits();
         await refreshVisitStoreMetrics();
         $("visit-form-card").scrollIntoView({ behavior: "smooth" });
+    });
+
+    // 점검 메모 펼침(WP2) — 표에는 요약만 있고 원문은 바로 아래 행에 있습니다.
+    // 행은 다시 그려도 컨테이너는 그대로라 위임 클릭을 한 번만 겁니다
+    // (조리 레시피·급증 급감 카드와 같은 방식).
+    $("t-visits").addEventListener("click", (event) => {
+        const button = event.target.closest(".vs-exp");
+        if (!button) return;
+        const id = button.dataset.exp;
+        if (visitOpen.has(id)) visitOpen.delete(id);
+        else visitOpen.add(id);
+        const on = visitOpen.has(id);
+        button.classList.toggle("open", on);
+        button.setAttribute("aria-expanded", String(on));
+        syncVisitDetailRows();
     });
 
     // 이력 표의 동작 버튼들 — '보고 복사'(클립보드) + 내 기록이면 '수정'·'삭제'.
@@ -3792,6 +3860,81 @@ function visitSourceTag(v) {
     return ` <span class="tag vs-src" title="다우오피스 방문 리포트 게시판에서 자동 반입">다우${kind}</span>${link}`;
 }
 
+// ---- 점검 메모 5절 — 표에는 요약, 원문은 펼침 (WP2 · 2026-09-11) ----------
+//
+// 고치기 전: 5절의 원문을 표 칸 5개에 통째로 부었습니다. 실측에서 한 칸이
+// 1,180자 + 개행 45개였고, 전역 `th, td { white-space: nowrap }` 에 걸려
+// 접히지도 않은 채 <br> 만큼 세로로 자라 **한 행이 906px** 이 됐습니다.
+// 매장명 7자·날짜 10자짜리 짧은 칸이 그 높이를 같이 먹어 표를 훑을 수 없었고,
+// 열이 10개라 표가 2,140px 를 요구해 사진·동작 칸은 가로로 밀려 있었습니다.
+//
+// 고친 뒤: 표에는 절마다 첫 줄만 뽑은 요약 한 칸(두 줄에서 자름)을 두고,
+// 원문은 행 아래 펼침 행에 둡니다 — 급증·급감 카드(.alerts-exp/.alerts-chrow)와
+// 조리 레시피가 이미 쓰는 방식 그대로입니다. **지운 게 아니라 옮긴 것**이고
+// 읽는 길은 셋입니다: ▸ 펼침 · '보고 복사'(양식 그대로) · '수정'(폼에 그대로).
+// 표를 합쳤어도 내보내기 자료는 5절을 각각 한 열로 등록해 둡니다(아래 export)
+// — 화면에서 합친 것은 훑기 위한 것이라 내려받는 쪽까지 합치면 안 됩니다.
+const VISIT_SECTIONS = [
+    ["1. 위생점검", "hygiene_note"],
+    ["2. 자점매입", "self_purchase_note"],
+    ["3. 조리점검", "cooking_note"],
+    ["4. 점주미팅", "owner_meeting_note"],
+    ["5. 특이사항", "special_note"],
+];
+
+// 절 안의 항목("- …" / "ㄴ …")이 여러 줄이라 줄바꿈을 살려 그립니다.
+const visitMultiline = (t) => (t ? escape(t).replaceAll("\n", "<br>") : "—");
+
+// 펼쳐 둔 기록. 매장·SV 필터로 다시 그려도 펼침을 잃지 않습니다.
+const visitOpen = new Set();
+
+// 표에 남는 요약 — 절마다 **첫 줄만** 뽑아 ' · ' 로 잇습니다. 두 줄을 넘으면
+// CSS(.vs-digest)가 자르고, 자른 뒤는 펼침이 받습니다(잘라만 두지 않습니다).
+function visitDigest(v) {
+    const parts = [];
+    for (const [label, key] of VISIT_SECTIONS) {
+        const text = (v[key] || "").trim();
+        if (!text) continue;
+        const first = text.split("\n")[0].replace(/^[-ㄴ\s]+/, "").trim();
+        if (!first) continue;
+        parts.push(`<b>${escape(label.slice(3))}</b> ${escape(first)}`);
+    }
+    return parts.length ? parts.join(" · ") : "—";
+}
+
+// 펼침 행에 들어가는 원문 — 절 제목 + 본문. 빈 절도 자리를 남깁니다(점검
+// 양식이 5절 고정이라 '안 적힌 절' 도 정보입니다).
+function visitMemoFull(v) {
+    return '<div class="vs-memo">' + VISIT_SECTIONS.map(([label, key]) => {
+        const text = (v[key] || "").trim();
+        return '<div class="vs-memo-sec">'
+            + `<div class="vs-memo-k">${escape(label)}</div>`
+            + `<div class="vs-memo-v">${text ? visitMultiline(text) : "— 기록 없음"}</div>`
+            + "</div>";
+    }).join("") + "</div>";
+}
+
+// 펼침 행의 보이기 + 칸 합치기(조리 레시피 syncMenuRecipeRows 와 같은 방식).
+// table()(dom.js)은 칸 수가 같은 행만 그릴 수 있으므로 원문 칸을 그린 뒤
+// 한 칸으로 합칩니다 — 급증·급감 카드의 펼침 행(tr.diag-drow > td[colspan])과
+// 같은 모양이 되고, 원문이 표 폭을 다 써서 읽힙니다. table() 은 다시 그릴 때
+// innerHTML 을 새로 세우므로 여기서 매번 합칩니다(합쳐진 행은 칸이 하나).
+function syncVisitDetailRows() {
+    $("t-visits").querySelectorAll("tbody tr").forEach((tr) => {
+        const marker = tr.querySelector(".vs-chind");
+        if (!marker) return;
+        tr.classList.add("alerts-chrow", "vs-drow");
+        tr.hidden = !visitOpen.has(marker.dataset.parent);
+        const cells = [...tr.children];
+        if (cells.length < 2) return;                    // 이미 합쳐진 행
+        const memo = cells.find((td) => td.querySelector(".vs-memo"));
+        if (!memo) return;
+        memo.colSpan = cells.length;
+        memo.prepend(marker);                            // 표식도 남은 칸으로
+        for (const td of cells) if (td !== memo) td.remove();
+    });
+}
+
 async function refreshVisits() {
     const storeId = $("vs-store").value;
     const storeName = storeId
@@ -3835,8 +3978,6 @@ async function refreshVisits() {
     // 사진 메타 + 서명 URL 을 한 번에(101). 데모·미적용에서는 빈 Map.
     visitPhotosByVisit = await fetchVisitPhotos(list.map((v) => v.visit_id));
 
-    // 절 안의 항목("- …" / "ㄴ …")이 여러 줄이라 줄바꿈을 살려 그립니다.
-    const multiline = (t) => (t ? escape(t).replaceAll("\n", "<br>") : "—");
     // 수정·삭제는 내 기록에만 보입니다(79 의 RLS 가 최종 게이트 — 여기 표시는
     // 눌러도 안 되는 버튼을 안 보여주기 위한 것). created_by 가 안 내려오는
     // 환경(79 적용 전)에서는 보고 복사만 나옵니다.
@@ -3848,26 +3989,47 @@ async function refreshVisits() {
         }
         return html;
     };
+    // 기록 한 건 = 요약 행 + (기본 숨김) 펼침 행 두 줄. 열은 10 → 6 으로
+    // 줄었고(5절 → '점검 메모' 한 칸), 그래서 표가 그릇 안에 들어옵니다.
     table($("t-visits"),
-        ["매장", "방문일", "방문자", "위생점검", "자점매입", "조리점검", "점주미팅", "특이사항", "사진", "동작"],
-        list.map((v) => [
-            escape(v.store_name),
-            escape(v.visited_on),
-            (v.visited_by ? escape(v.visited_by) : "—") + visitSourceTag(v),
-            multiline(v.hygiene_note),
-            multiline(v.self_purchase_note),
-            multiline(v.cooking_note),
-            multiline(v.owner_meeting_note),
-            multiline(v.special_note),
-            vpThumbCell(visitPhotosByVisit.get(String(v.visit_id))),
-            actions(v),
-        ]),
-        { html: true });
+        ["매장", "방문일", "방문자", "점검 메모", "사진", "동작"],
+        list.flatMap((v) => {
+            const id = String(v.visit_id);
+            const open = visitOpen.has(id);
+            return [[
+                `<button type="button" class="alerts-exp vs-exp${open ? " open" : ""}"`
+                    + ` data-exp="${escape(id)}" aria-expanded="${open}"`
+                    + ' aria-label="점검 메모 펼치기"></button>'
+                    + escape(v.store_name),
+                escape(v.visited_on),
+                (v.visited_by ? escape(v.visited_by) : "—") + visitSourceTag(v),
+                `<div class="vs-digest">${visitDigest(v)}</div>`,
+                vpThumbCell(visitPhotosByVisit.get(id)),
+                actions(v),
+            ], [
+                `<span class="vs-chind" data-parent="${escape(id)}"></span>`,
+                "", "", visitMemoFull(v), "", "",
+            ]];
+        }),
+        {
+            html: true,
+            // 엑셀은 종전 그대로 5절이 각각 한 열 — 화면에서 합친 것은 훑기
+            // 위한 것이고, 내려받아 쓰는 쪽은 절이 갈려 있어야 합니다.
+            export: {
+                headers: ["매장", "방문일", "방문자", "위생점검", "자점매입",
+                          "조리점검", "점주미팅", "특이사항"],
+                rows: list.map((v) => [
+                    v.store_name, v.visited_on, v.visited_by || "",
+                    ...VISIT_SECTIONS.map(([, key]) => v[key] || ""),
+                ]),
+            },
+        });
+    syncVisitDetailRows();
 
     // ≤620px 카드(#157): 매장·방문일·방문자 / 5항목 / 사진(있을 때만) / 동작.
     const note = (label, text) =>
         `<div class="vm-note"><span class="vm-note-k">${label}</span>`
-        + `<span class="vm-note-v">${multiline(text)}</span></div>`;
+        + `<span class="vm-note-v">${visitMultiline(text)}</span></div>`;
     vmAppendCards($("t-visits"), list.map((v) => {
         const photos = visitPhotosByVisit.get(String(v.visit_id));
         return '<article class="vm-card">'

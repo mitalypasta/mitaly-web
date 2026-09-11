@@ -68,12 +68,20 @@ export function table(container, headers, rows, options = {}) {
     // 텍스트 열은 tl 클래스로 좌측에 되돌립니다(styles.css 의 th.tl, td.tl).
     const textCol = headers.map((_, i) => i > 0 && !numericColumn(rows, i));
 
+    // scope="col" — 스크린리더가 셀을 읽을 때 "이 값은 어느 열인가"를 붙여
+    // 줍니다. 없으면 26열짜리 매장 표가 숫자 나열로만 읽힙니다(WP6 실측:
+    // 저장소 전체 열 머리글 82곳 중 scope 가 붙은 것이 0곳이었음).
     const head = headers.map((h, i) => {
         const tl = textCol[i] ? "tl" : "";
-        if (!options.sortable) return `<th${tl ? ` class="${tl}"` : ""}>${escape(h)}</th>`;
+        if (!options.sortable) {
+            return `<th scope="col"${tl ? ` class="${tl}"` : ""}>${escape(h)}</th>`;
+        }
         const active = sort && sort.key === i;
-        const aria = active ? ` aria-sort="${sort.asc ? "ascending" : "descending"}"` : "";
-        return `<th class="sortable${tl ? " tl" : ""}" tabindex="0"${aria}>${escape(h)}</th>`;
+        // 정렬 안 된 열도 aria-sort="none" 을 답니다 — '지금 정렬됨' 뿐 아니라
+        // '정렬할 수 있음' 도 이 속성으로 알립니다.
+        const dir = active ? (sort.asc ? "ascending" : "descending") : "none";
+        return `<th scope="col" class="sortable${tl ? " tl" : ""}" tabindex="0"`
+            + ` aria-sort="${dir}">${escape(h)}</th>`;
     }).join("");
 
     container.innerHTML =
@@ -81,6 +89,21 @@ export function table(container, headers, rows, options = {}) {
         rows.map((r) => "<tr>" + r.map((v, i) =>
             `<td${textCol[i] ? ' class="tl"' : ""}>${cell(v)}</td>`).join("") + "</tr>").join("") +
         "</tbody></table>";
+
+    // 🔴 정렬 머리글은 tabindex="0" 이라 **Tab 은 멈추는데 Enter 로는 아무 일도
+    // 안 났습니다**(부르는 쪽이 click 리스너만 답니다 — allstores.js·app.js).
+    // 포커스만 받고 조작이 안 되는 것은 아예 안 받는 것보다 나쁩니다: 키보드
+    // 사용자에게는 '아무것도 안 하는 정류장' 이 늘어난 것이기 때문입니다.
+    // 부르는 쪽을 고치면 새 표가 또 빠뜨리므로 **표를 만드는 여기서** 잇습니다.
+    if (options.sortable) {
+        container.querySelectorAll("th.sortable").forEach((th) => {
+            th.addEventListener("keydown", (e) => {
+                if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+                e.preventDefault();        // Space 의 기본 동작은 스크롤
+                th.click();
+            });
+        });
+    }
 }
 
 export function showTip(event, html) {
@@ -193,9 +216,23 @@ export function searchify(target) {
     const pop = document.createElement("div");
     pop.className = "combo-pop";
     pop.hidden = true;
+    // 🔴 목록 상자는 `max-height + overflow:auto` 라 크롬이 **스크롤 그릇을
+    // 탭 정류장으로 잡습니다**(키보드로 스크롤하라고 만든 기능). 그런데 이
+    // 콤보는 입력칸이 blur 되는 순간 목록을 숨기므로, Tab 한 번이 사라진 그릇
+    // 위에서 증발해 포커스가 <body> 로 떨어졌습니다 — 매장 검색 콤보 26곳
+    // 전부에서 "Tab 을 눌렀는데 아무 데도 안 가는" 한 번이 생깁니다(WP6 실측).
+    // 목록 이동은 이미 ↑↓ 가 하므로 순차 이동에서만 뺍니다.
+    pop.tabIndex = -1;
     const ul = document.createElement("ul");
     ul.setAttribute("role", "listbox");
     ul.id = `combo-list-${id}`;
+    input.setAttribute("aria-controls", ul.id);
+    // 이름 — 원본 select 는 aria-hidden 이라 그 label 이 콤보에는 안 닿습니다.
+    // 그대로 두면 이 입력칸의 이름이 placeholder 뿐인데, 글자를 치는 순간
+    // placeholder 가 사라져 '무엇을 고르는 칸인지' 를 잃습니다(WP6).
+    const labelText = (document.querySelector(`label[for="${select.id}"]`)?.textContent
+        || select.getAttribute("aria-label") || "").trim();
+    if (labelText) input.setAttribute("aria-label", labelText);
     pop.append(ul);
     wrap.append(input, pop);
     select.after(wrap);
@@ -203,24 +240,36 @@ export function searchify(target) {
     select.tabIndex = -1;
     select.setAttribute("aria-hidden", "true");
 
-    // 전역 담당자 필터(svfilter.js)가 숨긴 항목은 목록에서도 뺍니다.
+    // 전역 매장 필터(svfilter.js)가 숨긴 항목은 목록에서도 뺍니다.
     const options = () => [...select.options].filter((o) => !o.hidden);
+    // 보이는 글자는 label — HTML 표준대로 label 속성이 있으면 그것, 없으면 본문.
+    // svfilter.js 가 폐점 매장에 label 로 ' — 폐점' 을 답니다(textContent 는
+    // 매장 이름 그대로 둡니다 — 그 값을 서버로 보내는 코드가 있어서).
+    const shownText = (o) => o.label || o.textContent;
     const showSelected = () => {
         const cur = SELECT_VALUE.get.call(select);
         const opt = options().find((o) => o.value === cur);
-        input.value = opt && opt.value !== "" ? opt.textContent : "";
+        input.value = opt && opt.value !== "" ? shownText(opt) : "";
     };
     const refreshPlaceholder = () => {
         const blank = options().find((o) => o.value === "");
         // '전체'류 항목이 있으면 빈 입력 = 그 항목. 자리 문구로 보여 줍니다.
         // 매장이 아닌 select(설정 탭 표준명 등)는 data-combo-placeholder /
         // data-combo-empty 로 제 문구를 줍니다 — 기본값은 종전 그대로.
-        input.placeholder = blank ? blank.textContent
+        input.placeholder = blank ? shownText(blank)
             : (select.dataset.comboPlaceholder || "매장 검색");
         showSelected();
     };
     new MutationObserver(() => { refreshPlaceholder(); if (!pop.hidden) renderList(); })
         .observe(select, { childList: true, subtree: true, characterData: true });
+    // 숨김(hidden)·폐점 표시(label)는 **속성** 변경이라 위 옵저버가 못 봅니다.
+    // svfilter.js 가 다시 걸 때마다 이 신호를 줍니다.
+    select.addEventListener("mitaly:options-filtered", () => {
+        // 치는 중이면 입력칸은 안 건드리고 목록만 다시 그립니다 — 글자가
+        // 지워지면 사용자가 검색을 처음부터 다시 해야 합니다.
+        if (document.activeElement !== input) refreshPlaceholder();
+        if (!pop.hidden) renderList();
+    });
     refreshPlaceholder();
 
     // 코드가 select.value = ... 로 값을 바꿔도(홈 타일 이동·입금 채우기 등)
@@ -234,7 +283,7 @@ export function searchify(target) {
     let shown = [];           // 지금 목록에 그려진 옵션들
 
     const choose = (opt) => {
-        input.value = opt.value === "" ? "" : opt.textContent;
+        input.value = opt.value === "" ? "" : shownText(opt);
         close();
         if (SELECT_VALUE.get.call(select) !== opt.value) {
             SELECT_VALUE.set.call(select, opt.value);
@@ -246,13 +295,15 @@ export function searchify(target) {
         const q = input.value.trim().toLowerCase();
         const cur = SELECT_VALUE.get.call(select);
         shown = options().filter((o) =>
-            q === "" || o.value === "" || o.textContent.toLowerCase().includes(q));
+            q === "" || o.value === "" || shownText(o).toLowerCase().includes(q));
         // 빈 값('전체'류)은 입력이 비어 있을 때만 — 검색 중엔 결과만 보입니다.
         if (q !== "") shown = shown.filter((o) => o.value !== "");
         ul.innerHTML = shown.length
             ? shown.map((o, i) =>
-                `<li role="option" data-i="${i}" class="${o.value === cur ? "is-cur" : ""}`
-                + `${o.value === "" ? " is-blank" : ""}">${escape(o.textContent)}</li>`).join("")
+                `<li role="option" id="${ul.id}-${i}" data-i="${i}"`
+                + ` aria-selected="${o.value === cur}"`
+                + ` class="${o.value === cur ? "is-cur" : ""}`
+                + `${o.value === "" ? " is-blank" : ""}">${escape(shownText(o))}</li>`).join("")
             : `<li class="is-empty">${escape(
                 select.dataset.comboEmpty || "일치하는 매장이 없습니다")}</li>`;
         active = shown.length ? Math.max(0, shown.findIndex((o) => o.value === cur)) : -1;
@@ -264,6 +315,13 @@ export function searchify(target) {
             li.classList.toggle("is-active", i === active);
             if (i === active) li.scrollIntoView({ block: "nearest" });
         });
+        // ↑↓ 로 옮긴 줄은 색만 바뀌고 스크린리더에는 아무 말도 없었습니다.
+        // 포커스는 입력칸에 남아 있어야 하므로 activedescendant 로 가리킵니다.
+        if (active >= 0 && ul.children[active]) {
+            input.setAttribute("aria-activedescendant", `${ul.id}-${active}`);
+        } else {
+            input.removeAttribute("aria-activedescendant");
+        }
     };
     const open = () => {
         if (!pop.hidden) return;
@@ -274,6 +332,7 @@ export function searchify(target) {
     const close = () => {
         pop.hidden = true;
         input.setAttribute("aria-expanded", "false");
+        input.removeAttribute("aria-activedescendant");
     };
 
     // 마우스 — 항목은 mousedown 에서 고릅니다(blur 보다 먼저 잡아야 해서).
@@ -312,10 +371,10 @@ export function searchify(target) {
             const typed = input.value.trim();
             const opts = options();
             let opt = typed === "" ? opts.find((o) => o.value === "")
-                                   : opts.find((o) => o.textContent === typed);
+                                   : opts.find((o) => shownText(o) === typed);
             if (!opt && typed) {
                 const partial = opts.filter((o) => o.value !== "" &&
-                    o.textContent.toLowerCase().includes(typed.toLowerCase()));
+                    shownText(o).toLowerCase().includes(typed.toLowerCase()));
                 if (partial.length === 1) opt = partial[0];
             }
             if (opt) choose(opt); else showSelected();
@@ -487,4 +546,63 @@ export function setHero(id, { num, tone, badge, facts } = {}) {
 
 export function heroFail(id, message) {
     setHero(id, { num: "—", facts: `불러오지 못했습니다: ${message}` });
+}
+
+// ---------------------------------------------------------------- 모달 포커스
+//
+// [무엇이 문제였나 — 2026-09-11 WP6 실측]
+// 모달 세 개(리뷰 시안 패널 · 표 전면 보기 · 로열티 수정)가 열 때 닫기 버튼에
+// 포커스를 주기는 했는데, 그 다음이 없었습니다.
+//   · **갇히지 않습니다** — 패널 안에서 Tab 을 몇 번 누르면 뒤에 깔린 화면의
+//     버튼으로 넘어갑니다(실측: bigtable 은 개발 배지로, rvpanel 은 body 로).
+//     화면에는 덮개가 덮여 있어 지금 어디에 포커스가 있는지 안 보입니다.
+//   · **닫아도 안 돌아옵니다** — 닫으면 포커스가 <body> 로 떨어져, 키보드
+//     사용자는 방금 누른 자리가 아니라 문서 맨 앞에서 다시 Tab 해야 합니다.
+//     표 40번째 행의 '시안' 을 눌렀다면 거기까지 40번을 다시 눌러야 합니다.
+//
+// 세 곳이 각자 고치면 네 번째 모달이 또 빠뜨리므로 여기 한 곳에 둡니다.
+//
+//   const release = trapFocus(panelEl);   // 열 때
+//   release();                            // 닫을 때 — 열기 전 자리로 돌아갑니다
+//
+// aria-hidden 을 배경에 씌우지 않는 이유: 이 화면은 모달을 열어 둔 채 뒤의
+// 표가 갱신되는 경로가 있어(load() 가 목록을 다시 그림) 배경을 통째로 가리면
+// 갱신이 스크린리더에서 사라집니다. Tab 순환만 가둡니다.
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]),'
+    + ' select:not([disabled]), textarea:not([disabled]), summary,'
+    + ' [tabindex]:not([tabindex="-1"])';
+
+export function trapFocus(root) {
+    if (!root) return () => {};
+    const returnTo = document.activeElement;
+    const items = () => [...root.querySelectorAll(FOCUSABLE)]
+        .filter((el) => el.offsetParent !== null || el === document.activeElement);
+
+    const onKey = (e) => {
+        if (e.key !== "Tab") return;
+        const list = items();
+        if (!list.length) return;
+        const first = list[0];
+        const last = list[list.length - 1];
+        const here = document.activeElement;
+        if (!root.contains(here)) {          // 밖에 있으면 안으로 데려옵니다
+            e.preventDefault();
+            (e.shiftKey ? last : first).focus();
+            return;
+        }
+        if (e.shiftKey && here === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && here === last) { e.preventDefault(); first.focus(); }
+    };
+
+    root.addEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey);
+    return () => {
+        root.removeEventListener("keydown", onKey);
+        document.removeEventListener("keydown", onKey);
+        // 열기 전 요소가 아직 화면에 있으면 그리로. 다시 그려져 사라졌으면
+        // 아무 데도 안 보냅니다(보이지 않는 곳에 포커스를 두는 것보다 낫습니다).
+        if (returnTo && returnTo.isConnected && returnTo.offsetParent !== null) {
+            returnTo.focus();
+        }
+    };
 }

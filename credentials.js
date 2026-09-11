@@ -117,7 +117,7 @@ async function loadCredChanges() {
         .order("changed_at", { ascending: false }).limit(30);
     const rows = data || [];
     $("cred-changes").innerHTML = rows.length
-        ? `<table><thead><tr><th>언제</th><th>채널</th><th>무엇</th><th>누가</th></tr></thead>
+        ? `<table><thead><tr><th scope="col">언제</th><th scope="col">채널</th><th scope="col">무엇</th><th scope="col">누가</th></tr></thead>
            <tbody>${rows.map((r) => `<tr>
              <td>${escape((r.changed_at || "").slice(0, 16).replace("T", " "))}</td>
              <td>${escape(r.channel)}</td><td>${escape(r.what)}</td>

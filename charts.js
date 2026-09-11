@@ -49,8 +49,8 @@ function heatBin(value, max) {
 export function renderHeat(container, { rows, cols, get, label, rowLabel = (r) => r,
                            rowTitle = null, summary = null, note = "" }) {
     const max = Math.max(1, ...rows.flatMap((r) => cols.map((cx) => get(r, cx) || 0)));
-    const head = cols.map((cx) => `<th>${escape(cx)}</th>`).join("") +
-        (summary ? `<th class="sum">${escape(summary.label)}</th>` : "");
+    const head = cols.map((cx) => `<th scope="col">${escape(cx)}</th>`).join("") +
+        (summary ? `<th scope="col" class="sum">${escape(summary.label)}</th>` : "");
     const body = rows.map((r) => {
         const values = cols.map((cx) => get(r, cx) || 0);
         // 최댓값이 여럿(동률)이면 표시하지 않습니다 — "어디가 제일인가"의 답이
@@ -69,7 +69,8 @@ export function renderHeat(container, { rows, cols, get, label, rowLabel = (r) =
         }).join("");
         const sum = summary
             ? `<td class="sum">${escape(summary.format(summary.get(r)))}</td>` : "";
-        const th = `<th${rowTitle ? ` title="${escape(rowTitle(r))}"` : ""}>` +
+        // 히트맵의 첫 칸은 그 **행**의 이름(요일·메뉴)이라 scope="row" 입니다.
+        const th = `<th scope="row"${rowTitle ? ` title="${escape(rowTitle(r))}"` : ""}>` +
             `${escape(rowLabel(r))}</th>`;
         return `<tr>${th}${cells}${sum}</tr>`;
     }).join("");

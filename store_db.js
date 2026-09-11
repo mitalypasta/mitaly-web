@@ -207,7 +207,7 @@ function sdbRender() {
     }
 
     const head = ["매장", ...SDB_COLS.map(([, label]) => label), ""]
-        .map((h) => `<th>${escape(h)}</th>`).join("");
+        .map((h) => `<th scope="col">${escape(h)}</th>`).join("");
     const body = list.map((r) => {
         if (r.store_id === sdbEditingId) return sdbEditRow(r);
         const cells = SDB_COLS.map(([key]) => {

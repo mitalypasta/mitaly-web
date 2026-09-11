@@ -64,8 +64,8 @@ function renderKpiSettings() {
     // dom.js 의 table() 은 문자열 셀만 그려서 input 을 못 담습니다 — 같은
     // 마크업(thead/tbody, tl 클래스)을 직접 씁니다. 내보내기 대상도 아닙니다.
     $("t-kpi-settings").innerHTML = kpiRows.length
-        ? `<table><thead><tr><th class="tl">구분</th><th class="tl">항목</th>`
-          + `<th>값</th><th class="tl">설명</th></tr></thead><tbody>${body}</tbody></table>`
+        ? `<table><thead><tr><th scope="col" class="tl">구분</th><th scope="col" class="tl">항목</th>`
+          + `<th scope="col">값</th><th scope="col" class="tl">설명</th></tr></thead><tbody>${body}</tbody></table>`
         : '<p class="hint">데이터가 없습니다.</p>';
 }
 

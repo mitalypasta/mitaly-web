@@ -409,7 +409,7 @@ function rg(label, value, sub) {
 function rows(headers, body) {
     return `<table><thead><tr>`
         + headers.map((h, i) =>
-            `<th${i === 0 ? ' class="tl"' : ""}>${escape(h)}</th>`).join("")
+            `<th scope="col"${i === 0 ? ' class="tl"' : ""}>${escape(h)}</th>`).join("")
         + `</tr></thead><tbody>` + body + `</tbody></table>`;
 }
 
@@ -623,8 +623,8 @@ async function loadHistory() {
         tv.innerHTML = '<p class="hint">저장된 분석이 없습니다 — 위에서 주소를 분석하면 자동으로 쌓입니다.</p>';
         return;
     }
-    tv.innerHTML = "<table><thead><tr><th class='tl'>지점명</th><th class='tl'>주소</th>"
-        + "<th>반경</th><th>예상매출</th><th class='tl'>분석일</th><th></th></tr></thead><tbody>"
+    tv.innerHTML = "<table><thead><tr><th scope='col' class='tl'>지점명</th><th scope='col' class='tl'>주소</th>"
+        + "<th scope='col'>반경</th><th scope='col'>예상매출</th><th scope='col' class='tl'>분석일</th><th></th></tr></thead><tbody>"
         + rows.map((h) => `<tr class="ta-row" data-id="${h.id}">`
             + `<td class="tl">${escape(h.name || "—")}</td>`
             + `<td class="tl">${escape(h.address)}</td>`

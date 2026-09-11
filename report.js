@@ -77,17 +77,17 @@ export function drawReport(d) {
 
         <h2>1. 요약</h2>
         <table class="report-kpi"><tbody>
-          <tr><th>총매출</th><td>${wonFull(s.amount)}</td>
-              <th>총수량</th><td>${int(qty)}</td></tr>
-          <tr><th>홀</th><td>${wonFull(hall)}</td>
-              <th>배달</th><td>${wonFull(delivery)}</td></tr>
-          <tr><th>객단가</th><td>${wonFull(avgTicket)}</td>
-              <th>매장 수</th><td>${int(s.store_count)}곳</td></tr>
+          <tr><th scope="row">총매출</th><td>${wonFull(s.amount)}</td>
+              <th scope="row">총수량</th><td>${int(qty)}</td></tr>
+          <tr><th scope="row">홀</th><td>${wonFull(hall)}</td>
+              <th scope="row">배달</th><td>${wonFull(delivery)}</td></tr>
+          <tr><th scope="row">객단가</th><td>${wonFull(avgTicket)}</td>
+              <th scope="row">매장 수</th><td>${int(s.store_count)}곳</td></tr>
         </tbody></table>
 
         <h2>2. 급증·급감 매장 <span class="report-sub">${escape(ymDash(d.args.p_ym_to))} 기준</span></h2>
         ${alertRows.length ? `<table class="report-table"><thead><tr>
-            <th>매장</th><th>채널</th><th>매출</th><th>전월 대비</th><th>전년 대비</th>
+            <th scope="col">매장</th><th scope="col">채널</th><th scope="col">매출</th><th scope="col">전월 대비</th><th scope="col">전년 대비</th>
           </tr></thead><tbody>${alertRows.map((c) => `<tr>
                 <td>${escape(c.store)}</td><td>${escape(c.channel)}</td>
                 <td>${wonFull(c.amount)}</td>
@@ -104,7 +104,7 @@ export function drawReport(d) {
 
         <h2>3. 월별 추이</h2>
         ${months.length ? `<table class="report-table"><thead><tr>
-            <th>연월</th><th>총매출</th><th>홀</th><th>배달</th><th>수량</th>
+            <th scope="col">연월</th><th scope="col">총매출</th><th scope="col">홀</th><th scope="col">배달</th><th scope="col">수량</th>
           </tr></thead><tbody>${months.map((m) => `<tr>
             <td>${escape(ymDash(m.ym))}</td><td>${wonFull(m.amount)}</td>
             <td>${wonFull(m.hall)}</td><td>${wonFull(m.delivery)}</td>
@@ -113,7 +113,7 @@ export function drawReport(d) {
 
         <h2>4. 상위 품목 10</h2>
         ${top.length ? `<table class="report-table"><thead><tr>
-            <th>품목</th><th>분류</th><th>매출</th><th>수량</th>
+            <th scope="col">품목</th><th scope="col">분류</th><th scope="col">매출</th><th scope="col">수량</th>
           </tr></thead><tbody>${top.map((m) => `<tr>
             <td>${escape(m.menu)}</td><td>${escape(catLabel(m.category))}</td>
             <td>${wonFull(m.amount)}</td><td>${int(m.qty)}</td></tr>`).join("")}

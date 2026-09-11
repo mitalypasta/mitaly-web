@@ -288,8 +288,8 @@ function renderPnl(p) {
         + `<td class="tl">이익률 = 영업이익 ÷ 총매출</td></tr>`,
     ];
     $("t-sd-pnl").innerHTML =
-        `<table><thead><tr><th class="tl">항목</th><th>금액</th>`
-        + `<th>매출 대비</th><th class="tl">근거</th></tr></thead>`
+        `<table><thead><tr><th scope="col" class="tl">항목</th><th scope="col">금액</th>`
+        + `<th scope="col">매출 대비</th><th scope="col" class="tl">근거</th></tr></thead>`
         + `<tbody>${rows.join("")}</tbody></table>`;
 
     $("sd-pnl-note").textContent =
@@ -348,9 +348,9 @@ function renderYearly(d) {
         <td><b>${bizSum > 0 ? escape(wonFull(Math.round(salesSum / bizSum))) : "—"}</b></td>
     </tr>`;
     $("t-sd-yearly").innerHTML =
-        `<table><thead><tr><th class="tl">월</th><th>총매출</th><th>전월비</th><th>홀</th>`
-        + `<th>배달</th><th>아워홈 발주액</th><th>식자재율</th>`
-        + `<th>영업일수</th><th>일평균</th></tr></thead>`
+        `<table><thead><tr><th scope="col" class="tl">월</th><th scope="col">총매출</th><th scope="col">전월비</th><th scope="col">홀</th>`
+        + `<th scope="col">배달</th><th scope="col">아워홈 발주액</th><th scope="col">식자재율</th>`
+        + `<th scope="col">영업일수</th><th scope="col">일평균</th></tr></thead>`
         + `<tbody>${body}${foot}</tbody></table>`;
 
     $("sd-year-note").textContent =
@@ -525,8 +525,8 @@ async function renderQuarterly(storeName) {
         <td>${diffCell(r.qoq)}</td>
     </tr>`).join("");
     box.innerHTML = list.length
-        ? `<table><thead><tr><th class="tl">분기</th><th>홀</th><th>배달</th>`
-          + `<th>합계</th><th>전분기비</th></tr></thead><tbody>${body}</tbody></table>`
+        ? `<table><thead><tr><th scope="col" class="tl">분기</th><th scope="col">홀</th><th scope="col">배달</th>`
+          + `<th scope="col">합계</th><th scope="col">전분기비</th></tr></thead><tbody>${body}</tbody></table>`
         : '<p class="hint">데이터가 없습니다.</p>';
 }
 
@@ -560,8 +560,8 @@ function renderWeekly(d) {
         <td>${escape(int(w.orders))}</td>
     </tr>`).join("");
     $("t-sd-weekly").innerHTML =
-        `<table><thead><tr><th class="tl">주차</th><th>매출</th>`
-        + `<th>전주비</th><th>주문수</th></tr></thead><tbody>${body}</tbody></table>`;
+        `<table><thead><tr><th scope="col" class="tl">주차</th><th scope="col">매출</th>`
+        + `<th scope="col">전주비</th><th scope="col">주문수</th></tr></thead><tbody>${body}</tbody></table>`;
 }
 
 // ---- ⓕ 일간 28일 --------------------------------------------------------
@@ -577,7 +577,7 @@ function renderDaily(d) {
     }
     $("sd-daily-meta").textContent =
         `${days[0].day} ~ ${days[days.length - 1].day} · 빈칸 = 미영업`;
-    const head = days.map((x) => `<th>${escape(md(x.day))}</th>`).join("");
+    const head = days.map((x) => `<th scope="col">${escape(md(x.day))}</th>`).join("");
     const dows = days.map((x) =>
         `<td class="${x.dow >= 6 ? "sd-weekend" : ""}">${DOW_KO[x.dow] || ""}</td>`).join("");
     const amounts = days.map((x) =>
@@ -591,7 +591,7 @@ function renderDaily(d) {
         return `<td>${diffCell(pct)}</td>`;
     }).join("");
     $("t-sd-daily").innerHTML =
-        `<table><thead><tr><th class="tl">날짜</th>${head}</tr></thead><tbody>`
+        `<table><thead><tr><th scope="col" class="tl">날짜</th>${head}</tr></thead><tbody>`
         + `<tr><td class="tl">요일</td>${dows}</tr>`
         + `<tr><td class="tl">매출</td>${amounts}</tr>`
         + `<tr><td class="tl">전일비</td>${diffs}</tr>`

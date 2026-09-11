@@ -2559,9 +2559,12 @@ const HANDLERS = {
         } }];
     },
 
-    // 검토 대기 초안 목록(14_reply_drafts.sql) — '매장 리뷰 보기'(카드 #132)가
-    // 매장별 대기 건수를 셉니다. 실제 함수와 같은 규칙: draft·approved 만,
-    // 별점 낮은 것부터. 승인·반려가 메모리에서 바뀌면 여기도 따라갑니다.
+    // 검토 대기 초안 목록(14_reply_drafts.sql). 실제 함수와 같은 규칙:
+    // draft·approved 만, 별점 낮은 것부터. 승인·반려가 메모리에서 바뀌면
+    // 여기도 따라갑니다.
+    // ⚠️ 2026-09-11 부터 웹은 이걸 부르지 않습니다 — '매장 리뷰 보기'(카드
+    //    #132)가 매장별 대기 건수를 세던 자리를 위 api_review_draft_summary
+    //    (112)가 넘겨받았습니다. rpc 자체는 살아 있어 픽스처는 남깁니다.
     api_pending_drafts: ({ p_limit } = {}) => {
         const items = [];
         for (const r of DEMO_REVIEWS) {
@@ -2619,7 +2622,35 @@ const HANDLERS = {
         return { ok: true, done: !!p_done };
     },
 
-    // AI 답글 초안. 데모에서는 DEMO_REVIEWS 의 drafts 를 그대로 셉니다.
+    // 초안 요약 — 리뷰 화면 hero (112_review_draft_summary_filtered.sql).
+    // api_review_summary 와 **같은 인자 4개**라 같은 리뷰 집합에서 셉니다.
+    // 매장·플랫폼을 바꾸면 hero 숫자가 따라 바뀌어야 하는데, 옛 코드는 인자
+    // 없는 api_draft_summary 를 불러 전사 값에 붙박여 있었습니다(2026-09-11
+    // 담당자 실측). 이 픽스처가 그 회귀를 잡는 자리입니다 —
+    // 샘플01점 = 검토 대기 2 · 샘플03점 = 승인됨 1 · 샘플02점 = 0.
+    api_review_draft_summary: (args) => {
+        const ids = new Set(
+            HANDLERS.api_reviews({ ...args, p_unanswered_only: false })[0]
+                .items.map((r) => r.id),
+        );
+        // api_reviews 는 반려 초안을 빼고 주므로 원본에서 다시 셉니다.
+        const all = DEMO_REVIEWS
+            .filter((r) => ids.has(r.id))
+            .flatMap((r) => r.drafts || []);
+        const count = (s) => all.filter((d) => d.status === s).length;
+        return [{ summary: {
+            draft: count("draft"),
+            approved: count("approved"),
+            scheduled: count("scheduled"),
+            rejected: count("rejected"),
+            posted: count("posted"),
+            total: all.length,
+            tone: "기본(정중+온기)",
+        } }];
+    },
+
+    // AI 답글 초안 — 전사·전기간. 홈 'AI 답글 초안 검토' 타일 몫입니다.
+    // 리뷰 화면은 위 api_review_draft_summary 를 씁니다(두 화면의 질문이 다름).
     api_draft_summary: () => {
         const all = DEMO_REVIEWS.flatMap((r) => r.drafts || []);
         const count = (s) => all.filter((d) => d.status === s).length;

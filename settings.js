@@ -92,8 +92,8 @@ function renderTable() {
     // dom.js table() 은 행 data 속성을 못 담아 같은 마크업을 직접 씁니다
     // (kpi.js 와 같은 이유). 행을 누르면 위 편집 폼이 채워집니다.
     $("t-mapping").innerHTML = rows.length
-        ? `<table><thead><tr><th class="tl">원본표기</th><th class="tl">표준명</th>`
-          + `<th class="tl">수정</th></tr></thead><tbody>${body}</tbody></table>`
+        ? `<table><thead><tr><th scope="col" class="tl">원본표기</th><th scope="col" class="tl">표준명</th>`
+          + `<th scope="col" class="tl">수정</th></tr></thead><tbody>${body}</tbody></table>`
         : '<p class="hint">이 분류에 해당하는 매핑이 없습니다.</p>';
 }
 

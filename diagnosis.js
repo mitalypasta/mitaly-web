@@ -193,9 +193,9 @@ function renderDiagnosis() {
     // 증상 배지에 title(원인)이 붙어 dom.js 의 table() 대신 같은 마크업을
     // 직접 씁니다(kpi.js 와 같은 이유 — 문자열 셀만 받는 함수라서).
     box.innerHTML =
-        `<table><thead><tr><th class="tl">매장</th><th class="tl">증상</th>`
-        + `<th>달성률</th><th>일평균</th><th class="tl">관련 지표</th>`
-        + `<th class="tl">조치 방향</th></tr></thead>`
+        `<table><thead><tr><th scope="col" class="tl">매장</th><th scope="col" class="tl">증상</th>`
+        + `<th scope="col">달성률</th><th scope="col">일평균</th><th scope="col" class="tl">관련 지표</th>`
+        + `<th scope="col" class="tl">조치 방향</th></tr></thead>`
         + `<tbody>${body}</tbody></table>`;
 
     // 행은 다시 그려도 컨테이너(t-diag)는 그대로라 위임 클릭을 한 번만 겁니다
