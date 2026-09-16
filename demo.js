@@ -2987,6 +2987,37 @@ const HANDLERS = {
                  last_day: rows.length ? rows[rows.length - 1].day : null, rows };
     },
 
+    // 매장별 일별 — 120_daily_sales.sql(api_daily_sales)과 같은 모양(jsonb 한 줄).
+    // 날마다 결정적 파형 + 주말 융기, 매장별 {날: 금액} 지도, 홀/배달 필터 반영.
+    api_daily_sales: ({ p_day_from, p_day_to, p_store, p_channel } = {}) => {
+        const iso = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+        const from = new Date(`${p_day_from}T00:00:00`);
+        const to = new Date(`${p_day_to}T00:00:00`);
+        const names = STORES.map((s) => s.name).filter((n) => !p_store || n === p_store).slice(0, 40);
+        const stores = names.map((n) => ({ store: n, total: 0, orders: 0, days_open: 0, days: {} }));
+        const rows = [];
+        for (const d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+            const key = iso(d);
+            const isodow = d.getDay() === 0 ? 7 : d.getDay();
+            let amount = 0, orders = 0, hallSum = 0;
+            stores.forEach((s, i) => {
+                const base = 500_000 + (i * 37_000) % 900_000;
+                const v = Math.round(base * (1 + (isodow >= 5 ? 0.2 : 0) + Math.sin(d.getDate() + i) * 0.1) / 100) * 100;
+                const hall = Math.round(v * 0.6 / 100) * 100;
+                const got = p_channel === "홀" ? hall : p_channel === "배달" ? v - hall : v;
+                s.days[key] = got; s.total += got; s.days_open += 1;
+                const o = Math.round(got / 25_000); s.orders += o;
+                amount += got; orders += o; hallSum += hall;
+            });
+            rows.push({ day: key, dow: isodow, amount, orders,
+                        hall_amount: p_channel === "배달" ? 0 : (p_channel === "홀" ? amount : hallSum),
+                        delivery_amount: p_channel === "홀" ? 0 : (p_channel === "배달" ? amount : amount - hallSum),
+                        store_count: stores.length });
+        }
+        stores.sort((a, b) => b.total - a.total);
+        return { ok: true, day_from: p_day_from, day_to: p_day_to, last_day: p_day_to, rows, stores };
+    },
+
     // 22_notices.sql — `returns table (rules jsonb)` 라 다른 table(x jsonb)
     // 함수들과 같은 모양([{rules:[...]}])입니다.
     api_notice_stage_rules: () => [{ rules: NOTICE_RULES }],

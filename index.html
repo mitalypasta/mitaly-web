@@ -397,6 +397,35 @@
             <p class="hint" id="company-note"></p>
         </section>
 
+        <!-- 매장별 일별 매출 (2026-09-16 담당자 지시 — "매출 탭에서 일별 매출로
+             꼭 볼 수 있어야 해"). 120_daily_sales.sql(api_daily_sales) 위의 표 —
+             매장 행 × 날 열(KPI 시트 03 모양), 첫 행 전체 합계. 기간은 카드가
+             직접 갖습니다(최근 30·60·90일 또는 달 하나, 끝 날 = 어제): 전역
+             기간은 달 단위·기본 '마지막 완성월' 이라 일별을 거기 묶으면 늘
+             지난달만 보입니다. 매장·채널은 전역 필터. 화면은 daily.js. -->
+        <section data-area="sales" data-sub="전체 매장 매출" class="card full" id="daily-store-card">
+            <header>
+                <h2>매장별 일별 매출</h2>
+                <span class="meta" id="ds-meta"></span>
+            </header>
+            <div class="reqform">
+                <div class="field">
+                    <label>기간</label>
+                    <div class="aspf-seg" id="ds-range" role="group" aria-label="최근 며칠">
+                        <button type="button" data-days="30" class="on">30일</button>
+                        <button type="button" data-days="60">60일</button>
+                        <button type="button" data-days="90">90일</button>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="ds-ym">달</label>
+                    <input type="month" id="ds-ym">
+                </div>
+            </div>
+            <div class="tableview tall" id="t-daily-store"></div>
+            <p class="hint" id="ds-note"></p>
+        </section>
+
         <!-- 표가 기본입니다(2026-08-21 담당자 지시 — 탭 데이터 정리 라운드).
              표는 전 메뉴 순위(순위·비중 열 포함), 차트는 상위 15 토글. -->
         <section data-area="sales" data-sub="메뉴·시간" class="card full">
@@ -2846,6 +2875,6 @@
      v= 가 바뀌면 브라우저가 옛 파일을 아예 안 씁니다.
      ⚠️ 모듈 34개는 맨 경로로 불려 이 쿼리가 안 걸립니다 — 모듈의 export 를
         없애거나 이름을 바꾸는 배포라면 그것만으로 부족합니다(카드 #181). -->
-<script type="module" src="app.js?v=20260916"></script>
+<script type="module" src="app.js?v=20260916b"></script>
 </body>
 </html>

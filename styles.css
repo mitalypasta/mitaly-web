@@ -2041,6 +2041,19 @@ button.ghost:active { transform: translateY(0.5px); }
 
 #ap-table thead th:first-child { z-index: 2; }
 
+/* 매장별 일별 매출 표(daily.js) — 날 열이 30~90개라 위 두 표와 같은 이유로
+   매장 열을 왼쪽에 고정합니다. 첫 행(전체 합계)은 굵게. */
+#t-daily-store th:first-child,
+#t-daily-store td:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--bg-surface);
+    z-index: 1;
+}
+
+#t-daily-store thead th:first-child { z-index: 2; }
+#t-daily-store tr.ds-total td { font-weight: 600; }
+
 /* 게이트를 연 뒤의 체크 칸 — 아이디 1행 + 비밀번호 2행(account.js credCell).
    비밀번호 줄은 가림(●●●●●●, 누르면 그 칸만 펼침)이 기본입니다. */
 .ap-cred { display: grid; gap: var(--sp-1); }

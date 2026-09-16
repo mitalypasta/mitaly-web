@@ -46,6 +46,7 @@ import { initKpiSettings } from "./kpi.js";
 import { initStoreDash } from "./store_dash.js";
 import { initDiagnosis } from "./diagnosis.js";
 import { initAllStores } from "./allstores.js";
+import { initDailyStore } from "./daily.js";
 import { initSettings } from "./settings.js";
 import { initTradeArea } from "./tradearea.js";
 
@@ -403,6 +404,9 @@ async function initDashboard() {
         // 단발 조회입니다 — 월은 load() 의 api_monthly 를 접고, 연도·분기는
         // 전 기간 api_monthly 를 처음 고를 때 한 번 받습니다(카드 #139).
         initCompanyTrend,
+        // 매장별 일별 매출(120)은 기간을 카드가 갖고 매장·채널 변경은 스스로
+        // 듣습니다 — load() 묶음 밖(전매장 현황과 같은 규칙).
+        initDailyStore,
         initTasks, initInquiries, initDrafts,
         initNotices, initVisits, initStoreDb, initAccountPresence,
         initLifecycle, initKakaoStats, initNotifications, initRecipients,
