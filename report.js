@@ -85,7 +85,7 @@ export function drawReport(d) {
               <th scope="row">매장 수</th><td>${int(s.store_count)}곳</td></tr>
         </tbody></table>
 
-        <h2>2. 급증·급감 매장 <span class="report-sub">${escape(ymDash(d.args.p_ym_to))} 기준</span></h2>
+        <h2>2. 급증·급감 매장 <span class="report-sub">${escape(ymDash((d.compare && d.compare.ym) || d.args.p_ym_to))} 기준</span></h2>
         ${alertRows.length ? `<table class="report-table"><thead><tr>
             <th scope="col">매장</th><th scope="col">채널</th><th scope="col">매출</th><th scope="col">전월 대비</th><th scope="col">전년 대비</th>
           </tr></thead><tbody>${alertRows.map((c) => `<tr>

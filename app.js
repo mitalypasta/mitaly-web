@@ -234,15 +234,15 @@ async function initDashboard() {
     //
     // 데이터가 한 달치뿐이면 그 한 달만 잡습니다(toIdx - 1 이 음수).
     //
-    // 종료월은 '마지막 완성 월' 입니다(H3, _agent/SALES-DIAGNOSIS.md).
-    // 오늘이 속한 달은 수집이 진행 중이라(예: 8월 중순에 2곳만 들어옴) 그 달을
-    // 기본 기준으로 잡으면 급증·급감·기간대비·보고서가 전 매장 급감으로
-    // 오탐합니다. 진행 중인 달이 올라와 있으면 기본을 전월로 물리고,
-    // 그 달을 보려면 종료월을 직접 올리면 됩니다(고르개에는 그대로 있음).
-    const t = new Date();
-    const nowYm = t.getFullYear() * 100 + (t.getMonth() + 1);
-    const toIdx = (info.ym_max >= nowYm && months.length >= 2)
-        ? months.length - 2 : months.length - 1;
+    // 종료월은 **이번 달**(자료가 있는 마지막 달)입니다 — 2026-09-16 담당자 지시
+    // ("그것도 이번 달로 열리게"). 그전에는 '마지막 완성 월'(H3, _agent/SALES-
+    // DIAGNOSIS.md)이었습니다: 진행 중인 달을 기준월로 잡으면 급증·급감·기간
+    // 대비·보고서가 전 매장 급감으로 오탐하기 때문인데, 그 문제는 이제 그 카드들이
+    // 기준월을 '완성된 마지막 달' 로 따로 잡아(load() 의 completeYm — 종료월이
+    // 이번 달이면 전월) 막고, 전사 hero 의 월 단위는 진행 중인 달에 전월 대비
+    // 배지를 안 그립니다(drawCompanyTrend). 합계류(요약·메뉴·시간대)는 진행분
+    // 포함이 맞는 답이라 그대로입니다.
+    const toIdx = months.length - 1;
     const defTo = months[toIdx];
     const defFrom = months[Math.max(0, toIdx - 1)];
     $("f-from").value = String(defFrom);
@@ -441,6 +441,24 @@ function runAfterPaint(inits) {
 // 무변경이고, 웹에서 그리던 부분만 없습니다. 계정·러너 이상 경고는 홈
 // 배너가 이어받습니다(다른 라운드 카드).
 
+// 이번 달(YYYYMM). 진행 중인 달 판정에 씁니다.
+function currentYm() {
+    const t = new Date();
+    return t.getFullYear() * 100 + (t.getMonth() + 1);
+}
+
+// 급증·급감·기간 대비의 기준월 — 종료월이 진행 중인 달이면 완성된 전월. 자료 범위의
+// 첫 달보다 앞서면(자료가 이번 달뿐) 그대로 둡니다. 기본 종료월이 이번 달이 된 뒤에도
+// (2026-09-16) 전 매장 급감 오탐이 안 나게 하는 장치입니다(H3).
+function completeYm(ym) {
+    const n = Number(ym);
+    const now = currentYm();
+    if (!(n >= now)) return n;
+    const prev = now % 100 === 1 ? now - 89 : now - 1;
+    const min = (S.filterRange || {}).min;
+    return min && prev < min ? n : prev;
+}
+
 function currentFilters() {
     let from = Number($("f-from").value);
     let to = Number($("f-to").value);
@@ -506,8 +524,10 @@ async function load(onFirstPaint) {
         // 필터(p_ym_to)입니다. 팩트가 연월 단위까지만 있어(D19) 전월·전년동월
         // 두 가지만 비교합니다. p_store 는 알림 목록·매장별 대비에만 걸리고,
         // 회사 전체·채널별 합계는 함수 안에서 항상 전 매장 기준입니다.
-        () => db.rpc("api_sales_alerts", { p_ym: args.p_ym_to, p_store: args.p_store }),
-        () => db.rpc("api_sales_compare", { p_ym: args.p_ym_to, p_store: args.p_store }),
+        // 종료월이 진행 중인 달이면 완성된 전월을 기준월로(completeYm — 2026-09-16 기본값
+        // 변경의 짝). 응답의 compare.ym 이 실제 기준월이라 카드·보고서는 그것을 적습니다.
+        () => db.rpc("api_sales_alerts", { p_ym: completeYm(args.p_ym_to), p_store: args.p_store }),
+        () => db.rpc("api_sales_compare", { p_ym: completeYm(args.p_ym_to), p_store: args.p_store }),
         // (홈 전용 부정 리뷰·요약 호출은 3라운드 1번에서 홈이 매출 필터와
         //  무관해지며 loadHome 으로 옮겨 갔습니다 — 아래 '홈' 절.)
     ];
@@ -1112,17 +1132,22 @@ function drawCompanyTrend() {
     const prev = rows.length > 1 ? rows[rows.length - 2] : null;
     const unitName = companyUnit === "year" ? "연도"
         : companyUnit === "quarter" ? "분기" : "월";
+    const monthRunning = companyUnit === "month" && Number(latest.key) === currentYm();
 
     if (isLong && companyAllMonthly) {
         // 진행 중인 마지막 연도·분기는 동기간 비교(companyLongBadge 주석).
         const b = companyLongBadge(latest, prev);
         companyBadge(b.pct, b.label);
     } else {
-        companyBadge(companyPct(latest.amount, prev && prev.amount));
+        // 월 단위의 마지막 달이 진행 중이면(기본 종료월 = 이번 달, 2026-09-16) 완성된
+        // 전월과 통비교하지 않습니다 — 배지를 감추고 표의 전월비는 '진행 중'.
+        companyBadge(monthRunning
+            ? null : companyPct(latest.amount, prev && prev.amount));
     }
     stats.innerHTML =
         companyHeroStat(`최근 ${unitName} 매출`, escape(won(latest.amount)),
-            `${escape(latest.label)} · ${escape(wonFull(latest.amount))}`)
+            `${escape(latest.label)} · ${escape(wonFull(latest.amount))}`
+            + (monthRunning ? " · 진행 중" : ""))
         + companyHeroStat("홀 / 배달",
             `${escape(won(latest.hall))} / ${escape(won(latest.delivery))}`,
             "홀 = 이지포스·아임유 매출 · 배달 = 배달앱 매출")
@@ -1146,8 +1171,10 @@ function drawCompanyTrend() {
         desc.map((r, i) => [
             escape(r.label),
             escape(wonFull(r.amount)),
-            companyPctCell(companyPct(r.amount,
-                i + 1 < desc.length ? desc[i + 1].amount : null)),
+            (companyUnit === "month" && Number(r.key) === currentYm())
+                ? escape("진행 중")
+                : companyPctCell(companyPct(r.amount,
+                    i + 1 < desc.length ? desc[i + 1].amount : null)),
             escape(wonFull(r.hall)),
             escape(wonFull(r.delivery)),
             escape(int(r.qty)),
@@ -2794,7 +2821,9 @@ function drawAlerts(d) {
 
     $("alerts-summary").textContent = compare.ym
         ? `${ymLabel(compare.ym)} 기준 · 전월 ${ymLabel(compare.prev_mom_ym)}` +
-          ` · 전년동월 ${ymLabel(compare.prev_yoy_ym)}`
+          ` · 전년동월 ${ymLabel(compare.prev_yoy_ym)}` +
+          (d.args && Number(d.args.p_ym_to) > Number(compare.ym)
+              ? " · 진행 중인 달은 완성된 전월 기준" : "")
         : "";
 
     $("compare-kpis").innerHTML =
