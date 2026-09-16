@@ -92,13 +92,12 @@ function drawInquiries() {
     $("iq-shown").textContent = total != null && total > rows.length
         ? `전체 ${int(total)}건 중 최근 ${int(rows.length)}건`
         : (total == null && rows.length >= 100
-            ? `최근 ${int(rows.length)}건 — 더 있을 수 있습니다`
+            ? `최근 ${int(rows.length)}건`
             : `${int(rows.length)}건`);
 
     if (!rows.length) {
         $("iq-list").innerHTML =
-            '<p class="hint">해당하는 1차 응대가 없습니다. 문의가 접수되면 '
-            + '<code>tools/answer_inquiry.py</code> 가 초안을 만듭니다.</p>';
+            '<p class="hint">해당하는 1차 응대가 없습니다.</p>';
         return;
     }
 

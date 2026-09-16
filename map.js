@@ -190,8 +190,7 @@ export async function drawStoreMap() {
     for (const row of (closedRows || [])) dmapClosed.set(row.store_name, row);
 
     if (!points) {
-        notice.textContent = "매장 좌표가 이 환경에 아직 들어오지 않았습니다"
-            + " (api_store_points).";
+        notice.textContent = "매장 좌표가 이 환경에 없습니다";
         meta.textContent = "";
         $("dmap-gaps").hidden = true;
         await refreshDetail(filters);
@@ -304,8 +303,7 @@ export async function drawStoreMap() {
     if (missing.length) {
         const head = missing.slice(0, 10).map((n) => escape(n)).join(", ");
         const rest = missing.length > 10 ? ` 외 ${int(missing.length - 10)}곳` : "";
-        parts.push(`좌표 없는 매장 ${int(missing.length)}곳 — 좌표 반입 후 `
-            + `지도에 보입니다: ${head}${rest}`);
+        parts.push(`좌표 없는 매장 ${int(missing.length)}곳: ${head}${rest}`);
     }
     if (closedShown.length) {
         parts.push(`폐점 매장 ${int(closedShown.length)}곳은 흐린 마커: `

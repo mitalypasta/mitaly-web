@@ -140,7 +140,7 @@ export async function refreshAnnouncements() {
     });
     if (!rows.length) {
         $("t-announcements").innerHTML =
-            '<p class="hint">아직 공지가 없습니다. 위 폼에서 접수하면 여기 나타납니다.</p>';
+            '<p class="hint">아직 공지가 없습니다.</p>';
         return;
     }
     table($("t-announcements"),

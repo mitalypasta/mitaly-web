@@ -94,13 +94,8 @@ export function drawReport(d) {
                 <td>${escape(c.mom_direction || "—")} ${pct(c.mom_pct_change)}</td>
                 <td>${escape(c.yoy_direction || "—")} ${pct(c.yoy_pct_change)}</td>
               </tr>`).join("")}</tbody></table>${alertOmitted
-            ? `<p class="report-note">변동폭이 큰 순으로 ${REPORT_ALERT_MAX}건만 실었습니다.
-               그 외 ${alertOmitted}건 생략.</p>` : ""}`
+            ? `<p class="report-note">상위 ${REPORT_ALERT_MAX}건만 · 그 외 ${alertOmitted}건 생략</p>` : ""}`
           : "<p>기준(±10%)을 넘은 매장이 없습니다.</p>"}
-        <p class="report-note">
-          기간의 마지막 달 실적을 전월·전년 동월과 비교합니다.
-          그 달에 매출이 없는 매장은 비교 대상이 아닙니다.
-        </p>
 
         <h2>3. 월별 추이</h2>
         ${months.length ? `<table class="report-table"><thead><tr>
@@ -120,7 +115,7 @@ export function drawReport(d) {
           </tbody></table>` : "<p>자료가 없습니다.</p>"}
 
         <p class="report-foot">
-          배달은 할인 전, 홀은 할인 후 금액입니다. 급증·급감 기준 ±10%.
+          배달은 할인 전 · 홀은 할인 후 · 급증·급감 기준 ±10%
         </p>
       </div>`;
 }

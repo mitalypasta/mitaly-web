@@ -20,6 +20,7 @@ import { db, fetchStores } from "./client.js";
 import { won, wonFull, int, ymLabel, ymDash } from "./format.js";
 import { escape } from "./util.js";
 import { table, $, searchify } from "./dom.js";
+import { svFilterRows, svCurrent, onSvChange } from "./svfilter.js";
 
 // 매장 보기(아래)가 같은 응답을 다시 쓰려고 마지막 rows 를 들고 있습니다.
 let adsRows = [];
@@ -32,7 +33,7 @@ export function adSourceLabel(source) {
     if (String(source).startsWith("platform:")) {
         return "플랫폼 자동 · " + escape(String(source).slice("platform:".length) || "?");
     }
-    return "반입 · " + escape(String(source));
+    return "엑셀 · " + escape(String(source));
 }
 
 // ROAS = 광고 경유 매출 ÷ 광고비. ad_sales_won 과 cost 가 둘 다 있는(양쪽 다
@@ -63,9 +64,7 @@ function roasSub(result, total) {
 }
 
 // 안내문 — 어느 채널이 자동이고 어느 채널이 수기인지(#166 · #162 문구 대체).
-const AD_AUTO_NOTE =
-    "배민(우리가게클릭)·쿠팡이츠·요기요 광고비는 자동 수집됩니다 — "
-    + "그 외 채널은 수기로 넣거나 엑셀 양식으로 반입합니다.";
+const AD_AUTO_NOTE = "배민·쿠팡이츠·요기요만 자동 수집 — 그 외는 수기 입력";
 
 async function loadAds() {
     const { data, error } = await db.rpc("api_ad_spend", {});
@@ -77,7 +76,10 @@ async function loadAds() {
         return;
     }
 
-    const rows = Array.isArray(data?.rows) ? data.rows : [];
+    // 담당자 조건을 **세기 전에** 겁니다 — 아래 '№행'·ROAS·기간이 이 배열을
+    // 씁니다(2026-09-11 감사).
+    const rows = svFilterRows(Array.isArray(data?.rows) ? data.rows : [],
+                              (r) => r.store);
     adsRows = rows;
     // 추가·삭제 뒤에도 매장 보기가 같은 자료를 비추도록 같이 다시 그립니다.
     refreshAdsStore({ adsOnly: true });
@@ -86,13 +88,18 @@ async function loadAds() {
         $("ads-kpis").hidden = true;
         $("t-ads-channel").innerHTML = "";
         $("t-ads").innerHTML =
-            '<p class="hint">' + AD_AUTO_NOTE
-            + " 아직 들어온 자료가 없습니다. 자동 수집분은 반입되면 여기에 나타나고, "
-            + "수기 채널은 위 칸에서 추가하세요.</p>";
+            '<p class="hint">광고 자료가 없습니다. ' + AD_AUTO_NOTE + "</p>";
         return;
     }
 
-    const summary = data.summary || {};
+    // 합계 4종은 평소에는 서버 summary 를 그대로 씁니다(전 매장 기준 · 행이
+    // 잘려 와도 정확). 담당자를 고른 동안에는 **보이는 행에서 다시 셉니다** —
+    // 행은 25행인데 광고비는 전사 값인 화면이 안 되게.
+    const sum = (key) => rows.reduce((n, r) => n + (Number(r[key]) || 0), 0);
+    const summary = svCurrent()
+        ? { cost: sum("cost"), impressions: sum("impressions"),
+            clicks: sum("clicks"), orders: sum("orders") }
+        : (data.summary || {});
     const yms = rows.map((r) => r.ym);
     meta.textContent = `${int(rows.length)}행`;
     $("ads-kpis").hidden = false;
@@ -226,8 +233,7 @@ function renderAdsStoreAds(name) {
     if (!mine.length) {
         $("adv-kpis").innerHTML = "";
         hint.hidden = false;
-        hint.textContent = "이 매장의 광고 집행 자료가 아직 없습니다. "
-            + AD_AUTO_NOTE + " 수기 채널은 아래 '광고 집행 현황'에서 넣으세요.";
+        hint.textContent = "이 매장의 광고 자료가 없습니다. " + AD_AUTO_NOTE;
         $("t-adv-ads").innerHTML = "";
         return;
     }
@@ -269,16 +275,14 @@ async function renderAdsStoreMenus(name, seq) {
             || /Could not find the function/i.test(error.message || "");
         meta.textContent = "";
         view.innerHTML = missing
-            ? '<p class="hint">배달앱 메뉴 대조는 아직 이 환경에 들어오지 '
-              + "않았습니다. 반영되면 자동으로 나타납니다.</p>"
+            ? '<p class="hint">배달앱 메뉴 대조가 이 환경에 아직 없습니다.</p>'
             : '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + "</p>";
         return;
     }
     const d = data || {};
     if (!d.collected_at) {
         meta.textContent = "";
-        view.innerHTML = '<p class="hint">배달앱 메뉴 반입이 아직 없습니다 — '
-            + "반입되면 자동으로 대조합니다.</p>";
+        view.innerHTML = '<p class="hint">배달앱 메뉴 자료가 없습니다.</p>';
         return;
     }
     const items = d.items || [];
@@ -341,6 +345,8 @@ async function initAdsStoreView() {
 }
 
 export async function initAds() {
+    // 헤더 담당자가 바뀌면 이 화면의 숫자·표를 다시 계산합니다.
+    onSvChange(loadAds);
     $("ads-save").addEventListener("click", saveAd);
     initAdsStoreView();
 

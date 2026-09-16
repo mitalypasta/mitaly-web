@@ -8,6 +8,7 @@ import { $, table, setHero, heroFail } from "./dom.js";
 import { db, fetchStores } from "./client.js";
 import { showArea } from "./nav.js";
 import { TASK_STATUS_LABEL, refreshTasksSummary, refreshTaskList } from "./tasks.js";
+import { svFilterRows, onSvChange } from "./svfilter.js";
 
 // ================================================================ 위반 기록 (7번 영역)
 //
@@ -91,6 +92,8 @@ function initAttachmentOpen() {
 }
 
 export async function initNotices() {
+    // 헤더 담당자가 바뀌면 이 화면의 숫자·표를 다시 계산합니다.
+    onSvChange(refreshViolations);
     const storeSelect = $("v-store");
     const { data: stores, error: storeErr } = await fetchStores();
     if (!storeErr) {
@@ -229,9 +232,9 @@ async function openBoardNotice(articleNo) {
     // OCR 을 거친 본문이면 그렇다고 밝힙니다 — 원문과 다를 수 있다는 것이
     // 이 화면에서 가장 중요한 정보입니다.
     const src = data.source && data.source !== "원본텍스트"
-        ? `<p class="hint">이 본문은 공문 이미지를 글자로 옮긴 것입니다`
+        ? `<p class="hint">공문 이미지를 글자로 옮긴 본문입니다`
           + `(${escape(data.source)})`
-          + (data.need_review ? " — <b>확인필요로 표시된 건입니다. 원문을 함께 보세요.</b>" : "")
+          + (data.need_review ? " — <b>원문을 함께 보세요.</b>" : "")
           + "</p>"
         : "";
     box.innerHTML =
@@ -358,7 +361,8 @@ async function refreshResolvedViolations() {
             '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
         return;
     }
-    const list = Array.isArray(data) ? data : [];
+    // 종료 목록도 담당자 조건을 그리기 전에 겁니다 — 진행 중 목록과 같은 규칙.
+    const list = svFilterRows(Array.isArray(data) ? data : [], (v) => v.store_name);
 
     if (!list.length) {
         $("t-violations-resolved").innerHTML =
@@ -537,7 +541,9 @@ export async function refreshViolations() {
         heroFail("notices-hero", error.message);
         return;
     }
-    const list = Array.isArray(data) ? data : [];
+    // 담당자 조건은 **세기 전에** 겁니다 — 아래 '진행 중' 건수와 hero 가 이
+    // 배열을 씁니다(2026-09-11 감사).
+    const list = svFilterRows(Array.isArray(data) ? data : [], (v) => v.store_name);
     // 위반+단계 → 살아 있는 승인 업무. 반려된 것은 다시 요청할 수 있어야
     // 하므로 배지로 치지 않습니다(39 설계 판단 [3]과 같은 규칙).
     const liveTask = new Map();
@@ -562,13 +568,13 @@ export async function refreshViolations() {
         badge: canRequest > 0 ? "조치 필요" : manual > 0 ? "확인" : "정상",
         facts: list.length
             ? `진행 중 ${int(list.length)}건 · 담당자 확인 ${int(manual)} · `
-              + `3단계 이상 ${int(stage3)} — 단계는 계산 결과이지 발송 승인이 아닙니다.`
+              + `3단계 이상 ${int(stage3)} — 단계는 발송 승인이 아닙니다.`
             : "진행 중인 위반이 없습니다.",
     });
 
     if (!list.length) {
         $("t-violations").innerHTML =
-            '<p class="hint">진행 중인 위반 기록이 없습니다. 위 폼에서 추가하면 여기 나타납니다.</p>';
+            '<p class="hint">진행 중인 위반 기록이 없습니다.</p>';
         return;
     }
 

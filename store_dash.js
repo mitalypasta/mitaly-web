@@ -45,7 +45,10 @@ function dailyBackfilling(d) {
         (r.amount != null && Number(r.amount) !== 0) || Number(r.orders) > 0);
     return !any(weeks) && !any(days);
 }
-const BACKFILL_HINT = "일 단위 집계 소급 중";
+// 세 상태를 가르는 값입니다 — '소급 중'(아직 안 받음) / '미영업'(그날 안
+// 팖) / 숫자. 셋을 '—' 하나로 뭉치면 "아직 안 받았다"와 "그날 안 팔았다"가
+// 같아집니다(2026-09-11 담당자 지시).
+const BACKFILL_HINT = "소급 중";
 
 // 증감 셀 — 시트 관례 색(상승 빨강 · 하락 파랑). weekly.js 의 wowCell 과 동일.
 function diffCell(pct) {
@@ -84,10 +87,7 @@ async function refresh() {
         $("sd-info").textContent = "";
         // 감춘 카드들이 '무엇을 볼 수 있는지' 를 알려 주던 몫까지 여기서 받습니다.
         $("sd-kpis").innerHTML =
-            '<div class="sd-empty">매장을 고르세요'
-            + '<span class="sd-empty-sub">위 매장 칸에 이름을 치면 검색됩니다. '
-            + '고르면 KPI · 추정 손익 · 추이 7단위(연도·분기·월·주간·일·시간대·요일) · '
-            + '메뉴 판매가 이 아래에 그려집니다.</span></div>';
+            '<div class="sd-empty">매장을 고르세요</div>';
         drawSvt();
         return;
     }
@@ -141,18 +141,10 @@ function render(d) {
     renderDaily(d);
     drawSvt();
 
-    // 금액 기준 각주(adoption 6절) — 시트와 1:1로 안 맞는 것이 정상.
-    $("sd-note").textContent =
-        "금액은 메뉴 매출 기준(배달 할인 전 · 홀 할인 후)이라 KPI 시트의 "
-        + "과거 연도(배달비 포함 총액)와 1:1로 일치하지 않습니다. "
-        + "영업일수·주문건수·주간/일간 추이는 일 단위 집계 기준입니다. "
-        // #151 — 월 총매출과 일 단위 지표는 축이 다릅니다(소급 백필이 채널별로
-        // 진행돼 일부만 들어온 달이 있을 수 있음 — rpc 에 소스 수가 없어 문구로).
-        + "월 총매출은 확정 축, 일 단위 지표는 소급 진행분입니다."
-        + (backfilling
-            ? ` 지금은 ${BACKFILL_HINT} — 영업일수·일평균·주문건수·주간/일간은 `
-              + "자료가 들어오면 채워집니다."
-            : "");
+    // 금액 기준 — 숫자의 뜻을 정하는 한 줄만. 'KPI 시트 과거 연도와 1:1로
+    // 일치하지 않습니다'(자기방어) · '확정 축 / 소급 진행분'(내부 용어) ·
+    // 소급 중 안내(타일 sub 가 이미 말함)는 뺐습니다.
+    $("sd-note").textContent = "금액은 배달 할인 전 · 홀 할인 후 기준";
 }
 
 // ---- ⓐ 매장 기본 정보 ---------------------------------------------------
@@ -176,7 +168,7 @@ function renderInfo(d) {
         if (p.business_start_date) parts.push(`영업시작 ${escape(p.business_start_date)}`);
         if (p.special_note) parts.push(`특이 ${escape(p.special_note)}`);
     } else {
-        parts.push("매장 속성 미입력 — 가맹점 DB 화면에서 채울 수 있습니다");
+        parts.push("매장 속성 미입력");
     }
     $("sd-info").innerHTML = `<b>${escape(s.name || "")}</b> · ` + parts.join(" · ");
 }
@@ -222,7 +214,7 @@ function renderKpis(k, store, backfilling) {
     const pending = (value) => backfilling && !(Number(value) > 0);
     tiles.push(pending(k.business_days)
         ? tile("영업일수", "—", BACKFILL_HINT)
-        : tile("영업일수", escape(int(k.business_days)) + "일", "매출이 있는 날 수"));
+        : tile("영업일수", escape(int(k.business_days)) + "일", ""));
     tiles.push(pending(k.daily_avg)
         ? tile("일평균 매출", "—", BACKFILL_HINT)
         : tile("일평균 매출",
@@ -293,7 +285,7 @@ function renderPnl(p) {
         + `<tbody>${rows.join("")}</tbody></table>`;
 
     $("sd-pnl-note").textContent =
-        "식자재비·원가율은 아워홈 발주 기준(VAT 포함 · 본사물류 하한 — 자점매입 미포함)입니다.";
+        "식자재비는 아워홈 발주 기준 — 자점매입은 빠져 있습니다.";
 }
 
 // ---- ⓓ 연도별 월간 추이 + 그래프 2개 ------------------------------------
@@ -354,8 +346,7 @@ function renderYearly(d) {
         + `<tbody>${body}${foot}</tbody></table>`;
 
     $("sd-year-note").textContent =
-        "식자재율 = 아워홈 발주액 ÷ 총매출 — 아워홈 발주 기준(VAT 포함 · 본사물류 하한)이고, "
-        + "매출 소급이 닿지 않은 달은 비거나 과대일 수 있습니다.";
+        "식자재율 = 아워홈 발주액 ÷ 총매출 — 자점매입은 빠져 있습니다.";
 
     drawYearCharts(d);
 }
@@ -516,7 +507,7 @@ async function renderQuarterly(storeName) {
     quarterList = list;
 
     $("sd-q-meta").textContent = list.length
-        ? `전체 기간 · ${list[0].label} ~ ${list[list.length - 1].label} (마지막 분기는 진행 중일 수 있음)`
+        ? `${list[0].label} ~ ${list[list.length - 1].label} · 마지막 분기 진행 중`
         : "";
     const body = [...list].reverse().map((r) => `<tr>
         <td class="tl">${escape(r.label)}</td>
@@ -547,7 +538,7 @@ function renderWeekly(d) {
     if (!weeks.length || dailyBackfilling(d)) {
         $("sd-wk-meta").textContent = `주: ${dowStart}~${dowEnd} · ${BACKFILL_HINT}`;
         $("t-sd-weekly").innerHTML =
-            `<p class="hint">${BACKFILL_HINT} — 자료가 들어오면 주간 추이가 그려집니다.</p>`;
+            `<p class="hint">${BACKFILL_HINT}</p>`;
         return;
     }
     $("sd-wk-meta").textContent =
@@ -573,7 +564,7 @@ function renderDaily(d) {
     if (!days.length || dailyBackfilling(d)) {
         $("sd-daily-meta").textContent = BACKFILL_HINT;
         $("t-sd-daily").innerHTML =
-            `<p class="hint">${BACKFILL_HINT} — 자료가 들어오면 일별 추이가 그려집니다.</p>`;
+            `<p class="hint">${BACKFILL_HINT}</p>`;
         return;
     }
     $("sd-daily-meta").textContent =
@@ -822,8 +813,7 @@ function drawSvt() {
               export: { headers: [unitName, "매출", `${prevName}(%)`, "홀", "배달"],
                         rows: [...rows].reverse().map((r) =>
                             [r.label, r.total, r.diff, r.hall, r.delivery]) } });
-        note.textContent = "이 매장의 전체 기간(홀+배달) 기준 · "
-            + `마지막 ${unitName}는 진행 중일 수 있음`;
+        note.textContent = `마지막 ${unitName} 진행 중`;
         return;
     }
 
@@ -832,12 +822,12 @@ function drawSvt() {
         const weeks = Array.isArray(last.weekly) ? last.weekly : [];
         if (!weeks.length || dailyBackfilling(last)) {   // 달력 13행(0원)도 빈 것(#151)
             meta.textContent = "";
-            svtEmpty(`${BACKFILL_HINT} — 자료가 들어오면 주간 추이가 그려집니다.`);
+            svtEmpty(BACKFILL_HINT);
             return;
         }
         const asc = [...weeks].sort((a, b) =>
             String(a.week_start).localeCompare(String(b.week_start)));
-        meta.textContent = `기준일부터 최근 ${weeks.length}주 · 일 단위 집계 기준`;
+        meta.textContent = `기준일부터 최근 ${weeks.length}주`;
         svtBars(asc.map((w) => ({ label: md(w.week_start), value: Number(w.amount) || 0 })));
         table($("svt-table"), ["주차", "매출", "전주비", "주문수"],
             [...asc].reverse().map((w) => [
@@ -847,7 +837,7 @@ function drawSvt() {
               export: { headers: ["주 시작일", "주 종료일", "매출", "전주비(%)", "주문수"],
                         rows: [...asc].reverse().map((w) =>
                             [w.week_start, w.week_end, w.amount, w.wow_pct, w.orders]) } });
-        note.textContent = "주간 매출 추이 카드와 같은 재료(기준일 닻)입니다.";
+        note.textContent = "";
         return;
     }
 
@@ -856,7 +846,7 @@ function drawSvt() {
         const days = Array.isArray(last.daily) ? last.daily : [];
         if (!days.length || dailyBackfilling(last)) {   // 달력 28행(null)도 빈 것(#151)
             meta.textContent = "";
-            svtEmpty(`${BACKFILL_HINT} — 자료가 들어오면 일별 추이가 그려집니다.`);
+            svtEmpty(BACKFILL_HINT);
             return;
         }
         meta.textContent =
@@ -878,7 +868,7 @@ function drawSvt() {
               export: { headers: ["일자", "요일", "매출"],
                         rows: desc.map((x) => [x.day, DOW_KO[x.dow] || "",
                             x.amount == null ? "" : Number(x.amount)]) } });
-        note.textContent = "일간 매출 카드와 같은 재료(기준일 닻) · 빈칸 = 미영업";
+        note.textContent = "빈칸 = 미영업";
         return;
     }
 
@@ -906,14 +896,12 @@ function drawSvt() {
                      qty: Number(found.qty) || 0 };
         });
     const total = rows.reduce((a, r) => a + r.amount, 0);
-    meta.textContent = `기준월 ${ymLabel(last.ym)} — 기준일을 바꾸면 함께 바뀝니다`;
+    meta.textContent = `기준월 ${ymLabel(last.ym)}`;
     svtBars(rows.map((r) => ({ label: r.short, value: r.amount })));
     table($("svt-table"), [isHour ? "시간대" : "요일", "매출", "수량", "비중"],
         rows.map((r) => [r.label, wonFull(r.amount), int(r.qty),
             total > 0 ? `${(r.amount / total * 100).toFixed(1)}%` : "—"]));
-    note.textContent = isHour
-        ? "시간대별 매출 카드와 같은 재료(매장×기준월)입니다."
-        : "매장×기준월의 요일별 매출입니다.";
+    note.textContent = "";
 }
 
 function initSvt() {

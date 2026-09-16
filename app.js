@@ -13,7 +13,7 @@ import { S } from "./state.js";
 import { table, $, monthPicker, searchify, loadSheetJS, showTip, hideTip,
          setHero, trapFocus } from "./dom.js";
 import { palette, renderHeat, drawLine, drawBars } from "./charts.js";
-import { initSvFilter, svCurrent } from "./svfilter.js";
+import { initSvFilter, svCurrent, svAllows, svFilterRows } from "./svfilter.js";
 
 // Supabase 클라이언트(데모 분기·설정 게이트)는 client.js 로 빠졌습니다 —
 // docs/web-split-plan.md 3단계. db 를 쓰는 화면 모듈이 같은 인스턴스를 씁니다.
@@ -221,8 +221,7 @@ async function initDashboard() {
     for (const id of ["f-store", "dmap-store", "oh-store", "iu-store",
                       "cred-f-store", "ct-store", "ct-f-store",
                       "v-store", "vs-store", "la-store", "pm-store",
-                      "dm-store", "tk-store", "tk-filter-store", "pay-invoice",
-                      "rv-store"]) {
+                      "dm-store", "tk-store", "tk-filter-store", "pay-invoice"]) {
         searchify(id);
     }
 
@@ -259,24 +258,11 @@ async function initDashboard() {
         storeSelect.append(option);
     }
 
-    // 리뷰 탭 '매장 리뷰 보기' 콤보(카드 #132) — f-store 의 거울입니다.
-    // 리뷰 목록·요약이 이미 f-store 로 좁혀지므로 새 조회 축을 만들지 않고,
-    // 여기서 고르면 f-store 를 그 매장으로 바꿔 기존 load() 하나가 목록과
-    // 매장 보기 카드를 같이 채웁니다(같은 매장을 다시 골라도 재조회 없음).
-    // 반대 방향(필터 줄·홈 이상신호 행에서 f-store 가 바뀔 때)의 미러는
-    // drawReviewStoreView 가 그릴 때마다 맞춥니다.
-    const rvStore = $("rv-store");
-    for (const name of info.stores || []) {
-        const option = document.createElement("option");
-        option.value = name;
-        option.textContent = name;
-        rvStore.append(option);
-    }
-    rvStore.addEventListener("change", () => {
-        if (storeSelect.value === rvStore.value) return;
-        storeSelect.value = rvStore.value;
-        storeSelect.dispatchEvent(new Event("change"));
-    });
+    // (리뷰 탭 '매장 리뷰 보기' 는 예전에 자기 매장 콤보(rv-store)를 갖고
+    //  f-store 와 양방향으로 값을 맞췄습니다. 값은 늘 같았지만 **한 화면에
+    //  같은 컨트롤이 둘**이라 어느 쪽이 진짜인지 읽히지 않았습니다 —
+    //  담당자 지적 2026-09-16 "하나만 하자". 맨 위 필터 줄 하나만 남기고
+    //  카드는 f-store 를 읽기만 합니다.)
 
     // 배달 지도 카드의 자체 고르개(S17). 위 필터 줄이 지도 영역에서는 안 보여서
     // (showArea) 이론 사용량 카드처럼 카드가 직접 갖습니다 — 지도는 이제 이
@@ -346,6 +332,9 @@ async function initDashboard() {
     for (const id of ["rv-unanswered", "rv-drafts-only", "rv-hide-hidden", "rv-platform", "rv-rating"]) {
         $(id).addEventListener("change", load);
     }
+    // 담당자는 화면에서 거르므로(drawReviews) 다시 받을 것 없이 다시 그리기만
+    // 합니다 — 창 크기 재배치와 같은 길입니다.
+    document.addEventListener("mitaly:sv-changed", () => { if (S.lastData) draw(S.lastData); });
 
     // 창 크기 대신 카드 영역의 실제 너비를 봅니다.
     // 창 크기가 안 바뀌어도 칸 배치가 달라질 수 있기 때문입니다.
@@ -1004,15 +993,13 @@ function drawCompanyTrend() {
         table(tv, [isHour ? "시간대" : "요일", "매출", "수량", "비중"],
             rows.map((r) => [r.label, wonFull(r.amount), int(r.qty),
                 total > 0 ? `${(r.amount / total * 100).toFixed(1)}%` : "—"]));
-        note.textContent = "위 기간·매장·채널 필터 기준 — 아래 "
-            + (isHour ? "'시간대별 매출'" : "'요일별 매출'")
-            + " 카드와 같은 집계입니다.";
+        note.textContent = "위 기간·매장·채널 필터 기준";
         return;
     }
 
     if (companyUnit === "week") {
         const weeks = ((companyWeekly || {}).weeks) || [];
-        if (!weeks.length) return empty("일 단위 집계 소급 중 — 자료가 들어오면 주간 추이가 그려집니다.");
+        if (!weeks.length) return empty("소급 중");
         const latest = weeks[0];                    // 서버가 최신 주 먼저.
         const asc = [...weeks].reverse();
         const dowStart = COMPANY_DOW_KO[(companyWeekly || {}).week_start_dow] || "?";
@@ -1052,14 +1039,13 @@ function drawCompanyTrend() {
                         rows: weeks.map((w) => [w.week_start, w.week_end, w.amount,
                                                 w.wow_pct, w.orders, w.store_count,
                                                 w.per_store]) } });
-        note.textContent = "주간·일별은 전 매장·전 채널 고정(위 필터와 무관) · "
-            + "일 단위 집계 기준 · 운영 매장수 = 그 주 매출이 있는 매장 수";
+        note.textContent = "전 매장·전 채널 고정 · 운영 매장수 = 그 주 매출이 있는 매장 수";
         return;
     }
 
     if (companyUnit === "day") {
         const rows = ((companyDaily || {}).rows) || [];   // 오래된 날 먼저.
-        if (!rows.length) return empty("일 단위 집계 소급 중 — 자료가 들어오면 일별 추이가 그려집니다.");
+        if (!rows.length) return empty("소급 중");
         const latest = rows[rows.length - 1];
         const prev = rows.length > 1 ? rows[rows.length - 2] : null;
 
@@ -1107,8 +1093,7 @@ function drawCompanyTrend() {
                                                r.amount, r.hall_amount,
                                                r.delivery_amount, r.orders,
                                                r.store_count]) } });
-        note.textContent = "주간·일별은 전 매장·전 채널 고정(위 필터와 무관) · "
-            + "일 단위 집계 기준 · 홀 = 이지포스·아임유, 배달 = 배민·쿠팡이츠·요기요 등";
+        note.textContent = "전 매장·전 채널 고정";
         return;
     }
 
@@ -1168,15 +1153,13 @@ function drawCompanyTrend() {
                     rows: desc.map((r) => [r.label, r.amount, r.hall,
                                            r.delivery, r.qty]) } });
     if (isLong && companyAllMonthly) {
-        note.textContent = "연도·분기는 전 기간·전 매장·전 채널 고정"
-            + `(위 필터와 무관) · 마지막 ${unitName}는 진행 중일 수 있음`;
+        note.textContent = `전 기간·전 매장·전 채널 고정 · 마지막 ${unitName} 진행 중`;
     } else if (isLong && companyAllLoading) {
         note.textContent = "전체 기간 집계 중… (지금은 위 필터 기준)";
     } else if (isLong) {
         note.textContent = "전체 기간 조회 실패 — 위 기간·매장·채널 필터 기준";
     } else {
-        note.textContent = "월만 위 기간·매장·채널 필터 기준 — "
-            + "다른 단위는 전 매장 고정입니다.";
+        note.textContent = "월만 위 기간·매장·채널 필터 기준";
     }
 }
 
@@ -1247,7 +1230,7 @@ function updateHomeHero() {
         if (n > 0) parts.push(`${escape(label)} <b>${int(n)}</b>`);
         if (n > 0 && (key === "no_sales" || key === "bad_reviews")) urgent = true;
     }
-    const pick = $("home-sv-filter")?.value || "";
+    const pick = svCurrent();
     numEl.textContent = `${int(unchecked)}건`;
     badge.hidden = false;
     badge.className = "hero-badge "
@@ -1357,10 +1340,8 @@ function drawHomeSales(res, baseYm) {
     }
     const cmp = ((res.data || [])[0] || {}).compare || {};
     const co = cmp.company || {};
-    // '전 매장 · 매출 탭 필터와 무관' 을 명시합니다(담당자 피드백) — 매출
-    // 탭에서 매장을 좁혀 두고 와도 이 줄은 항상 회사 전체 기준입니다.
     $("home-sales-sub").textContent =
-        `${ymLabel(cmp.ym || baseYm)} 마감분 · 전 매장 — 매출 탭 필터와 무관`;
+        `${ymLabel(cmp.ym || baseYm)} 마감분 · 전 매장`;
     el.innerHTML =
         `<span class="hs-amount">${won(co.amount)}</span>`
         + `<span class="hs-cmp">전월(${ymLabel(cmp.prev_mom_ym)}) 대비 <b class="${pctClass(co.mom_pct_change)}">${pctText(co.mom_pct_change)}</b></span>`
@@ -1440,8 +1421,7 @@ function drawHomeNegReviews(negRes, sumRes, fromYm, toYm) {
     const covFacts = reviewCoverageFacts(
         homeCoverage, { p_ym_from: fromYm, p_ym_to: toYm }, null);
     $("home-reviews-h").textContent =
-        `${int(negative)}건 · 최근 두 달 · 별점 3점 이하`
-        + (covFacts && covFacts.startLine ? " · 앞 구간은 수집 전" : "");
+        `${int(negative)}건 · 최근 두 달 · 별점 3점 이하`;
 
     const md = (iso) => {
         const when = new Date(iso);
@@ -1454,9 +1434,8 @@ function drawHomeNegReviews(negRes, sumRes, fromYm, toYm) {
     //  · 최근 두 달 앞쪽이 수집 전이면 그 사실을(목록이 있어도) 적습니다.
     const covNote = covFacts && covFacts.startLine
         ? `<p class="home-anom-empty">${escape(covFacts.startLine)}</p>` : "";
-    const emptyText = "최근 두 달에 새로 들어온 부정 리뷰가 없습니다."
-        + (covFacts && covFacts.lastDay
-            ? ` 리뷰는 ${covFacts.lastDay} 까지 수집됐습니다.` : "");
+    const emptyText = covFacts && covFacts.lastDay
+        ? `리뷰는 ${covFacts.lastDay} 까지 받았습니다.` : "";
     listEl.innerHTML = (rows.length
         ? rows.slice(0, 6).map((r) =>
             `<button type="button" class="home-anom-row" data-go="reviews" data-kind="review" data-card="review-card" data-store="${escape(r.store || "")}">
@@ -1464,7 +1443,7 @@ function drawHomeNegReviews(negRes, sumRes, fromYm, toYm) {
                <span class="ar-side ar-text">${escape(clip(r.contents || "내용 없음", 34))}</span>
              </button>`).join("")
           + homeMoreRow(negative - Math.min(6, rows.length), "reviews", "review", "review-card")
-        : `<p class="home-anom-empty">${escape(emptyText)}</p>`) + covNote;
+        : (emptyText ? `<p class="home-anom-empty">${escape(emptyText)}</p>` : "")) + covNote;
 }
 
 // ---- 담당자별 오늘 확인 필요 (카드 #168) ---------------------------------
@@ -1548,19 +1527,12 @@ function drawHomeSv(res) {
     const all = svData.svs || [];
     const day = svData.day ? String(svData.day) : "";
     sub.textContent = day
-        ? `${day.slice(5, 7).replace(/^0/, "")}/${day.slice(8, 10).replace(/^0/, "")} 기준 · 담당 = 매장 정보의 담당 SV · 숫자를 누르면 그 목록으로`
+        ? `${day.slice(5, 7).replace(/^0/, "")}/${day.slice(8, 10).replace(/^0/, "")} 기준`
         : "";
 
-    // 필터 옵션은 응답의 SV 목록으로(선택값은 유지).
-    // 2026-09-09 담당자 지시("담당자 전체도 필요 없겠다"): '전체' 는 없고 한 명씩만 봅니다.
-    // 처음 값은 전역 담당자 필터(헤더) → 없으면 매장이 있는 첫 담당자.
-    const filter = $("home-sv-filter");
-    const keep = filter.value;
-    filter.innerHTML = all.map((v) =>
-        `<option value="${escape(v.sv)}">${escape(v.sv)} (${int(v.stores)})</option>`).join("");
-    const want = keep || svCurrent()
-        || (all.find((v) => Number(v.stores) > 0) || all[0] || {}).sv || "";
-    if ([...filter.options].some((o) => o.value === want)) filter.value = want;
+    // 담당자는 헤더(sv-global) 하나로 읽습니다. 홈에 따로 있던
+    // '#home-sv-filter' 는 헤더와 값이 갈려, 헤더가 '전체' 일 때 홈만 임의의
+    // 한 명(all[0])을 보여 주는 원인이었습니다(2026-09-11 담당자 결정).
     renderSv();
 }
 
@@ -1568,29 +1540,37 @@ function renderSv() {
     const listEl = $("home-sv-cards");
     const all = (svData && svData.svs) || [];
     const day = (svData && svData.day) ? String(svData.day) : "";
-    const pick = $("home-sv-filter").value;
-    const v = all.find((x) => x.sv === pick) || all[0];
+    // 2026-09-09 담당자 지시("담당자 전체도 필요 없겠다 — 한 명씩만")대로 이
+    // 카드는 한 명분만 그립니다. 그래서 헤더가 '전체' 면 고를 것을 청합니다 —
+    // 임의의 한 명(예전 all[0])을 보여 주면 헤더와 홈이 서로 다른 것을
+    // 가리킵니다(2026-09-11 담당자 결정).
+    const pick = svCurrent();
+    if (!pick) {
+        $("home-sv-summary").innerHTML = "";
+        listEl.innerHTML = '<p class="home-anom-empty">담당자를 고르세요.</p>';
+        return;
+    }
+    const v = all.find((x) => x.sv === pick);
     if (!v) {
         $("home-sv-summary").innerHTML = "";
-        listEl.innerHTML = '<p class="home-anom-empty">담당 SV 가 배정된 매장이 없습니다 — 매장 정보의 담당 SV 를 채우면 여기 카드가 생깁니다.</p>';
+        listEl.innerHTML = '<p class="home-anom-empty">담당 SV 가 배정된 매장이 없습니다.</p>';
         return;
     }
     const items = v.items || {};
 
     // 숫자 6개 — 담당자 표 순서. 누르면 아래 그 항목으로.
     const tiles = [
-        ["stores",      "담당 매장",      Number(v.stores) || 0,                          "개", "현재 운영 매장", "t-good"],
-        ["no_sales",    "전일 미영업",    Number(items.no_sales.count) || 0,              "개", "전일 매출 0원 또는 POS 미발생", "t-urgent"],
-        ["bad_reviews", "악성/저평점 리뷰", Number(items.bad_reviews.count) || 0,         "건", "전일 신규 1~2점 리뷰", "t-urgent"],
-        ["unanswered",  "미답변 리뷰",    Number(items.unanswered.count) || 0,            "건", "전일 신규 리뷰 중 답글 미등록", "t-attn"],
-        ["drops",       "매출 급락 매장", Number(items.drops.count) || 0,                 "개", "전주 동일요일 대비 30% 이상 감소", "t-attn"],
-        ["unchecked",   "확인 미완료",    Number(v.unchecked) || 0,                       "건", "특이사항 확인·조치가 안 된 건", "t-urgent"],
+        ["stores",      "담당 매장",        Number(v.stores) || 0,               "개", "t-good"],
+        ["no_sales",    "전일 미영업",      Number(items.no_sales.count) || 0,   "개", "t-urgent"],
+        ["bad_reviews", "악성/저평점 리뷰", Number(items.bad_reviews.count) || 0, "건", "t-urgent"],
+        ["unanswered",  "미답변 리뷰",      Number(items.unanswered.count) || 0, "건", "t-attn"],
+        ["drops",       "매출 급락 매장",   Number(items.drops.count) || 0,      "개", "t-attn"],
+        ["unchecked",   "확인 미완료",      Number(v.unchecked) || 0,            "건", "t-urgent"],
     ];
-    $("home-sv-summary").innerHTML = tiles.map(([key, label, n, unit, subText, tone]) =>
+    $("home-sv-summary").innerHTML = tiles.map(([key, label, n, unit, tone]) =>
         `<button type="button" class="tile hometile sv-tile ${tone}" data-count="${n}" data-sv-key="${key}">
            <div class="label">${escape(label)}</div>
            <div class="value">${int(n)}<span class="sv-unit">${unit}</span></div>
-           <div class="sub">${escape(subText)}</div>
          </button>`).join("");
 
     // 항목별 표: 매장 | 내용 | 확인. 0건 항목은 카드 아래 한 줄로 접습니다.
@@ -1619,7 +1599,7 @@ function renderSv() {
                       <td class="sv-store"><button type="button" class="home-anom-row sv-row" data-go="${go}" data-kind="${kind}" data-card="${card}" data-store="${escape(r.store || "")}"><span class="ar-main">${escape(r.store || "")}</span></button></td>
                       <td class="sv-detail">${svRowText(key, r)}</td>
                       <td class="sv-act">${checkable
-                          ? `<button type="button" class="sv-check${r.checked ? " is-on" : ""}" title="${r.checked ? "확인 해제" : "확인·조치 완료로 표시"}"
+                          ? `<button type="button" class="sv-check${r.checked ? " is-on" : ""}"
                                data-day="${escape(day)}" data-kind="${key}" data-store-id="${r.store_id}" data-ref-id="${r.ref_id || 0}" data-done="${r.checked ? "0" : "1"}">${r.checked ? "✓ 확인됨" : "확인"}</button>`
                           : ""}</td>
                     </tr>`).join("")}
@@ -1652,9 +1632,8 @@ function renderSv() {
 }
 
 function initHomeSv() {
-    const filter = $("home-sv-filter");
-    if (!filter) return;
-    filter.addEventListener("change", renderSv);
+    // 헤더 담당자를 바꾸면 이 카드도 다시 그립니다.
+    document.addEventListener("mitaly:sv-changed", renderSv);
     // 숫자 타일 → 아래 그 항목의 첫 목록으로(같은 화면 안, 화면 이동 없음).
     $("home-sv-summary").addEventListener("click", (e) => {
         const tile = e.target.closest(".sv-tile");
@@ -1724,8 +1703,7 @@ async function loadHomeHealth() {
     if (fails.length) {
         const names = [...new Set(fails.map((f) =>
             HOME_CHANNEL_NAMES[f.channel] || f.channel))].join("·");
-        msgs.push(`수집 계정 이상 — ${names} 로그인 확인 실패. `
-            + "그 채널의 매출·리뷰가 안 들어오고 있을 수 있습니다.");
+        msgs.push(`${names} 로그인 실패 — 그 채널 숫자가 멈춰 있습니다`);
     }
 
     const runnerRow = (runnerRes && !runnerRes.error
@@ -1733,9 +1711,9 @@ async function loadHomeHealth() {
     if (runnerRow && runnerRow.last_seen_at) {
         const ageH = (Date.now() - new Date(runnerRow.last_seen_at).getTime()) / 3600_000;
         if (ageH >= 24) {
-            const ago = ageH >= 48 ? `${Math.floor(ageH / 24)}일` : `${Math.round(ageH)}시간`;
-            msgs.push(`수집 PC 무응답 — 마지막 응답이 ${ago} 전입니다. `
-                + "자리 PC가 켜져 있는지 확인이 필요합니다.");
+            const ago = ageH >= 48
+                ? `${Math.floor(ageH / 24)}일째` : `${Math.round(ageH)}시간째`;
+            msgs.push(`수집 PC가 ${ago} 응답 없음 — 숫자가 그날에 멈춰 있습니다`);
         }
     }
 
@@ -1832,13 +1810,12 @@ function reviewCoverageFacts(cov, args, pick) {
     const all = (cov.platforms || [])
         .filter((p) => !pick || p.platform === pick);
 
-    // 한 건이라도 수집된 적 있는 플랫폼 / 한 건도 없는 플랫폼.
-    // '수집기가 없다' 를 목록으로 적지 않고 관측으로 가릅니다 — 목록은 tools/
-    // 와 어긋날 자리가 하나 더 생기고, 관측보다 늦게 틀립니다(117 머리 [3]).
+    // 한 건이라도 수집된 적 있는 플랫폼.
+    //
+    // '매출만 수집하고 리뷰는 수집하지 않습니다' 줄은 뺐습니다(2026-09-11):
+    // 먹깨비 4건·땡겨요 5건이 실제로 들어와 있어 **관측을 정책으로 단정한**
+    // 거짓말이었습니다. 못 받은 구간은 아래 startLine 이 날짜로 말합니다.
     const collected = all.filter((p) => Number(p.reviews) > 0);
-    const salesOnly = all
-        .filter((p) => !Number(p.reviews) && p.has_sales_source)
-        .map((p) => p.platform);
 
     // 시작일이 기간 시작보다 뒤인 플랫폼 = 고른 기간의 앞쪽이 수집 범위 밖.
     // 작성일이 전부 비어 있는 플랫폼은 '시작일을 모르는' 것이라 이 비교에서
@@ -1865,8 +1842,8 @@ function reviewCoverageFacts(cov, args, pick) {
         }
         const groups = [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
         startLine = groups.length === 1
-            ? `${groups[0][1].join("·")} 리뷰는 ${groups[0][0]} 부터 수집됐습니다 — 그 이전은 수집 범위 밖입니다.`
-            : `리뷰 수집 시작 — ${groups.map(([d, n]) => `${n.join("·")} ${d}`).join(" · ")}. 그 이전은 수집 범위 밖입니다.`;
+            ? `${groups[0][1].join("·")} 리뷰는 ${groups[0][0]} 부터 받았습니다. 그 이전은 아직 못 받았습니다.`
+            : `${groups.map(([d, n]) => `${n.join("·")} ${d}`).join(" · ")} 부터 받았습니다. 그 이전은 아직 못 받았습니다.`;
         lines.push(startLine);
     }
     // 마지막으로 들어온 리뷰의 날짜(전 플랫폼 중 가장 최근). 홈이 "없습니다"
@@ -1874,15 +1851,12 @@ function reviewCoverageFacts(cov, args, pick) {
     const lastDays = dated.map((p) => kstParts(p.last_written_at))
         .filter(Boolean).map((k) => k.day).sort();
     const lastDay = lastDays.length ? lastDays[lastDays.length - 1] : "";
-    if (salesOnly.length) {
-        lines.push(`${salesOnly.join("·")}는 매출만 수집하고 리뷰는 수집하지 않습니다.`);
-    }
-    // 작성일이 없는 리뷰는 **어느 기간 필터에도 안 걸립니다** — 있는데 화면에서
+    // 작성일이 없는 리뷰는 어느 기간 필터에도 안 걸립니다 — 있는데 화면에서
     // 사라진 리뷰입니다(115). 0 이면 이 줄은 안 나옵니다.
     const noWrittenAt = collected
         .reduce((n, p) => n + (Number(p.no_written_at) || 0), 0);
     if (noWrittenAt > 0) {
-        lines.push(`작성일이 없어 어느 기간에도 안 걸리는 리뷰가 ${int(noWrittenAt)}건 있습니다.`);
+        lines.push(`작성일 없는 리뷰 ${int(noWrittenAt)}건 — 어느 기간에도 안 걸립니다.`);
     }
 
     // 이 매장에서 한 건도 수집된 적 없는 플랫폼 — 회사 전체로는 걷히는데
@@ -1909,15 +1883,13 @@ function reviewCoverageFacts(cov, args, pick) {
     // 둘 다 안 읽힙니다.
     const storeLines = [];
     if (storeMissing.length) {
-        storeLines.push(`이 매장은 ${storeMissing.join("·")} 리뷰가 수집된 적 없습니다.`);
+        storeLines.push(`${storeMissing.join("·")} 리뷰는 이 매장에서 못 받았습니다.`);
     }
-    if (storeNoReply) {
-        storeLines.push("이 매장은 답글이 한 건도 수집된 적 없어 미답변 여부를 알 수 없습니다.");
-    }
+    // 답글 미수집은 미답변 타일 sub·요약·배지가 말합니다(문구 3자리).
     // 매장을 안 골랐으면 매장별로 말할 수 없으니 규모만 알립니다 — 목록의
     // '미답변' 총합에 판정할 수 없는 매장이 섞여 있다는 뜻입니다.
     if (!st && noReplyStores.size) {
-        lines.push(`답글이 한 건도 수집된 적 없는 매장이 ${int(noReplyStores.size)}곳 있습니다 — 그 매장의 '미답변' 은 판정이 아닙니다.`);
+        lines.push(`답글을 못 걷은 매장 ${int(noReplyStores.size)}곳 — 그 '미답변' 은 판정이 아닙니다.`);
     }
 
     return { lines, storeLines, startLine, lastDay,
@@ -1939,14 +1911,11 @@ function reviewCoverageFacts(cov, args, pick) {
 
 function drawReviewStoreView(d, c, facts) {
     const store = $("f-store").value;
-    // 미러 — 필터 줄·홈 이상신호 행에서 f-store 가 바뀌어도 콤보가 따라갑니다.
-    if ($("rv-store").value !== store) $("rv-store").value = store;
 
     const kpis = $("rvs-kpis");
     if (!store) {
         $("rvs-meta").textContent = "";
-        kpis.innerHTML = '<div class="sd-empty">매장을 선택하세요 — 위 매장 칸에 '
-            + "이름을 치면 검색되고, 아래 리뷰 목록도 그 매장으로 좁혀집니다.</div>";
+        kpis.innerHTML = '<div class="sd-empty">맨 위에서 매장을 고르세요</div>';
         $("rvs-bars").innerHTML = "";
         $("t-rvs-platform").innerHTML = "";
         $("rvs-note").textContent = "";
@@ -1981,13 +1950,13 @@ function drawReviewStoreView(d, c, facts) {
     const replyUnknown = !!(facts && facts.storeNoReply);
     kpis.innerHTML = [
         tile("리뷰", outOfRange ? "—" : `${int(total)}건`,
-            outOfRange ? "고른 기간은 수집 범위 밖"
-                : total ? `평균 ${escape(String(s.avg_rating ?? "—"))}점` : "이 기간 리뷰 없음"),
+            outOfRange ? "이 기간은 아직 못 받았습니다"
+                : total ? `평균 ${escape(String(s.avg_rating ?? "—"))}점` : ""),
         tile("부정 리뷰 (3점 이하)", outOfRange ? "—" : `${int(negative)}건`, "",
             !outOfRange && negative > 0 ? "t-attn" : ""),
         tile("미답변", (outOfRange || replyUnknown)
             ? "—" : `${int(Number(s.unanswered) || 0)}건`,
-            replyUnknown ? "답글이 수집된 적 없는 매장입니다" : ""),
+            replyUnknown ? "답글을 못 걷은 매장" : ""),
         tile("검토 대기 초안", sd ? `${int(draftWait)}건` : "—",
             sd ? `승인됨 ${int(draftApproved)}건` : ""),
     ].join("");
@@ -2014,13 +1983,12 @@ function drawReviewStoreView(d, c, facts) {
         $("t-rvs-platform").innerHTML = "";
     }
 
-    // 이 카드에서 이 매장에 대해 알아야 할 사실을 먼저 적고(수집 범위·답글
-    // 미수집), 그 뒤에 원래 안내를 둡니다. 모르는 것을 0 으로 읽고 지나가는
-    // 일을 막는 문구라 안내보다 앞에 옵니다.
-    $("rvs-note").textContent = [
-        ...((facts && facts.storeLines) || []),
-        "기간·플랫폼은 위 필터를 따르고, 아래 리뷰 목록도 이 매장으로 좁혀져 있습니다.",
-    ].join(" ");
+    // 이 매장에 대해 알아야 할 사실만 적습니다(수집 범위·답글 미수집).
+    // 뒤에 붙어 있던 "기간·플랫폼은 위 필터를 따르고…" 는 뺐습니다 —
+    // 플랫폼 고르개(rv-platform)는 위 필터가 아니라 이 카드 **아래** 리뷰
+    // 관리 카드 안에 있어 거짓이었습니다(2026-09-11 감사).
+    $("rvs-note").textContent =
+        ((facts && facts.storeLines) || []).join(" ");
 }
 
 function drawReviews(d, c) {
@@ -2030,7 +1998,12 @@ function drawReviews(d, c) {
         d.reviewCoverage, d.args, $("rv-platform").value || null);
     drawReviewStoreView(d, c, facts);
     const summary = d.reviewSummary || {};
-    let rows = d.reviews || [];
+    // 리뷰는 표가 아니라 **카드 목록**이라 svfilter.js 의 DOM 그물에 안 걸립니다.
+    // 그물이 못 거는 자리는 화면이 직접 걸러야 합니다 — 안 그러면 좁혀진 줄 알고
+    // 전 매장을 보게 됩니다(TONIGHT-20260911 G4). 아래 'N건 표시' 도 이 배열입니다.
+    // 위 '리뷰 관리' 요약(summary.total)은 서버가 센 값이라 '전사 기준' 배지가
+    // 붙습니다(index.html 의 data-sv-scope).
+    let rows = svFilterRows(d.reviews || [], (r) => r.store);
     // 'AI 초안만' — 초안이 붙은 리뷰만 남깁니다 (검토가 목적일 때 매몰 방지)
     if ($("rv-drafts-only").checked) {
         rows = rows.filter((r) => (r.drafts || []).length);
@@ -2044,19 +2017,19 @@ function drawReviews(d, c) {
 
     const total = Number(summary.total) || 0;
     const hiddenCount = Number(summary.hidden) || 0;
-    // 0 건일 때 "받아온 리뷰가 없습니다" 는 고른 기간이 **수집 범위 안일 때만**
-    // 참입니다. 범위 밖이면 0 이 아니라 '받아온 적이 없는 것' 입니다.
+    // 0 건이면 이 줄은 비웁니다. 왜 비었는지는 바로 아래 목록 빈 상태가
+    // **한 번만** 말합니다 — 여기서 또 말하면 한 화면에 같은 문장이 둘입니다.
+    // 문자열만 지우면 아래 ':' 가지가 "이 기간에 받아온 리뷰가 없습니다" 라는
+    // 거짓으로 자동 복귀하므로 가지째 걷어냈습니다(2026-09-11 감사).
     $("review-summary").textContent = total
         ? `${int(total)}건 · 평균 ${summary.avg_rating ?? "—"}점 · `
           // 답글이 한 건도 수집된 적 없는 매장으로 좁혀져 있으면 '미답변 N건'
           // 은 세어 본 값이 아니라 단정입니다. 숫자 대신 모른다고 적습니다.
           + (facts && facts.storeNoReply
-              ? "미답변 여부 모름"
+              ? "미답변 모름"
               : `미답변 ${int(summary.unanswered || 0)}건`)
           + (hiddenCount ? ` · 내려감 ${int(hiddenCount)}건` : "")
-        : facts && facts.coversNone
-            ? "고른 기간은 리뷰 수집 범위 밖입니다"
-            : "이 기간에 받아온 리뷰가 없습니다";
+        : "";
 
     // 수집 범위 줄 — 할 말이 있을 때만 보입니다(117 을 못 받았거나 기간이
     // 범위 안이고 구멍이 없으면 줄 자체가 없습니다).
@@ -2143,19 +2116,16 @@ function drawReviews(d, c) {
             : pending > 0 ? "critical" : unanswered > 0 ? "attn" : "good",
         badge: (facts && facts.coversNone) ? undefined
             : pending > 0 ? "검토 필요" : unanswered > 0 ? "확인" : "정상",
-        // 🔴 hero 도 '없다' 와 '모른다' 를 갈라야 합니다(117). 안 그러면 바로
-        //    아래 요약 줄이 "고른 기간은 리뷰 수집 범위 밖입니다" 라고 말하는데
-        //    hero 만 "받아온 리뷰가 없습니다" 라고 해서 **한 카드에 두 말**이
-        //    됩니다. 오늘 고친 '큰 숫자만 전사' 결함과 같은 종류입니다.
-        //    답글이 한 건도 안 걷힌 매장에서는 '미답변' 도 단정하지 않습니다.
+        // 🔴 답글이 한 건도 안 걷힌 매장에서는 '미답변' 도 단정하지 않습니다.
+        //    0 건일 때 여기서도 이유를 적으면 바로 아래 요약 줄·목록 빈 상태와
+        //    **한 카드에 세 말**이 됩니다. 이유는 목록 빈 상태 한 곳만 말합니다
+        //    (문자열만 지우면 ':' 가지가 거짓으로 복귀해 가지째 걷어냈습니다).
         facts: total
             ? (draftKnown ? `승인됨 ${int(approved)} · ` : "")
               + (facts && facts.storeNoReply
-                 ? "미답변 여부 모름 · " : `미답변 ${int(unanswered)} · `)
+                 ? "미답변 모름 · " : `미답변 ${int(unanswered)} · `)
               + `이 기간 리뷰 ${int(total)}건 · 평균 ${summary.avg_rating ?? "—"}점`
-            : facts && facts.coversNone
-                ? "고른 기간은 리뷰 수집 범위 밖입니다."
-                : "이 기간에 받아온 리뷰가 없습니다.",
+            : "",
     });
 
     // 리뷰 수집 현황. 배민 답글 기한이 대략 30일이라, 답글 달 수 있는 리뷰가
@@ -2192,7 +2162,7 @@ function drawReviews(d, c) {
         // 애초에 그 기간을 수집한 적이 없는 것. 뒤엣것을 "없습니다" 로 적으면
         // 플랫폼에 리뷰가 없다는 뜻으로 읽힙니다 — 그게 이번 제보의 출발점입니다.
         listEl.innerHTML = `<p class="hint">${escape(total === 0 && facts && facts.coversNone
-            ? "고른 기간은 리뷰 수집 범위 밖입니다 — 0건이 아니라 받아온 적이 없는 것입니다."
+            ? "이 기간은 아직 못 받았습니다."
             : "조건에 맞는 리뷰가 없습니다.")}</p>`;
         refreshDraftPanel();
         return;
@@ -2220,9 +2190,9 @@ function drawReviews(d, c) {
               <span class="rvscore">${r.rating ?? "—"}</span>
               <span class="rvmeta">${escape(r.store || "")} · ${escape(r.platform || "")} · ${when}</span>
               ${repeat > 1 ? `<span class="tag">재주문 ${repeat}회</span>` : ""}
-              ${hidden ? '<span class="tag" title="플랫폼에서 삭제·블라인드된 리뷰">플랫폼에서 내려감</span>'
+              ${hidden ? '<span class="tag">플랫폼에서 내려감</span>'
                        : replies.length ? ""
-                       : replyUnknown ? '<span class="tag" title="이 매장은 답글이 한 건도 수집된 적 없습니다 — 미답변인지 알 수 없습니다">답글 미수집</span>'
+                       : replyUnknown ? '<span class="tag">답글 미수집</span>'
                        : '<span class="tag warn">미답변</span>'}
             </div>
             ${r.contents ? `<p class="rvbody">${escape(r.contents)}</p>` : ""}
@@ -3485,6 +3455,11 @@ function dboFiltered() {
         if (dbo.to) { to = new Date(dbo.to); to.setHours(23, 59, 59, 999); }
     }
     return dbo.posts.filter((v) => {
+        // 전역 담당자 조건을 **여기서** 겁니다. 전에는 svfilter.js 가 렌더 뒤에
+        // 행만 숨겨서, 페이지 수·'총 N건' 은 숨기기 전 배열로 계산됐습니다 —
+        // '20개씩 보기' 인데 한 페이지에 2줄만 나오고, 뒤 페이지는 눌러도
+        // 빈 화면이었습니다(2026-09-11 감사).
+        if (!svAllows(v.store)) return false;
         if (dbo.header && dboHeader(v) !== dbo.header) return false;
         const at = new Date(dboPostedAt(v));
         if (from && at < from) return false;
@@ -3505,10 +3480,17 @@ function dboRender() {
     const root = $("dbo-root");
     const board = dbo.board || {};
     $("dbo-name").textContent = board.name || "매장 방문 리포트";
-    $("dbo-path").textContent = `부서 / 운영지원팀 (총 ${int(dbo.posts.length + dbo.notices.length)}건)`;
-    if (dbo.view === "post" && dbo.openId != null) { dboRenderPost(); return; }
+    if (dbo.view === "post" && dbo.openId != null) {
+        $("dbo-path").textContent = "부서 / 운영지원팀";
+        dboRenderPost();
+        return;
+    }
 
     const rows = dboFiltered();
+    // '총 N건' 은 지금 보고 있는 목록의 건수입니다 — 담당자를 고르면 같이
+    // 줄어야 아래 페이지 수와 말이 맞습니다. 공지는 매장과 무관해 늘 셉니다.
+    $("dbo-path").textContent =
+        `부서 / 운영지원팀 (총 ${int(rows.length + dbo.notices.length)}건)`;
     const total = dbo.posts.length;
     const pages = Math.max(1, Math.ceil(rows.length / dbo.pageSize));
     if (dbo.page >= pages) dbo.page = pages - 1;
@@ -3550,7 +3532,7 @@ function dboRender() {
             <td class="dbo-num">${int((v.meta && v.meta.read_count) || 0)}</td>
             <td class="dbo-num dbo-like">${int((v.meta && v.meta.like_count) || 0)}</td>
           </tr>`).join("")
-          : `<tr><td colspan="7" class="dbo-empty">${dbo.posts.length ? "조건에 맞는 글이 없습니다." : "반입된 리포트가 아직 없습니다 — 새벽 사슬이 다우오피스 게시판의 새 글을 매일 가져옵니다."}</td></tr>`}
+          : `<tr><td colspan="7" class="dbo-empty">${dbo.posts.length ? "조건에 맞는 글이 없습니다." : "리포트가 없습니다."}</td></tr>`}
         </tbody>
       </table>
       <div class="dbo-foot">
@@ -3685,24 +3667,15 @@ async function initVisits() {
             visitStoresBySv.get(p.sv_name).add(p.store_name);
         }
     }
-    if (visitStoresBySv.size) {
-        const svSelect = $("vs-sv");
-        for (const sv of [...visitStoresBySv.keys()].sort((a, b) => a.localeCompare(b, "ko"))) {
-            const opt = document.createElement("option");
-            opt.value = sv;
-            opt.textContent = `${sv} (${visitStoresBySv.get(sv).size}곳)`;
-            svSelect.append(opt);
-        }
-        $("vs-sv-field").hidden = false;
-        svSelect.addEventListener("change", async () => {
-            rebuildVisitStoreOptions();
-            await refreshVisits();
-            await refreshVisitStoreMetrics();
-            await refreshVisitDue();
-        });
-    } else {
-        $("vs-sv-empty").hidden = false;
-    }
+    // 담당자 선택은 헤더(sv-global) 하나뿐입니다. 이 자리에 있던 'vs-sv' 는
+    // 헤더와 값을 공유하지 않아, 둘을 다르게 고르면 두 조건이 겹쳐 목록이
+    // 비면서도 화면은 건수를 그대로 말했습니다(2026-09-11 감사 · 카드 #168).
+    document.addEventListener("mitaly:sv-changed", async () => {
+        rebuildVisitStoreOptions();
+        await refreshVisits();
+        await refreshVisitStoreMetrics();
+        await refreshVisitDue();
+    });
 
     $("vs-visited-on").value = new Date().toISOString().slice(0, 10);
 
@@ -3802,13 +3775,10 @@ async function initVisits() {
 // 선택을 살리고, 아니면 초기화합니다(다른 SV 매장에 기록이 남는 실수 방지).
 function rebuildVisitStoreOptions() {
     const storeSelect = $("vs-store");
-    const sv = $("vs-sv") ? $("vs-sv").value : "";
-    const mine = sv ? visitStoresBySv.get(sv) : null;
     const keep = storeSelect.selectedOptions[0]?.textContent;
 
     storeSelect.innerHTML = '<option value="">매장을 고르세요</option>';
-    for (const s of visitAllStores) {
-        if (mine && !mine.has(s.name)) continue;
+    for (const s of svFilterRows(visitAllStores, (v) => v.name)) {
         const opt = document.createElement("option");
         opt.value = s.id;
         opt.textContent = s.name;
@@ -3913,11 +3883,17 @@ async function submitVisit() {
 function startVisitEdit(row) {
     visitEditId = String(row.visit_id);
 
-    // SV 필터가 그 매장을 가리고 있으면 필터를 풀어 option 을 되살립니다.
+    // 담당자 필터가 그 매장을 가리고 있으면 그 매장만 예외로 되살립니다.
+    // 헤더 선택은 건드리지 않습니다 — 전역 값이라 다른 화면까지 바뀝니다.
     const storeSelect = $("vs-store");
     if (![...storeSelect.options].some((o) => o.textContent === row.store_name)) {
-        if ($("vs-sv")) $("vs-sv").value = "";
-        rebuildVisitStoreOptions();
+        const hit = visitAllStores.find((s) => s.name === row.store_name);
+        if (hit) {
+            const opt = document.createElement("option");
+            opt.value = hit.id;
+            opt.textContent = hit.name;
+            storeSelect.append(opt);
+        }
     }
     const opt = [...storeSelect.options].find((o) => o.textContent === row.store_name);
     storeSelect.value = opt ? opt.value : "";
@@ -4029,13 +4005,12 @@ async function refreshVisitDue() {
         if (!lastByStore.has(v.store_name)) lastByStore.set(v.store_name, v.visited_on);
     }
 
-    const sv = $("vs-sv") ? $("vs-sv").value : "";
-    const mine = sv ? (visitStoresBySv.get(sv) || new Set()) : null;
+    const sv = svCurrent();
     const today = new Date(new Date().toISOString().slice(0, 10));
     const dayMs = 24 * 60 * 60 * 1000;
 
-    const rows = visitAllStores
-        .filter((s) => !mine || mine.has(s.name))
+    // 헤더 담당자로 **세기 전에** 거릅니다 — 아래 건수·hero 가 이 배열을 씁니다.
+    const rows = svFilterRows(visitAllStores, (s) => s.name)
         .map((s) => {
             const last = lastByStore.get(s.name) || null;
             const days = last ? Math.floor((today - new Date(last)) / dayMs) : null;
@@ -4074,7 +4049,7 @@ async function refreshVisitDue() {
 
     if (!shown.length) {
         container.innerHTML =
-            '<p class="hint">미방문·기한 초과 매장이 없습니다. 전체 주기는 위 체크박스로 봅니다.</p>';
+            '<p class="hint">미방문·기한 초과 매장이 없습니다.</p>';
         return;
     }
 
@@ -4129,7 +4104,7 @@ function visitSourceTag(v) {
     const link = v.external_url
         ? ` <a class="vs-src-link" href="${escape(v.external_url)}" target="_blank" rel="noopener">원문 ↗</a>`
         : "";
-    return ` <span class="tag vs-src" title="다우오피스 방문 리포트 게시판에서 자동 반입">다우${kind}</span>${link}`;
+    return ` <span class="tag vs-src">다우${kind}</span>${link}`;
 }
 
 // ---- 점검 메모 5절 — 표에는 요약, 원문은 펼침 (WP2 · 2026-09-11) ----------
@@ -4224,24 +4199,24 @@ async function refreshVisits() {
     // SV 를 골랐고 매장은 안 골랐으면 그 SV 담당 매장의 방문만 보여줍니다.
     // api_store_visits 는 매장 하나만 거를 줄 알아서(p_store), SV 묶음은
     // 여기서 거릅니다 — 방문 기록은 화면 한 장 분량이라 충분합니다.
-    const sv = $("vs-sv") ? $("vs-sv").value : "";
-    if (sv && !storeName) {
-        const mine = visitStoresBySv.get(sv) || new Set();
-        list = list.filter((v) => mine.has(v.store_name));
-    }
+    const sv = svCurrent();
+    if (!storeName) list = svFilterRows(list, (v) => v.store_name);
 
     // SV 필터 요약에 '담당 매장 기준' 을 명시합니다 — 이 필터는 방문자
     // (visited_by)가 아니라 배정 매장으로 거르기 때문입니다(진단 [C]).
     $("visit-summary").textContent = storeName
         ? `${escape(storeName)} · ${int(list.length)}건`
         : (sv
-            ? `${escape(sv)} 담당 매장 ${int((visitStoresBySv.get(sv) || new Set()).size)}곳 기준 · 방문 ${int(list.length)}건`
+            // 매장 수는 **실제로 걸린 필터**(svFilterRows)와 같은 수를 씁니다.
+            // 전에는 프로필 기준 수(visitStoresBySv)를 써서, 같은 화면 위아래가
+            // 서로 다른 숫자를 말했습니다(위 '담당 N곳 중' 과 어긋남).
+            ? `${escape(sv)} 담당 매장 ${int(svFilterRows(visitAllStores, (v) => v.name).length)}곳 기준 · 방문 ${int(list.length)}건`
             : `전 매장 최근 ${int(list.length)}건`);
 
     if (!list.length) {
         visitPhotosByVisit = new Map();
         $("t-visits").innerHTML =
-            '<p class="hint">방문 기록이 없습니다. 위 폼에서 추가하면 여기 나타납니다.</p>';
+            '<p class="hint">방문 기록이 없습니다.</p>';
         return;
     }
 
@@ -4375,8 +4350,7 @@ async function refreshVisitStoreMetrics() {
 
     if (!storeName) {
         kpis.hidden = true;
-        hint.hidden = false;
-        hint.textContent = "매장을 고르면 방문 전 참고용으로 최근 매출을 보여줍니다.";
+        hint.hidden = true;
         return;
     }
 
@@ -4402,7 +4376,7 @@ async function refreshVisitStoreMetrics() {
     if (!row) {
         kpis.hidden = true;
         hint.hidden = false;
-        hint.textContent = `${storeName}의 최근 매출 데이터가 없습니다(수집 전이거나 신규 매장).`;
+        hint.textContent = `${storeName}의 최근 매출 자료가 없습니다.`;
         return;
     }
 

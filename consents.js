@@ -5,6 +5,7 @@ import { int } from "./format.js";
 import { escape, clip } from "./util.js";
 import { $, table } from "./dom.js";
 import { db } from "./client.js";
+import { svFilterRows, onSvChange } from "./svfilter.js";
 
 // ---- 답글 대행 동의 매장 (42_consents + 65 source) ------------------------
 //
@@ -22,16 +23,15 @@ async function loadConsents() {
             '<p class="hint">불러오지 못했습니다: ' + escape(error.message) + '</p>';
         return;
     }
-    const items = Array.isArray(data?.items) ? data.items : [];
+    const items = svFilterRows(Array.isArray(data?.items) ? data.items : [],
+                               (c) => c.store);
     $("cs-summary").textContent = `동의 ${int(data.live)}곳`
         + (data.withdrawn ? ` · 철회 ${int(data.withdrawn)}곳` : "");
     $("cs-shown").textContent = withWithdrawn ? `${int(items.length)}건 표시` : "";
 
     if (!items.length) {
         $("t-consents").innerHTML =
-            '<p class="hint">동의 매장이 아직 없습니다. 답글 등록은 이 목록이'
-            + ' 채워진 뒤에 켤 수 있습니다. 동의서를 받았으면 위 칸에서 바로'
-            + ' 기록하세요.</p>';
+            '<p class="hint">동의 매장이 아직 없습니다.</p>';
         return;
     }
     table($("t-consents"),
@@ -88,6 +88,8 @@ async function saveConsent() {
 }
 
 export async function initConsents() {
+    // 헤더 담당자가 바뀌면 이 화면의 숫자·표를 다시 계산합니다.
+    onSvChange(loadConsents);
     $("cs-withdrawn").addEventListener("change", loadConsents);
     $("cs-save").addEventListener("click", saveConsent);
     $("t-consents").addEventListener("click", async (event) => {

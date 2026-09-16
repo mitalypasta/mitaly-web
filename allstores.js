@@ -37,6 +37,7 @@ import { wonFull, int } from "./format.js";
 import { escape } from "./util.js";
 import { S } from "./state.js";
 import { $, monthPicker, table } from "./dom.js";
+import { svFilterRows } from "./svfilter.js";
 
 const pctText = (v, digits = 1) =>
     v == null ? "—" : `${(v * 100).toFixed(digits)}%`;
@@ -214,8 +215,11 @@ const num = (v) => (v == null ? null : Number(v));
 const moneyCell = (v) => (v == null ? "—" : escape(wonFull(v)));
 
 function sortedRows() {
-    const sv = $("as-sv").value;
-    const filtered = sv ? stores.filter((r) => r.sv_name === sv) : stores;
+    // 헤더의 전역 담당자 하나만 봅니다. 영역 안에 있던 'as-sv' 는 헤더와 값을
+    // 공유하지 않아, 둘을 다르게 고르면 두 조건이 겹쳐 표가 통째로 비면서도
+    // 머리글은 여전히 '94곳' 이라고 말했습니다(2026-09-11 감사) — 지웠습니다.
+    // **세기 전에** 거릅니다: 아래 순번·머리글 숫자가 모두 이 배열을 씁니다.
+    const filtered = svFilterRows(stores, (r) => r.name);
     const col = COLS[sort.key] || COLS.achievement;
     return [...filtered].sort((a, b) => {
         const [x, y] = [col.value(a), col.value(b)];
@@ -295,40 +299,27 @@ function render() {
         });
     });
 
+    // 머리글 숫자는 **표에 실제로 그린 행**으로 셉니다. 전에는 rows 를 세 놓고
+    // svfilter.js 가 그 뒤에 행을 또 숨겨서, "139곳" 이라 써 놓고 12줄만 나왔습니다.
+    // 이제 rows 가 이미 걸러진 배열이라 둘이 같습니다.
     const withTarget = rows.filter((r) => r.achievement != null).length;
     const platNote = (category === "sales" && !platByStore && stores.length)
         ? " · 플랫폼별 배달매출을 불러오지 못했습니다" : "";
     $("as-meta").textContent = stores.length
         ? `${int(rows.length)}곳${rows.length !== stores.length ? ` / 전체 ${int(stores.length)}곳` : ""}`
-          + ` · 목표 있는 매장 ${int(withTarget)}곳 — 위 필터와 무관` + platNote
+          + ` · 목표 있는 매장 ${int(withTarget)}곳` + platNote
         : "";
 
-    // 손익 라벨 + 금액 기준 각주(kpi-sheet-adoption.md 6절) — 추정 손익 열이
-    // 보이는 '매출분석' 에서만 답니다(#146 — 다른 카테고리는 각주 대상이 없음).
+    // 추정인지 실측인지만 답니다 — 그게 숫자의 뜻을 바꿉니다.
+    // 'KPI 시트 과거 연도와 1:1로 일치하지 않습니다'(자기방어)는 뺐습니다.
     $("as-note").textContent = category === "pnl"
-        ? "식자재비부터 원가율까지는 가정값 기반 추정치입니다 — 실측(아워홈 발주 "
-          + "· 근무인원 · 임차료 · 로열티 실요율)이 있는 매장은 그 값이 우선. "
-          + "영업일수·일평균은 일 단위 집계 기준(소급 진행 중), 금액은 메뉴 매출 "
-          + "기준이라 KPI 시트 과거 연도(배달비 포함)와 1:1로 일치하지 않습니다."
+        ? "식자재비부터 원가율까지는 추정치 — 실측이 있는 매장은 실측이 우선"
         : "";
 
-    // 배달비 각주 — '매출' 카테고리에서만(그 열이 보이는 곳). 미확보 '—' 의
-    // 뜻만 알려 주는 표기 안내입니다(안전·보안 안내문 아님 — CLAUDE.md 문구 규칙).
+    // 배달비 '—' 의 뜻만(값 범례). '매출' 카테고리에서만 — 그 열이 보이는 곳.
     $("cfee-note").textContent = category === "sales"
-        ? "배달비는 실측 원천을 확보한 채널·기간만 표시합니다 — 미확보 칸은 —."
+        ? "배달비 미확보 칸은 —"
         : "";
-}
-
-// SV 목록은 응답에 실려 온 값으로 만듭니다(가맹점 DB 반입분 store_profiles.sv_name
-// — 방문·점검 필터와 같은 원천). 고른 값은 목록을 다시 만들어도 유지합니다.
-function fillSv() {
-    const select = $("as-sv");
-    const keep = select.value;
-    const names = [...new Set(stores.map((r) => r.sv_name).filter(Boolean))]
-        .sort((a, b) => a.localeCompare(b));
-    select.innerHTML = '<option value="">전체</option>'
-        + names.map((n) => `<option value="${escape(n)}">${escape(n)}</option>`).join("");
-    if (names.includes(keep)) select.value = keep;
 }
 
 async function refresh() {
@@ -371,7 +362,6 @@ async function refresh() {
         feeByStore = null;
     }
 
-    fillSv();
     render();
 }
 
@@ -406,6 +396,7 @@ export async function initAllStores() {
 
     initCategoryToggle();
     $("as-ym").addEventListener("change", refresh);
-    $("as-sv").addEventListener("change", render);
+    // 헤더 담당자를 바꾸면 다시 그립니다 — 건수·순번이 표와 같이 움직여야 합니다.
+    document.addEventListener("mitaly:sv-changed", () => { if (stores.length) render(); });
     await refresh();
 }

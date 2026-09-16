@@ -30,8 +30,7 @@ function drawKakaoStats(stats) {
     $("ks-meta").textContent = `최근 ${int(stats.days)}일`;
 
     if (!calls) {
-        $("ks-shown").textContent =
-            "아직 챗봇이 응답한 대화가 없습니다 — 카카오 채널이 연결되면 채워집니다.";
+        $("ks-shown").textContent = "응답한 대화가 없습니다.";
         $("legend-kakao-daily").innerHTML = "";
         $("c-kakao-daily").innerHTML = "";
         $("c-kakao-daily").removeAttribute("height");

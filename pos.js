@@ -77,8 +77,7 @@ async function refreshDeliveryMenu() {
                 || /Could not find the function/i.test(error.message || "");
             meta.textContent = "";
             view.innerHTML = missing
-                ? '<p class="hint">배달앱 메뉴 대조는 아직 이 환경에 들어오지 '
-                  + "않았습니다. 반영되면 자동으로 나타납니다.</p>"
+                ? '<p class="hint">배달앱 메뉴 대조가 이 환경에 아직 없습니다.</p>'
                 : '<p class="hint">불러오지 못했습니다: '
                   + escape(error.message) + "</p>";
             return;
@@ -89,8 +88,7 @@ async function refreshDeliveryMenu() {
 
     if (!dmData.collected_at) {
         meta.textContent = "";
-        view.innerHTML = '<p class="hint">배달앱 메뉴 반입이 아직 없습니다 — '
-            + "반입되면 자동으로 대조합니다.</p>";
+        view.innerHTML = '<p class="hint">배달앱 메뉴 자료가 없습니다.</p>';
         return;
     }
 
@@ -161,8 +159,7 @@ async function refreshOilday() {
 
     if (!check.snapshot_at) {
         meta.textContent = "";
-        view.innerHTML = '<p class="hint">POS 메뉴 반입이 아직 없습니다 — '
-            + "반입되면 자동으로 판정합니다.</p>";
+        view.innerHTML = '<p class="hint">POS 메뉴 자료가 없습니다.</p>';
         return;
     }
 
@@ -172,8 +169,7 @@ async function refreshOilday() {
     // 행사날 스냅샷이면 켜져 있는 것이 정상입니다 — 판정하지 않습니다(설계 판단 [3]).
     if (check.is_event_day) {
         view.innerHTML = '<p class="hint">기준 스냅샷이 행사일(' + int(check.event_day)
-            + "일)에 반입된 것이라 이벤트 상품이 켜져 있는 것이 정상입니다. "
-            + "행사 다음 날 반입분으로 다시 판정합니다.</p>";
+            + "일) 것이라 이벤트 상품이 켜져 있는 것이 정상입니다.</p>";
         return;
     }
 
@@ -183,6 +179,8 @@ async function refreshOilday() {
         return;
     }
 
+    // '매장(분류)' 는 매장 이름 6종 목록에 없어 소리 없이 필터 밖이었습니다 —
+    // 열을 못박습니다(값이 분류명이면 svAllows 가 모르는 이름으로 통과시킵니다).
     table(view,
         ["계정", "매장(분류)", "상품", "가격", "상태"],
         items.map((it) => [
@@ -191,7 +189,8 @@ async function refreshOilday() {
             it.item_name,
             won(it.price),
             it.soldout_name || it.soldout_code || "—",
-        ]));
+        ]),
+        { storeCol: 1 });
 }
 
 async function onPosAccountChange() {
@@ -270,7 +269,7 @@ export async function refreshPosMenuSummary() {
     // 그 안내도 같이 보입니다.
     $("pm-kpi-note").hidden = !has;
     if (!has) {
-        $("pm-meta").textContent = "아직 반입 전입니다";
+        $("pm-meta").textContent = "자료 없음";
         return;
     }
     $("pm-items").textContent = int(d.items);
@@ -395,7 +394,6 @@ export async function refreshPosMenuRequests() {
         badge: waiting > 0 ? "승인 필요" : "정상",
         facts: rows.length
             ? `전체 요청 ${int(rows.length)}건 · 실행 이력 있는 건 ${int(executed)}`
-              + " — 승인해도 실제 반영은 실행 단계에서 따로 일어납니다."
             : "아직 변경 요청이 없습니다.",
     });
     // 목록을 다시 그리면 열려 있던 이력 패널은 옛 요청 것이라 닫습니다.

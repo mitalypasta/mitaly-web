@@ -56,7 +56,7 @@ function drawNotifications() {
 
     if (!rows.length) {
         $("t-notifications").innerHTML =
-            '<p class="hint">발송 이력이 없습니다. 수집 PC 도구가 보내면 여기 쌓입니다.</p>';
+            '<p class="hint">발송 이력이 없습니다.</p>';
         return;
     }
 

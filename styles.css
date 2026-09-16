@@ -1177,13 +1177,6 @@ header.top h1::before {
     color: var(--text-primary);
 }
 
-#area-head .area-head-desc {
-    margin: var(--sp-2) 0 0;
-    font-size: var(--sz-3);
-    color: var(--text-secondary);
-    max-width: 76ch;
-}
-
 .card header {
     display: flex;
     flex-wrap: wrap;
@@ -1218,6 +1211,10 @@ header.top h1::before {
     color: var(--text-muted);
     margin: var(--sp-1) 0 var(--sp-7);
 }
+
+/* 비운 안내문이 여백만 남기지 않게 (2026-09-11 안내문 정리 — JS 가 문구를
+   지운 자리는 요소가 남습니다). */
+.card .hint:empty { display: none; }
 
 /* 접기 카드 — 자주 열지 않는 카드(새 접수·사전 고지)를 여는 순간만 펼칩니다.
    목록을 위로 끌어올려 화면을 처음 열었을 때 한눈에 들어오게 하는 장치입니다. */
@@ -2306,6 +2303,10 @@ tr.diag-drow td { white-space: normal; }
 
 .tag.warn { color: var(--text-on-accent); background: var(--status-critical); border-color: var(--status-critical); }
 
+/* 서버가 전 매장으로 계산한 합계에 붙는 표식(svfilter.js). 담당자를 고른
+   동안에만 나타납니다 — 그 카드만 화면의 다른 숫자와 기준이 다릅니다. */
+.sv-scope-tag { margin-left: var(--sp-3); font-weight: 500; }
+
 /* 중립 표시 — .flag 는 빨강이라 증정품처럼 경고가 아닌 것에는 안 맞습니다. */
 .tag {
     display: inline-block;
@@ -3221,15 +3222,6 @@ tr.diag-drow td { white-space: normal; }
     .sv-cards { grid-template-columns: minmax(0, 1fr); }
 }
 
-.sv-filter {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-4);
-    margin: 0 0 var(--sp-5);
-    font-size: var(--sz-3);
-    color: var(--text-secondary);
-}
-.sv-filter select { font-size: var(--sz-4); }
 .sv-summary { margin-bottom: var(--sp-6); }
 .sv-tile .value .sv-unit { font-size: var(--sz-4); font-weight: 600; margin-left: var(--sp-1); color: var(--text-secondary); }
 /* .sv-line(=행) 규칙은 2026-09-11 에 전부 아래 '담당자 한 명' 절로 모았습니다.

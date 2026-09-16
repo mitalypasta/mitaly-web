@@ -15,6 +15,7 @@ import { db } from "./client.js";
 import { int } from "./format.js";
 import { escape, debounce } from "./util.js";
 import { table, $ } from "./dom.js";
+import { svFilterRows } from "./svfilter.js";
 
 const SDB_COLS = [
     ["category", "분류"],
@@ -43,9 +44,12 @@ export async function initStoreDb() {
     const ok = await loadStoreDbData();
     if (!ok) return;
 
-    for (const id of ["sdb-sv", "sdb-region", "sdb-status"]) {
+    for (const id of ["sdb-region", "sdb-status"]) {
         $(id).addEventListener("change", drawStoreDb);
     }
+    // 담당자는 헤더(sv-global) 하나뿐입니다 — 여기 있던 'sdb-sv' 는 헤더와
+    // 값을 공유하지 않아 두 조건이 겹쳤습니다(2026-09-11 감사 · 카드 #168).
+    document.addEventListener("mitaly:sv-changed", drawStoreDb);
     $("sdb-search").addEventListener("input", debounce(drawStoreDb, 150));
     $("sdb-n-submit").addEventListener("click", submitNewStore);
     // 오픈·폐점 화면에서 기록을 남기면 여기 폐점 배지·필터([F])가 낡습니다 —
@@ -99,7 +103,6 @@ async function loadStoreDbData() {
 
 // SV·지역 필터와 datalist 후보를 지금 표에 있는 값으로 다시 만듭니다.
 function refreshOptions() {
-    fillDistinct($("sdb-sv"), sdbRows.map((r) => r.sv_name));
     fillDistinct($("sdb-region"), sdbRows.map((r) => r.region));
     for (const key of SDB_TEXT_KEYS) {
         fillDatalist($("sdb-dl-" + key), sdbRows.map((r) => r[key]));
@@ -139,13 +142,12 @@ function sdbClosed(r) {
 }
 
 function sdbFiltered() {
-    const sv = $("sdb-sv").value;
     const region = $("sdb-region").value;
     const status = $("sdb-status").value;
     const search = $("sdb-search").value.trim();
-    return sdbRows.filter((r) =>
-        (!sv || r.sv_name === sv)
-        && (!region || r.region === region)
+    // 담당자 조건이 먼저 — 이 배열을 세는 곳이 아래 건수·표입니다.
+    return svFilterRows(sdbRows, (r) => r.store_name).filter((r) =>
+        (!region || r.region === region)
         && (!status || (status === "closed") === sdbClosed(r))
         && (!search || r.store_name.includes(search)));
 }
@@ -318,8 +320,7 @@ async function submitNewStore() {
         return;
     }
 
-    sdbNotice(notice, `${data.store_name} 등록했습니다. 매출이 올라오면 이 이름으로 이어집니다.`
-        + (startDate ? " 오픈 이력에도 기록했습니다." : ""));
+    sdbNotice(notice, `${data.store_name} 등록했습니다.`);
     if (startDate) {
         // 오픈·폐점 화면의 이력·요약이 낡습니다(79 가 오픈 이벤트를 만듦) —
         // 갱신 신호를 보냅니다(lifecycle.js 가 듣습니다).

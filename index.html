@@ -60,7 +60,6 @@
     <p class="alt">
         비밀번호를 모르시면
         <button class="linkish" id="magic-link" type="button">이메일로 로그인 링크 받기</button>
-        <br><small>메일은 시간당 몇 통까지만 나갑니다. 평소에는 비밀번호를 쓰세요.</small>
     </p>
 </section>
 
@@ -132,7 +131,7 @@
         </div>
         <div class="field">
             <label for="f-store">매장</label>
-            <select id="f-store"><option value="">전체</option></select>
+            <select id="f-store" data-sv-store-select><option value="">전체</option></select>
         </div>
         <div class="field">
             <label for="f-channel">채널</label>
@@ -190,9 +189,10 @@
              (담당자 지시 2026-08-21) — 카드는 아래 data-area="settings" 구역에. -->
     </nav>
 
-    <!-- 탭 머리 — 지금 화면이 무엇을 보고 무엇을 하는 곳인지 한 줄(카드 #138,
-         담당자 지시). 상자는 이 하나뿐이고 문구는 nav.js 의 AREA_HEAD 가
-         탭 전환 때 채웁니다(매출은 서브탭별로 덮어씀 — showSalesSub). -->
+    <!-- 탭 머리 — 지금 화면 이름 한 줄(카드 #138). 상자는 이 하나뿐이고
+         이름은 nav.js 의 AREA_HEAD 가 탭 전환 때 채웁니다(매출은 서브탭별로
+         덮어씀 — showSalesSub). 딸려 있던 설명 줄은 2026-09-11 안내문
+         정리에서 뺐습니다. -->
     <div id="area-head" hidden></div>
 
     <div class="grid">
@@ -211,14 +211,14 @@
                      연도별·분기별·주간·일간·시간대·메뉴 3종)를 시트 하나씩 담은
                      파일 하나. 카드 엑셀(dom.js)과 같은 SheetJS 사본을 씁니다. -->
                 <button class="linkish" id="sd-export" type="button"
-                        title="이 매장 대시보드의 카드별 시트를 담은 엑셀 파일을 내려받습니다">선택 매장 엑셀 추출</button>
+                        >선택 매장 엑셀 추출</button>
                 <span class="meta" id="sd-export-msg"></span>
                 <span class="meta" id="sd-meta"></span>
             </header>
             <div class="reqform">
                 <div class="field grow">
                     <label for="sd-store">매장</label>
-                    <select id="sd-store"><option value="">매장을 고르세요</option></select>
+                    <select id="sd-store" data-sv-store-select><option value="">매장을 고르세요</option></select>
                 </div>
                 <!-- 기준월은 기준일에서 나옵니다(2026-08-21 담당자 지시 — "기준일
                      정하면 연도·월·일 싹 반영"). 칸은 숨기고 값 보관용으로만 둡니다
@@ -485,7 +485,6 @@
             <h2>월간 보고서</h2>
             <button class="primary" id="report-print" type="button">PDF 로 저장</button>
         </header>
-        <p class="hint">누르면 인쇄 창이 열립니다 — 대상에서 <b>PDF 로 저장</b>을 고르세요.</p>
         <div id="report-sheet"></div>
     </section>
 
@@ -506,9 +505,6 @@
             <h2>후보지 상권 분석</h2>
             <span class="meta" id="ta-meta"></span>
         </header>
-        <p class="hint">주소를 넣으면 반경 안 음식점 추정매출·인구를 실시간으로
-            받아 미태리 예상 월매출을 계산합니다. 결과는 아래 분석 이력에 자동
-            저장됩니다.</p>
         <div class="reqform">
             <div class="field grow">
                 <label for="ta-address">후보지 주소</label>
@@ -577,7 +573,6 @@
             <h2>후보지 리포트</h2>
             <button class="primary" id="ta-report-print" type="button">PDF 로 저장</button>
         </header>
-        <p class="hint">누르면 인쇄 창이 열립니다 — 대상에서 <b>PDF 로 저장</b>을 고르세요.</p>
         <div id="ta-report-sheet"></div>
     </section>
 
@@ -586,7 +581,6 @@
             <h2>분석 이력</h2>
             <span class="meta" id="ta-h-meta"></span>
         </header>
-        <p class="hint">행을 누르면 그때 결과를 다시 봅니다 — 재분석 없이 저장본을 엽니다.</p>
         <div class="tableview" id="t-ta-history"></div>
     </section>
 
@@ -607,10 +601,6 @@
             <h2>메뉴 매핑표</h2>
             <span class="meta" id="mm-meta"></span>
         </header>
-        <p class="hint">
-            원본표기가 이미 있으면 그 연결을 고치고, 없으면 새로 더합니다.
-            여기서 고친 것은 다음 매핑표 반영 때 대시보드 재구축에 쓰입니다.
-        </p>
         <div class="unitbar" id="mm-tabs"></div>
         <div class="reqform">
             <div class="field grow">
@@ -683,10 +673,6 @@
                     <label for="as-ym">기준월</label>
                     <input type="month" id="as-ym">
                 </div>
-                <div class="field">
-                    <label for="as-sv">담당 SV</label>
-                    <select id="as-sv"><option value="">전체</option></select>
-                </div>
             </div>
             <div class="tableview tall" id="t-allstores"></div>
             <p class="hint" id="cfee-note"></p>
@@ -728,7 +714,6 @@
                  홀/배달 채널 행이 펼쳐집니다. 홀 = 이지포스·아임유,
                  배달 = 배민·쿠팡이츠·요기요·땡겨요·먹깨비. 팩트가 홀/배달
                  채널 단위라(18_alerts.sql) 펼침도 그 단위입니다. -->
-            <p class="hint">홀 = 이지포스·아임유 매출 · 배달 = 배민·쿠팡이츠·요기요 등 배달앱 매출</p>
             <div class="tableview tall" id="t-alerts"></div>
         </section>
 
@@ -750,9 +735,8 @@
                 </label>
             </div>
             <div class="tableview tall" id="t-diag"></div>
-            <p class="hint">이익률은 가정값(KPI 기준 설정) 기반 추정 ·
-                원가율 = 아워홈 발주액(VAT 포함) ÷ 매출 ·
-                일평균은 일 단위 집계 기준(없는 매장은 월 증감률 대용)</p>
+            <p class="hint">이익률은 추정 · 원가율 = 아워홈 발주액 ÷ 매출 ·
+                일평균 없는 매장은 월 증감률 대용</p>
         </section>
 
         <section data-area="sales" data-sub="메뉴·시간" class="card full">
@@ -777,9 +761,7 @@
                 <span class="meta" id="kpi-set-meta"></span>
             </summary>
             <div class="ledger-body">
-                <p class="hint">비율은 0~1로 넣습니다 — 예: 식자재 원가율 36% → 0.36.
-                    로열티·광고분담률은 매장별 실요율이 있으면 그 값이 우선이고,
-                    여기 값은 실요율이 없을 때 쓰입니다.</p>
+                <p class="hint">비율은 0~1 (36% → 0.36)</p>
                 <div class="tableview" id="t-kpi-settings"></div>
                 <div class="reqform">
                     <div class="field">
@@ -823,12 +805,6 @@
                 <h2>매장 리뷰 보기</h2>
                 <span class="meta" id="rvs-meta"></span>
             </header>
-            <div class="reqform">
-                <div class="field grow">
-                    <label for="rv-store">매장</label>
-                    <select id="rv-store"><option value="">매장을 고르세요</option></select>
-                </div>
-            </div>
             <div class="kpis" id="rvs-kpis"></div>
             <div id="rvs-bars"></div>
             <div class="tableview" id="t-rvs-platform"></div>
@@ -836,14 +812,11 @@
         </section>
 
         <section data-area="reviews" class="card full" id="review-card">
-            <header>
+            <header data-sv-scope="all">
                 <h2>리뷰 관리</h2>
                 <span class="meta" id="review-summary"></span>
             </header>
-            <p class="hint">'AI 답변 시안 보기'를 누르면 오른쪽 패널에서 고치고
-                승인·전송할 수 있습니다. <b>승인해도 배달앱에는 아직 올라가지
-                않습니다</b> — 등록 기능은 담당자 확인을 거쳐 따로 켭니다.
-                시안이 아직 없는 미답변 리뷰에는 'AI 시안 준비 전'이 표시됩니다.</p>
+            <p class="hint">승인해도 배달앱에는 아직 안 올라갑니다.</p>
             <p class="hint" id="draft-note"></p>
             <p class="hint" id="review-sync-note"></p>
             <!-- 수집 범위(117 api_review_coverage). 고른 기간이 수집 범위를
@@ -907,11 +880,10 @@
              2026-08-13 ②). 동의·철회는 42 의 이력 규칙 그대로입니다 — 철회는
              지우지 않고 withdrawn_at, 재동의는 철회 뒤에만 새 줄로. -->
         <section data-area="reviews" class="card full" id="consent-card">
-            <header>
+            <header data-sv-scope="all">
                 <h2>답글 대행 동의 매장</h2>
                 <span class="meta" id="cs-summary"></span>
             </header>
-            <p class="hint">다시 동의를 받은 매장은 같은 매장을 새로 기록하면 됩니다 — 철회 이력은 그대로 남습니다.</p>
             <div class="reqform">
                 <div class="field grow">
                     <label for="cs-store">매장</label>
@@ -952,10 +924,6 @@
                 <span class="meta" id="unmapped-count"></span>
             </summary>
             <div class="ledger-body">
-                <p class="hint">
-                    매핑표에 없는 품목입니다. 매핑표(<code>통합_매핑표.xlsx</code>)에 추가한 뒤
-                    대시보드를 다시 만들면 사라집니다.
-                </p>
                 <div class="tableview" id="t-unmapped"></div>
             </div>
         </details>
@@ -996,40 +964,35 @@
         <!-- 2026-09-09 담당자 지시("기존에 있던 건 없애줘"): 옛 타일 5개(미처리·승인 대기·문의 검토·
              초안 검토·진단 대상)는 화면에서 뺍니다. 요소는 hidden 으로 남깁니다 — 업무·문의·진단
              모듈이 값을 여기 채우고(없으면 오류), 홈 hero 는 이제 아래 담당자 요약을 봅니다. -->
-        <h3 class="home-sub-h" hidden>지금 처리할 일 <span class="home-anom-sub">전체 기간 · 누르면 해당 화면으로</span></h3>
+        <h3 class="home-sub-h" hidden>지금 처리할 일</h3>
         <div class="kpis" id="home-tiles" hidden>
             <button type="button" class="tile hometile t-urgent" id="home-tile-tasks" data-go-target="tasks">
                 <div class="label">미처리 업무</div>
                 <div class="value" id="home-tasks">—</div>
-                <div class="sub" id="home-tasks-sub">접수 후 기준일이 지나도록 끝나지 않은 건</div>
             </button>
             <button type="button" class="tile hometile t-attn" id="home-tile-approvals" data-go-target="tasks">
                 <div class="label">승인 대기 업무</div>
                 <div class="value" id="home-approvals">—</div>
-                <div class="sub">담당자 결재를 기다리며 멈춰 있는 건</div>
             </button>
             <button type="button" class="tile hometile t-attn" id="home-tile-inquiry" data-go-target="tasks">
                 <div class="label">AI 문의 답변 검토</div>
                 <div class="value" id="home-inquiry">—</div>
-                <div class="sub">AI가 만든 문의 1차 응대 중 아직 승인하지 않은 건</div>
             </button>
             <button type="button" class="tile hometile t-attn" id="home-tile-drafts" data-go-target="reviews">
                 <div class="label">AI 답글 초안 검토</div>
                 <div class="value" id="home-drafts">—</div>
-                <div class="sub">AI 리뷰 답글 초안 중 아직 검토하지 않은 건</div>
             </button>
             <!-- 진단 대상 (카드 #115) — 값은 매장 진단 카드(diagnosis.js)가
                  기준월 조회 결과(flagged)로 채웁니다. 홈이 따로 조회하지 않음. -->
             <button type="button" class="tile hometile t-attn" id="home-tile-diagnosis" data-go-target="sales">
                 <div class="label">진단 대상</div>
                 <div class="value" id="home-diag">—</div>
-                <div class="sub">KPI 기준선·진단 규칙에 걸린 매장 수 (최근 완성월)</div>
             </button>
         </div>
 
         <!-- 매출 한 줄 — 최근 완성월 전 매장 합계와 전월 대비. 자세한 것은
              매출 탭 몫이라 홈에는 이 한 줄뿐입니다(누르면 매출 탭으로). -->
-        <h3 class="home-sub-h">최근 매출 <span class="home-anom-sub" id="home-sales-sub"></span></h3>
+        <h3 class="home-sub-h" data-sv-scope="all">최근 매출 <span class="home-anom-sub" id="home-sales-sub"></span></h3>
         <button type="button" class="home-sales-line" id="home-sales-line">
             <span class="home-anom-empty">불러오는 중…</span>
         </button>
@@ -1042,10 +1005,6 @@
              (누르면 아래 그 항목 목록으로), 아래: 담당자별 카드(행마다 '확인' 표시 저장).
              기준·정의는 docs/sv-daily-tasks.md. -->
         <h3 class="home-sub-h">담당자별 오늘 확인 필요 <span class="home-anom-sub" id="home-sv-sub">불러오는 중…</span></h3>
-        <div class="sv-filter">
-            <label for="home-sv-filter">담당자</label>
-            <select id="home-sv-filter"><option value="">전체</option></select>
-        </div>
         <div class="kpis sv-summary" id="home-sv-summary"></div>
         <div class="sv-cards" id="home-sv-cards"><p class="home-anom-empty">불러오는 중…</p></div>
 
@@ -1080,10 +1039,6 @@
         </header>
         <div class="filters">
             <div class="field">
-                <label for="sdb-sv">담당 SV</label>
-                <select id="sdb-sv"><option value="">전체</option></select>
-            </div>
-            <div class="field">
                 <label for="sdb-region">지역</label>
                 <select id="sdb-region"><option value="">전체</option></select>
             </div>
@@ -1113,7 +1068,7 @@
         <datalist id="sdb-dl-pos"></datalist>
 
         <h3>신규 매장 등록</h3>
-        <p class="hint">이름은 계정표의 표준 매장명과 똑같이 적으세요 — 다르면 한 매장이 두 줄로 갈라집니다. 영업시작일을 넣으면 오픈·폐점 화면의 오픈 이력에도 같이 기록됩니다.</p>
+        <p class="hint">이름은 계정표의 표준 매장명과 똑같이 적으세요 — 다르면 한 매장이 두 줄로 갈라집니다.</p>
         <div class="reqform">
             <div class="field grow">
                 <label for="sdb-n-name">가맹점명 (필수)</label>
@@ -1204,8 +1159,6 @@
         </div>
 
         <div class="tableview tall" id="ap-table"></div>
-        <p class="hint">체크된 칸의 아이디·비밀번호는 접근 암호를 열면 표에 나타납니다.
-            계정 추가·수정은 아래 카드에서 합니다.</p>
     </section>
 
     <!-- 배달앱 계정 추가·수정 — 위 표의 게이트를 그대로 씁니다. 열람은 위 통합
@@ -1224,7 +1177,7 @@
             <form class="filters" data-noop>
                 <div class="field">
                     <label for="cred-f-store">매장</label>
-                    <select id="cred-f-store"></select>
+                    <select id="cred-f-store" data-sv-store-select></select>
                 </div>
                 <div class="field">
                     <label for="cred-f-channel">채널</label>
@@ -1288,7 +1241,7 @@
             <div class="filters">
                 <div class="field">
                     <label for="ct-store">매장</label>
-                    <select id="ct-store"><option value="">전체</option></select>
+                    <select id="ct-store" data-sv-store-select><option value="">전체</option></select>
                 </div>
                 <button class="linkish" id="ct-lock" type="button">닫기(암호 다시 받기)</button>
             </div>
@@ -1299,7 +1252,7 @@
             <div class="filters">
                 <div class="field">
                     <label for="ct-f-store">매장</label>
-                    <select id="ct-f-store"></select>
+                    <select id="ct-f-store" data-sv-store-select></select>
                 </div>
                 <div class="field">
                     <label for="ct-f-owner">가맹주</label>
@@ -1377,12 +1330,11 @@
             <h2>위반 기록 추가</h2>
             <span class="meta">SV·운영지원팀이 확인한 위반을 남기면 아래 표에 단계가 계산됩니다</span>
         </header>
-        <p class="hint">위반유형이 확실하지 않으면 비워 두세요 — 담당자 확인 표시가 붙습니다.</p>
 
         <div class="reqform">
             <div class="field">
                 <label for="v-store">매장</label>
-                <select id="v-store"><option value="">매장을 고르세요</option></select>
+                <select id="v-store" data-sv-store-select><option value="">매장을 고르세요</option></select>
             </div>
             <div class="field">
                 <label for="v-type">위반유형</label>
@@ -1435,7 +1387,6 @@
             <h2>진행 중인 위반 · 내용증명 단계</h2>
             <span class="meta" id="violation-summary"></span>
         </header>
-        <p class="hint">단계는 참고용 계산 결과이지 발송 승인이 아닙니다. 종료 처리를 잘못 눌렀다면 아래 '최근 종료된 위반' 표의 '다시 열기'로 되돌릴 수 있습니다.</p>
         <div class="tableview" id="t-violations"></div>
     </section>
 
@@ -1445,7 +1396,7 @@
     <details data-area="notices" class="card ledger" id="violation-resolved-card">
         <summary>
             <h2>최근 종료된 위반</h2>
-            <span class="meta">최근 20건만 보여줍니다</span>
+            <span class="meta">최근 20건만</span>
         </summary>
         <div class="ledger-body">
             <div class="tableview" id="t-violations-resolved"></div>
@@ -1514,7 +1465,7 @@
     <section data-area="visits" class="card full" id="daou-board-card">
         <header>
             <h2 id="dbo-name">매장 방문 리포트</h2>
-            <span class="meta" id="dbo-path">다우오피스 게시판에서 자동 반입</span>
+            <span class="meta" id="dbo-path"></span>
         </header>
         <div id="dbo-root"><p class="hint">불러오는 중…</p></div>
     </section>
@@ -1522,27 +1473,17 @@
     <section data-area="visits" class="card full" id="visit-form-card">
         <header>
             <h2>방문 기록 추가</h2>
-            <span class="meta">방문 보고를 남기면 아래 표에서 그 매장의 이전 이력을 바로 볼 수 있습니다</span>
         </header>
 
         <div class="reqform">
             <!-- SV 배정은 가맹점DB 반입분(store_profiles.sv_name)에서 옵니다.
-                 배정 자료가 없는 환경에서는 select 대신 짧은 안내가 나옵니다
-                 (vs-sv-empty) — 조용히 숨으면 "필터가 왜 없지" 를 알 길이
-                 없어서입니다(진단 #101 [B]).
-                 이 필터는 '그 SV 가 한 방문' 이 아니라 '그 SV 담당 매장' 의
-                 방문을 거릅니다(방문자와 무관) — 아래 힌트가 그 뜻입니다(같은 [C]). -->
-            <div class="field" id="vs-sv-field" hidden>
-                <label for="vs-sv">담당 SV</label>
-                <select id="vs-sv"><option value="">전체 SV</option></select>
-            </div>
-            <div class="field" id="vs-sv-empty" hidden>
-                <label>담당 SV</label>
-                <small class="hint">SV 배정 자료가 아직 없습니다 — 가맹점 DB 반입 뒤 필터가 생깁니다</small>
-            </div>
+                 담당자 선택은 헤더(sv-global) 하나로 통일했습니다 — 이 자리에
+                 있던 'vs-sv' 는 헤더와 값을 공유하지 않아 두 조건이 겹쳤습니다
+                 (2026-09-11 감사 · 카드 #168). 이 필터는 '그 SV 가 한 방문' 이
+                 아니라 '그 SV 담당 매장' 의 방문을 거릅니다(방문자와 무관). -->
             <div class="field">
                 <label for="vs-store">매장</label>
-                <select id="vs-store"><option value="">매장을 고르세요</option></select>
+                <select id="vs-store" data-sv-store-select><option value="">매장을 고르세요</option></select>
             </div>
             <div class="field">
                 <label for="vs-visited-on">방문일</label>
@@ -1555,8 +1496,10 @@
         </div>
 
         <!-- 방문 예정 매장 매출 사전 집계 — 새 SQL 없이 기존 api_store_metrics
-             (04_analysis.sql)의 결과에서 이 매장 행만 골라 보여줍니다. -->
-        <p class="hint" id="vsm-hint">매장을 고르면 방문 전 참고용으로 최근 매출을 보여줍니다.</p>
+             (04_analysis.sql)의 결과에서 이 매장 행만 골라 보여줍니다.
+             vsm-hint 는 실패·자료 없음일 때만 글이 들어갑니다(안내 문구는
+             2026-09-11 정리에서 뺐습니다 — app.js refreshVisitStoreMetrics). -->
+        <p class="hint" id="vsm-hint" hidden></p>
         <div class="kpis" id="visit-store-kpis" hidden>
             <div class="tile">
                 <div class="label">최근 매출</div>
@@ -1611,7 +1554,6 @@
             <div class="field grow" id="vp-field">
                 <label for="vp-files">사진 (여러 장 가능)</label>
                 <input type="file" id="vp-files" accept="image/*" multiple>
-                <small class="hint">촬영·앨범 어느 쪽이든 됩니다. 올릴 때 자동으로 줄여 저장합니다.</small>
                 <div class="vp-thumbs" id="vp-preview" hidden></div>
             </div>
             <div class="field">
@@ -1652,7 +1594,7 @@
             <!-- 사진 열(카드 #155): 썸네일은 서명 URL 로 새 창. '보고 복사' 는
                  글만 복사되므로(카카오톡 단톡방 붙여넣기) 사진이 안 실린다는
                  안내를 여기 한 줄로 둡니다. -->
-            <p class="hint" id="vp-hint">사진은 썸네일을 누르면 새 창에서 열립니다. '보고 복사' 는 글만 복사됩니다 — 사진은 단톡방에 따로 올려 주세요.</p>
+            <p class="hint" id="vp-hint">'보고 복사'는 글만 복사됩니다.</p>
             <div class="tableview" id="t-visits"></div>
         </div>
     </details>
@@ -1704,12 +1646,10 @@
             <div class="tile">
                 <div class="label">오픈 예정</div>
                 <div class="value" id="lc159-planned-opens">—</div>
-                <div class="sub">마지막 기록이 오픈 예정인 매장</div>
             </div>
             <div class="tile">
                 <div class="label">폐점 예정</div>
                 <div class="value" id="lc159-planned-closes">—</div>
-                <div class="sub">마지막 기록이 폐점 예정인 매장</div>
             </div>
             <div class="tile">
                 <div class="label">기록 없음</div>
@@ -1724,11 +1664,10 @@
             <h2>오픈·폐점 기록 추가</h2>
             <span class="meta">기록하면 아래 현재 상태·이력 표에 바로 반영됩니다</span>
         </header>
-        <p class="hint">잘못 기록했으면 반대 이벤트(예: 폐점을 다시 오픈)를 새로 남겨 바로잡으세요 — 이 표는 수정·삭제 기능이 없습니다. 오픈 예정·폐점 예정은 예정일로 남기고, 실제로 오픈·폐점하면 오픈/폐점을 새로 기록해 확정합니다(예정일이 지나도 저절로 바뀌지 않습니다).</p>
         <div class="reqform">
             <div class="field">
                 <label for="la-store">매장</label>
-                <select id="la-store"><option value="">매장을 고르세요</option></select>
+                <select id="la-store" data-sv-store-select><option value="">매장을 고르세요</option></select>
             </div>
             <div class="field">
                 <label for="la-type">구분</label>
@@ -1763,7 +1702,7 @@
         <!-- 103_store_status.sql(카드 #159): 전 매장 + 상태 5값. 기록 없는 매장은
              '기록 없음' 으로만 보여 주고 운영/폐점을 판정하지 않습니다 — 확정은
              담당자(#158 대조표), 반입은 #161. -->
-        <p class="hint">전 매장이 나옵니다. 상태는 마지막 기록(오픈·폐점·오픈 예정·폐점 예정) 하나로 정하고, 기록이 없는 매장은 <b>기록 없음</b>으로 둡니다 — 운영 중인지 폐점인지 판정하지 않습니다. 마지막 매출월이 자료 최신월보다 앞이면 '매출 끊김'으로 표시합니다.</p>
+        <p class="hint">기록 없음 = 판정하지 않은 매장 · 매출 끊김 = 마지막 매출월이 자료 최신월보다 앞</p>
         <div class="filters">
             <div class="field">
                 <label for="lc159-filter">상태</label>
@@ -1815,7 +1754,7 @@
             <h2>공지 작성</h2>
             <span class="meta">접수하면 승인 대기로 만들어집니다</span>
         </header>
-        <p class="hint">공지는 승인 뒤에 발송됩니다. 대상은 접수한 시점의 매장 목록으로 고정됩니다.</p>
+        <p class="hint">대상은 접수 시점의 매장 목록으로 고정됩니다.</p>
         <div class="reqform">
             <div class="field">
                 <label for="an-audience">대상</label>
@@ -1832,7 +1771,7 @@
             </div>
             <div class="field" id="an-stores-field" hidden>
                 <label for="an-stores">매장 (여러 개 선택)</label>
-                <select id="an-stores" multiple size="6"></select>
+                <select id="an-stores" data-sv-store-select multiple size="6"></select>
             </div>
             <div class="field">
                 <label>&nbsp;</label>
@@ -1865,7 +1804,6 @@
             <h2>공지 목록</h2>
             <span class="meta" id="comms-summary"></span>
         </header>
-        <p class="hint">승인은 '업무' 화면의 승인 대기에서 합니다.</p>
         <div class="tableview" id="t-announcements"></div>
     </section>
 
@@ -1897,7 +1835,7 @@
             </div>
             <div class="field">
                 <label for="dmap-store">매장</label>
-                <select id="dmap-store"><option value="">전체</option></select>
+                <select id="dmap-store" data-sv-store-select><option value="">전체</option></select>
             </div>
         </div>
         <div id="dmap-container"></div>
@@ -1923,14 +1861,13 @@
             <h2>매장별 광고·메뉴 대조</h2>
             <span class="meta" id="adv-meta"></span>
         </header>
-        <p class="hint">매장 하나를 골라 광고 집행 실적과 배달앱 메뉴 대조 결과를 봅니다. 전 매장을 한눈에 보려면 아래 '광고 집행 현황'을 쓰세요.</p>
         <div class="reqform">
             <div class="field grow">
                 <label for="adv-store">매장</label>
-                <select id="adv-store"><option value="">매장을 고르세요</option></select>
+                <select id="adv-store" data-sv-store-select><option value="">매장을 고르세요</option></select>
             </div>
         </div>
-        <div class="sd-empty" id="adv-empty">매장을 선택하세요 — 위 매장 칸에 이름을 치면 검색됩니다.</div>
+        <div class="sd-empty" id="adv-empty">매장을 선택하세요</div>
         <div id="adv-detail" hidden>
             <div class="kpis" id="adv-kpis"></div>
             <p class="hint" id="adv-ads-hint" hidden></p>
@@ -1951,13 +1888,10 @@
              같은 (월·채널·캠페인)에 자동 수집이 오면 수기 행이 덮입니다
              (담당자 결정 2026-09-08). -->
         <p class="hint" id="ad166-auto-note">
-            배민(우리가게클릭)·쿠팡이츠·요기요 광고비는 자동 수집됩니다 —
-            그 외 채널(네이버·인스타그램 등)은 아래 칸에 수기로 넣거나 엑셀 양식으로
-            반입합니다.
+            배민·쿠팡이츠·요기요만 자동 수집 — 그 외는 수기 입력
         </p>
         <p class="hint">
-            매장·월·채널·광고비만 넣으면 됩니다. 같은 매장·월·채널·광고 이름으로
-            다시 넣으면 덮어씁니다.
+            같은 매장·월·채널·이름으로 다시 넣으면 덮어씁니다.
             <span id="ad166-overwrite-note">같은 달·채널·캠페인에 자동 수집이 오면
             여기서 넣은 값은 자동 수집분으로 덮입니다.</span>
         </p>
@@ -2097,7 +2031,7 @@
         <div class="reqform">
             <div class="field grow">
                 <label for="is-store">매장</label>
-                <select id="is-store"><option value="">매장을 고르세요</option></select>
+                <select id="is-store" data-sv-store-select><option value="">매장을 고르세요</option></select>
             </div>
         </div>
         <div class="kpis" id="is-kpis"></div>
@@ -2124,7 +2058,7 @@
             </div>
             <div class="field">
                 <label for="oh-store">매장</label>
-                <select id="oh-store"><option value="">전체</option></select>
+                <select id="oh-store" data-sv-store-select><option value="">전체</option></select>
             </div>
         </div>
         <p class="hint" id="oh-coverage"></p>
@@ -2148,7 +2082,7 @@
             </div>
             <div class="field">
                 <label for="iu-store">매장</label>
-                <select id="iu-store"><option value="">전체</option></select>
+                <select id="iu-store" data-sv-store-select><option value="">전체</option></select>
             </div>
         </div>
         <p class="hint" id="iu-coverage"></p>
@@ -2251,24 +2185,24 @@
             <h2>POS 메뉴 현황</h2>
             <span class="meta" id="pm-meta"></span>
         </header>
-        <p class="hint">굿모닝·착한통신은 분류 코드가 같아도 뜻이 다릅니다 — 계정을 먼저 고르세요.</p>
+        <p class="hint">굿모닝·착한통신은 분류 코드가 같아도 뜻이 다릅니다.</p>
         <div class="kpis" id="pm-kpis" hidden>
-            <div class="tile hero">
+            <div class="tile hero" data-sv-scope="all">
                 <div class="label">등록 상품</div>
                 <div class="value" id="pm-items">—</div>
                 <div class="sub" id="pm-collected"></div>
             </div>
-            <div class="tile">
+            <div class="tile" data-sv-scope="all">
                 <div class="label">지금 못 파는 상태</div>
                 <div class="value" id="pm-unavailable">—</div>
                 <div class="sub">품절 · 일시판매중지</div>
             </div>
-            <div class="tile">
+            <div class="tile" data-sv-scope="all">
                 <div class="label">메뉴가 붙은 매장</div>
                 <div class="value" id="pm-stores">—</div>
                 <div class="sub" id="pm-unmatched"></div>
             </div>
-            <div class="tile">
+            <div class="tile" data-sv-scope="all">
                 <div class="label">승인 대기 중 변경</div>
                 <div class="value" id="pm-open">—</div>
             </div>
@@ -2277,7 +2211,7 @@
             표만 계정·매장·분류로 좁혀집니다.</p>
         <div class="cardsearch">
             <select id="pm-account"><option value="">전체 계정</option></select>
-            <select id="pm-store"><option value="">전체 매장</option></select>
+            <select id="pm-store" data-sv-store-select><option value="">전체 매장</option></select>
             <select id="pm-large"><option value="">전체 분류</option></select>
             <input type="search" id="pm-q" aria-label="메뉴명 또는 상품코드 검색" placeholder="메뉴명 또는 상품코드">
             <label class="recheck">
@@ -2297,7 +2231,7 @@
             <h2>오일데이 원복 점검</h2>
             <span class="meta" id="od-meta"></span>
         </header>
-        <p class="hint" id="od-hint">판정 기준 시점은 마지막 POS 메뉴 반입 시점입니다.</p>
+        <p class="hint" id="od-hint">판정 기준 = 마지막 POS 메뉴 수집 시점</p>
         <div class="tableview" id="t-oilday"></div>
     </section>
 
@@ -2330,7 +2264,6 @@
             <h2>변경 요청·승인·실행</h2>
             <span class="meta" id="pm-req-meta"></span>
         </header>
-        <p class="hint">실행 칸이 'dry-run' 이면 요청 내용만 만들어 본 것이고 POS 는 그대로입니다.</p>
         <div class="tableview" id="t-posmenu-requests"></div>
         <div id="posmenu-exec-panel" hidden>
             <h3 id="posmenu-exec-title"></h3>
@@ -2374,22 +2307,18 @@
             <button type="button" class="tile hometile" data-task-filter="waiting_approval">
                 <div class="label">승인 대기</div>
                 <div class="value" id="tk-waiting">—</div>
-                <div class="sub">승인해야 다음으로 넘어가는 건</div>
             </button>
             <button type="button" class="tile hometile" data-task-filter="received">
                 <div class="label">접수</div>
                 <div class="value" id="tk-received">—</div>
-                <div class="sub">아직 아무도 잡지 않은 건</div>
             </button>
             <button type="button" class="tile hometile" data-task-filter="in_progress">
                 <div class="label">처리 중</div>
                 <div class="value" id="tk-in-progress">—</div>
-                <div class="sub">담당자가 잡고 있는 건</div>
             </button>
             <button type="button" class="tile hometile" data-task-filter="escalated">
                 <div class="label">이관</div>
                 <div class="value" id="tk-escalated">—</div>
-                <div class="sub">판단 불가로 담당 SV에게 넘긴 건</div>
             </button>
         </div>
     </section>
@@ -2412,7 +2341,7 @@
                 <option value="done">완료 — 끝난 건</option>
                 <option value="rejected">반려 — 처리하지 않기로 한 건</option>
             </select>
-            <select id="tk-filter-store"><option value="">모든 매장</option></select>
+            <select id="tk-filter-store" data-sv-store-select><option value="">모든 매장</option></select>
             <label class="recheck">
                 <input type="checkbox" id="tk-filter-overdue">
                 <span>미처리만</span>
@@ -2430,14 +2359,13 @@
         <div id="task-store-panel" hidden>
             <h3 id="task-store-title"></h3>
             <p class="hint">
-                지정하면 같은 카카오 사용자의 다음 접수부터 자동으로 이 매장이
-                붙고, 매장이 비어 있던 과거 접수도 함께 갱신됩니다.
+                지정하면 매장이 비어 있던 과거 접수도 함께 갱신됩니다.
             </p>
             <div class="reqform">
                 <div class="field grow">
                     <label for="task-store-input">매장</label>
                     <input type="text" id="task-store-input" list="task-store-options"
-                           placeholder="매장 이름을 입력하면 목록이 좁혀집니다">
+                           placeholder="매장 이름">
                     <datalist id="task-store-options"></datalist>
                 </div>
                 <div class="field">
@@ -2470,7 +2398,7 @@
             </div>
             <div class="field">
                 <label for="tk-store">매장</label>
-                <select id="tk-store"><option value="">매장 무관</option></select>
+                <select id="tk-store" data-sv-store-select><option value="">매장 무관</option></select>
             </div>
             <div class="field">
                 <label for="tk-source">들어온 경로</label>
@@ -2515,7 +2443,7 @@
             <h2>AI 1차 응대 검토</h2>
             <span class="meta" id="inquiry-summary"></span>
         </header>
-        <p class="hint">실제 발송은 발송 수단이 연결된 뒤에 이뤄집니다. 답변을 고치면 다시 검토 대기로 돌아갑니다.</p>
+        <p class="hint">실제 발송은 발송 수단이 연결된 뒤입니다.</p>
         <div class="cardsearch">
             <select id="iq-filter">
                 <option value="draft">검토 대기</option>
@@ -2555,12 +2483,10 @@
             <div class="tile">
                 <div class="label">챗봇 응답</div>
                 <div class="value" id="ks-calls">—</div>
-                <div class="sub">챗봇이 응답한 횟수</div>
             </div>
             <div class="tile">
                 <div class="label">접수</div>
                 <div class="value" id="ks-tasks">—</div>
-                <div class="sub">접수로 이어진 건</div>
             </div>
             <div class="tile">
                 <div class="label">접수율</div>
@@ -2572,7 +2498,6 @@
         <svg class="plot" id="c-kakao-daily" role="img" aria-label="카카오 챗봇 일별 응답·접수"></svg>
         <div id="ks-detail" hidden>
             <h3>대화 단계별 응답·접수</h3>
-            <p class="hint">응답만 있고 접수가 없는 단계가 어디서 대화가 끊기는지를 보여줍니다.</p>
             <div class="tableview" id="t-kakao-blocks"></div>
             <h3>분류별 접수</h3>
             <svg class="plot" id="c-kakao-category" role="img" aria-label="분류별 접수"></svg>
@@ -2592,10 +2517,7 @@
         </summary>
         <div class="cardfold-body">
         <p class="hint">
-            위반 통보(공문·내용증명)처럼 승인이 필요한 업무를, 여기 등록한 범위
-            안에서는 건별 승인 없이 바로 완료할 수 있습니다. 승인하면 발송 대기
-            목록에 들어갑니다 — 실제 발송은 메일 연결 후 나갑니다. 철회하면
-            그때부터 다시 건별 승인을 거칩니다.
+            등록한 범위 안에서는 건별 승인 없이 바로 완료할 수 있습니다.
         </p>
         <div class="reqform">
             <div class="field">
@@ -2632,7 +2554,6 @@
             <h2>수신처</h2>
             <span class="meta" id="rc-summary"></span>
         </header>
-        <p class="hint">표는 한 사람이 한 줄입니다 — 받을 것 체크를 만지면 바로 저장되고, 꺼진 종류는 발송되지 않습니다. 같은 메일을 다시 저장하면 받을 것이 화면대로 맞춰집니다.</p>
         <div class="reqform">
             <div class="field">
                 <label for="rc-name">이름</label>
@@ -2682,7 +2603,6 @@
             <h2>발송 이력</h2>
             <span class="meta" id="nf-summary"></span>
         </header>
-        <p class="hint">dry-run 은 보내지 않고 기록만 남긴 시험입니다.</p>
         <div class="cardsearch">
             <select id="nf-filter-kind">
                 <option value="">전체</option>
@@ -2738,11 +2658,10 @@
             <h2>매장별 로열티 <span id="sts-badge" hidden></span></h2>
             <span class="meta" id="sts-meta"></span>
         </header>
-        <p class="hint">매장 하나를 골라 매출·청구가 있는 전 기간의 청구·입금·미수 흐름을 봅니다. 폐점 매장도 옛 기록이 그대로 보입니다. 한 달을 전 매장으로 보려면 아래 '월별 로열티 청구'를 쓰세요.</p>
         <div class="reqform">
             <div class="field grow">
                 <label for="sts-store">매장</label>
-                <select id="sts-store"><option value="">매장을 고르세요</option></select>
+                <select id="sts-store" data-sv-store-select><option value="">매장을 고르세요</option></select>
             </div>
             <div class="field">
                 <label for="sts-filter">상태</label>
@@ -2753,7 +2672,7 @@
                 </select>
             </div>
         </div>
-        <div class="sd-empty" id="sts-empty">매장을 선택하세요 — 위 매장 칸에 이름을 치면 검색됩니다.</div>
+        <div class="sd-empty" id="sts-empty">매장을 선택하세요</div>
         <div id="sts-detail" hidden>
             <div class="kpis" id="sts-kpis"></div>
             <div class="tableview" id="t-sts-months"></div>
@@ -2766,7 +2685,6 @@
             <h2>월별 로열티 청구</h2>
             <span class="meta" id="st-month-meta"></span>
         </header>
-        <p class="hint">달 하나를 골라 전 매장의 청구·입금 현황을 보고, 그 달 청구를 만드는 곳입니다. '청구 생성·갱신'은 없는 청구는 만들고 있는 청구는 지금 매출×요율로 다시 계산합니다 — 본사에서 받은 청구(표의 '본사 확정')는 바뀌지 않습니다.</p>
         <div class="cardsearch">
             <select id="st-ym" aria-label="정산 월 선택"></select>
             <button type="button" id="st-generate" class="btn-primary">청구 생성·갱신</button>
@@ -2792,17 +2710,17 @@
              '미청구 매장' 타일은 뺐습니다 — 위 안내문이 행동(버튼)까지 같이
              알려주는 유일한 자리라 타일로 또 세면 헷갈립니다(피드백 1). -->
         <div class="kpis">
-            <div class="tile">
+            <div class="tile" data-sv-scope="all">
                 <div class="label">① 이 달 청구한 돈</div>
                 <div class="value" id="st-billed">—</div>
                 <div class="sub" id="st-billed-sub"></div>
             </div>
-            <div class="tile">
+            <div class="tile" data-sv-scope="all">
                 <div class="label">② 들어온 돈 (입금)</div>
                 <div class="value" id="st-paid">—</div>
                 <div class="sub" id="st-paid-sub"></div>
             </div>
-            <div class="tile hero" id="st-outstanding-tile">
+            <div class="tile hero" id="st-outstanding-tile" data-sv-scope="all">
                 <div class="label">③ 아직 못 받은 돈 (미수)</div>
                 <div class="value" id="st-outstanding">—</div>
                 <div class="sub" id="st-outstanding-sub"></div>
@@ -2820,10 +2738,6 @@
             <h2>입금 기록</h2>
             <span class="meta">기록하면 위 표와 미수 목록이 바로 다시 계산됩니다</span>
         </header>
-        <p class="hint">
-            위 표의 '입금' 버튼을 누르면 매장이 채워집니다. 잘못 넣은 기록은
-            '내역'에서 취소하면 됩니다 — 기록은 지워지지 않고 취소 표시로 남습니다.
-        </p>
         <div class="reqform">
             <div class="field">
                 <label for="pay-invoice">매장 (그 달 청구)</label>
@@ -2856,7 +2770,6 @@
             <h2>미수 목록</h2>
             <span class="meta" id="st-recv-meta"></span>
         </header>
-        <p class="hint">납기가 지났는데 못 받은 청구를 달에 상관없이 다 모은 목록입니다. '발송 승인 요청'을 누르면 업무 영역의 승인 대기로 넘어가고, 실제 발송은 승인 뒤에 이뤄집니다. 지연이자는 참고 계산입니다.</p>
         <div class="tableview" id="t-receivables"></div>
     </section>
 
@@ -2924,6 +2837,15 @@
     <div class="bigtable-body" id="bigtable-body"></div>
 </div>
 
-<script type="module" src="app.js"></script>
+<!-- 🔴 배포할 때마다 v= 를 그날 날짜로 바꾸세요.
+     이유(2026-09-16 실측): Pages 가 index.html·app.js 에 똑같이
+     Cache-Control: max-age=600 을 줍니다. 그래서 배포 직후 최대 10분 동안
+     **새 index.html + 캐시된 옛 app.js** 조합이 생깁니다. 화면에서 요소를
+     없앤 배포에서는 옛 app.js 가 그 요소를 찾다가 그 자리에서 죽고,
+     리뷰 화면이 아무 말 없이 안 뜹니다(9/16 rv-store 제거가 그 경우).
+     v= 가 바뀌면 브라우저가 옛 파일을 아예 안 씁니다.
+     ⚠️ 모듈 34개는 맨 경로로 불려 이 쿼리가 안 걸립니다 — 모듈의 export 를
+        없애거나 이름을 바꾸는 배포라면 그것만으로 부족합니다(카드 #181). -->
+<script type="module" src="app.js?v=20260916"></script>
 </body>
 </html>

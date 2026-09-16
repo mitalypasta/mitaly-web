@@ -2714,8 +2714,11 @@ const HANDLERS = {
         };
         const unc = (x) => x.no_sales.unchecked + x.bad_reviews.unchecked + x.unanswered.unchecked + x.drops.unchecked;
         return { day, svs: [
-            { sv: "김담당", stores: 12, today: 6, unchecked: unc(a), items: a },
-            { sv: "이담당", stores: 11, today: 0, unchecked: 0, items: b },
+            // 담당자 이름은 api_store_profiles 의 sv_name 과 **같아야** 합니다 —
+            // 실제 108 도 store_profiles.sv_name 으로 묶습니다. 데모만 이름이
+            // 갈려 있어서 홈 담당자 카드가 데모에서 영영 안 그려졌습니다.
+            { sv: "김SV", stores: 12, today: 6, unchecked: unc(a), items: a },
+            { sv: "박SV", stores: 11, today: 0, unchecked: 0, items: b },
         ] };
     },
     api_sv_daily_check: ({ p_kind, p_store_id, p_ref_id, p_done }) => {

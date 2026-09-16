@@ -74,7 +74,7 @@ async function refresh() {
     const store = $("is-store").value;
     const my = ++seq;
     if (!store) {
-        empty("매장을 선택하세요 — 위 매장 칸에 이름을 치면 검색됩니다.");
+        empty("매장을 선택하세요");
         return;
     }
     $("is-meta").textContent = "불러오는 중…";
@@ -91,7 +91,7 @@ async function refresh() {
         }
         const p = probe.data || {};
         if (!p.ym_min) {
-            empty("아직 반입된 아워홈 발주량이 없습니다.");
+            empty("아워홈 발주량이 없습니다.");
             return;
         }
         ohRange = { min: p.ym_min, max: p.ym_max };
@@ -168,7 +168,7 @@ function render(store, from, to, iuFrom, oh, monthly, iu) {
             `${escape(ymLabel(from))} ~ ${escape(ymLabel(to))}`),
         tile("이론 공급가 (최근 3개월)",
             usage.length ? escape(wonFull(usageCost)) : "—",
-            covPct != null ? `판매 수량의 ${covPct}% 반영 (원가분석 있는 메뉴만)` : ""),
+            covPct != null ? `판매 수량의 ${covPct}%만 들어간 값입니다` : ""),
     ].join("") : `<div class="sd-empty">${escape(store)}의 발주·판매 자료가 이 기간에 없습니다.</div>`;
 
     // 월별 표 — 발주액·매출·원가율.
@@ -179,9 +179,7 @@ function render(store, from, to, iuFrom, oh, monthly, iu) {
                 r.sales != null ? wonFull(r.sales) : "—",
                 pctText(r.rate)]));
         $("is-note").textContent =
-            "원가율 = 아워홈 발주액 ÷ 매출 — 발주는 본사물류 하한(VAT 포함 · "
-            + "자점매입 미포함), 매출은 메뉴 매출 기준(배달 할인 전 · 홀 할인 후)"
-            + "이라 매출 소급이 닿지 않은 달은 비거나 과대일 수 있습니다.";
+            "원가율 = 아워홈 발주액 ÷ 매출 — 자점매입은 빠져 있습니다.";
     } else {
         $("t-is-months").innerHTML =
             '<p class="hint">이 기간에 아워홈 발주·매출 자료가 없습니다.</p>';
@@ -201,8 +199,7 @@ function render(store, from, to, iuFrom, oh, monthly, iu) {
             usage.slice(0, 8).map((r) => [r.ingredient, int(r.amount),
                 wonFull(r.cost), int(r.menus)]));
         $("is-usage-note").textContent =
-            `${ymLabel(iuFrom)} ~ ${ymLabel(to)} · 이론 공급가 상위 8 — `
-            + "전 재료는 아래 '이론 재료 사용량' 카드에서 봅니다.";
+            `${ymLabel(iuFrom)} ~ ${ymLabel(to)} · 이론 공급가 상위 8`;
     } else {
         $("t-is-usage").innerHTML = "";
         $("is-usage-note").textContent = "";

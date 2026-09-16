@@ -52,9 +52,7 @@ async function refreshRecipients() {
         ? `${int(rcGroups.length)}명 · 켜진 항목 ${int(data.enabled)}건` : "";
     if (!rcItems.length) {
         $("t-recipients").innerHTML =
-            '<p class="hint">등록된 수신처가 없습니다 — 지금은 보고서·알림이'
-            + ' 만들어져도 아무 데도 가지 않습니다. 위 칸에서 바로 넣을 수'
-            + ' 있습니다.</p>';
+            '<p class="hint">수신처가 없습니다 — 보고서·알림이 아무 데도 안 갑니다.</p>';
         return;
     }
 
@@ -65,9 +63,12 @@ async function refreshRecipients() {
         if (g.channel !== "mail") return row?.enabled ? "받음" : "—";
         return `<input type="checkbox" data-act="rc-kind" data-g="${gi}"`
             + ` data-kind="${kind}"${row?.enabled ? " checked" : ""}`
-            + ` title="체크하면 바로 저장됩니다">`;
+            + ">";
     };
 
+    // 이 표에는 매장 열이 자체가 없고 '담당 SV' 열이 있습니다 — 그래서 전역
+    // 담당자 필터가 통째로 비켜 갔습니다(2026-09-11 감사). 담당자 이름 열을
+    // 못박아 그 이름으로 거릅니다.
     table($("t-recipients"),
         ["이름", "받는 곳",
          ...RC_KINDS.map((k) => NOTIFY_KIND_LABEL[k] || k), "담당 SV", ""],
@@ -83,7 +84,7 @@ async function refreshRecipients() {
                 ? `<button type="button" class="ghost" data-act="edit" data-id="${g.base.id}">고치기</button>`
                 : "—",
         ]),
-        { html: true });
+        { html: true, svNameCol: 2 + RC_KINDS.length });
 }
 
 // 체크 하나 = 저장 하나. 있던 행은 행 단위 켜고 끄기(toggle), 없던 행은 사람

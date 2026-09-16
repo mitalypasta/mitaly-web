@@ -25,7 +25,7 @@ async function ctSummary() {
     const { data } = await db.rpc("api_store_contacts_summary", {});
     if (data && typeof data.stores_with_contacts === "number") {
         $("ct-summary").textContent = data.stores_with_contacts
-            ? `${int(data.stores_with_contacts)}개 매장 등록 · 마지막 반입 `
+            ? `${int(data.stores_with_contacts)}개 매장 등록 · 마지막 갱신 `
               + (String(data.last_imported_at || "").slice(0, 10) || "—")
             : "등록된 연락처 없음";
     }
@@ -78,7 +78,7 @@ function drawContacts() {
     const rows = only ? ctRows.filter((r) => r.store_name === only) : ctRows;
     if (!rows.length) {
         $("ct-table").innerHTML =
-            '<p class="hint">등록된 연락처가 없습니다. 반입 도구가 들여오면 여기 나타납니다.</p>';
+            '<p class="hint">등록된 연락처가 없습니다.</p>';
         return;
     }
     table($("ct-table"),

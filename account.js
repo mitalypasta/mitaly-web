@@ -22,11 +22,14 @@ import { db } from "./client.js";
 import { int } from "./format.js";
 import { escape } from "./util.js";
 import { table, $ } from "./dom.js";
+import { svFilterRows, onSvChange } from "./svfilter.js";
 
 let apData = null;   // { channels: [...], stores: [{store_name, has: {...}}], totals: {...} }
 let credRows = null; // null = 잠김 · 배열 = 게이트 통과(credentials.js 가 넣음)
 
 export async function initAccountPresence() {
+    // 헤더 담당자가 바뀌면 이 화면의 숫자·표를 다시 계산합니다.
+    onSvChange(() => { if (apData) drawAccountPresence(); });
     const { data, error } = await db.rpc("api_account_presence");
     if (error) {
         $("ap-table").innerHTML =
@@ -89,12 +92,15 @@ function drawAccountPresence() {
     const channel = $("ap-channel").value;
     const state = $("ap-state").value;
 
-    const withAny = apData.stores.filter((s) => Object.keys(s.has).length).length;
+    // 채널별 합계(apData.totals)는 서버가 전 매장으로 센 값이라 카드에
+    // '전사 기준' 표식이 붙습니다(index.html). 매장 수는 화면이 직접 셉니다.
+    const mine = svFilterRows(apData.stores, (s) => s.store_name);
+    const withAny = mine.filter((s) => Object.keys(s.has).length).length;
     $("ap-summary").textContent =
         apData.channels.map((ch) => `${ch} ${int(apData.totals[ch] || 0)}`).join(" · ")
-        + ` · 계정 있는 매장 ${int(withAny)}/${int(apData.stores.length)}곳`;
+        + ` · 계정 있는 매장 ${int(withAny)}/${int(mine.length)}곳`;
 
-    let list = apData.stores;
+    let list = mine;
     if (channel) {
         if (state === "has") list = list.filter((s) => s.has[channel]);
         else if (state === "none") list = list.filter((s) => !s.has[channel]);

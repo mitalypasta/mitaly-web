@@ -5,6 +5,7 @@ import { wonFull, int, ymLabel } from "./format.js";
 import { escape, monthsBetween } from "./util.js";
 import { $, table, searchify, setHero, heroFail, trapFocus } from "./dom.js";
 import { db, fetchStores } from "./client.js";
+import { svFilterRows, onSvChange } from "./svfilter.js";
 import { S } from "./state.js";
 import { refreshTasksSummary, refreshTaskList, taskStatusTag } from "./tasks.js";
 
@@ -29,6 +30,8 @@ const SETTLE_STATUS_LABEL = {
 let stRows = [];   // api_royalty_month 의 stores. 입금 내역 패널이 다시 씁니다.
 
 export function initSettlement() {
+    // 헤더 담당자가 바뀌면 이 화면의 숫자·표를 다시 계산합니다.
+    onSvChange(() => { renderSettlementMonthTable(); refreshReceivables(); });
     const sel = $("st-ym");
     const months = S.filterRange ? monthsBetween(S.filterRange.min, S.filterRange.max) : [];
     for (const ym of [...months].reverse()) {
@@ -107,7 +110,7 @@ async function refreshSettlementMonth() {
         : "";
     $("st-outstanding").textContent = wonFull(t.outstanding);
     $("st-outstanding-sub").textContent = t.outstanding > 0
-        ? `매장 ${int(t.overdue_stores)}곳 — 아래 미수 목록에서 처리`
+        ? `매장 ${int(t.overdue_stores)}곳`
         : "다 들어왔습니다";
     // 남은 돈이 있으면 타일 값이 빨간 강조를 받습니다(0원은 강조 없음).
     $("st-outstanding-tile").classList.toggle("t-urgent", Number(t.outstanding) > 0);
@@ -125,8 +128,7 @@ async function refreshSettlementMonth() {
     const drift = $("st-drift");
     drift.hidden = driftIds.size === 0;
     if (driftIds.size) {
-        drift.textContent = `청구를 만든 뒤 매출이 바뀐 매장 ${int(driftIds.size)}곳 — `
-            + "'청구 생성·갱신'을 누르면 지금 매출로 다시 계산됩니다.";
+        drift.textContent = `청구를 만든 뒤 매출이 바뀐 매장 ${int(driftIds.size)}곳`;
     }
 
     // 청구가 안 만들어진 매장은 미납이어도 미수 목록에 영영 안 잡힙니다.
@@ -134,11 +136,8 @@ async function refreshSettlementMonth() {
     const unbilledWarn = $("st-unbilled-warn");
     unbilledWarn.hidden = !(t.unbilled_stores > 0);
     if (t.unbilled_stores > 0) {
-        unbilledWarn.textContent = (t.billed_stores > 0
-                ? `아직 청구가 없는 매장 ${int(t.unbilled_stores)}곳`
-                : "이 달 청구가 아직 없습니다")
-            + " — '청구 생성·갱신'을 누르면 만들어집니다."
-            + " 청구가 없으면 미수 목록에도 안 잡힙니다.";
+        unbilledWarn.textContent =
+            `청구 없는 매장 ${int(t.unbilled_stores)}곳은 미수에 안 잡힙니다.`;
     }
 
     // 입금 폼의 매장 목록 = 이 달 청구가 있는 매장. 선택은 유지합니다.
@@ -178,10 +177,13 @@ function stsMonthBadge(name) {
 
 function renderSettlementMonthTable() {
     const filter = $("sts-month-filter").value;
-    const rows = stRows.filter((s) => stsMatchesFilter(s.store, filter));
-    $("sts-month-shown").textContent = filter && stRows.length
-        ? `${int(rows.length)} / ${int(stRows.length)}곳` : "";
-    if (!stRows.length) {
+    // 담당자 조건이 먼저, 그 다음 이 화면의 상태 필터입니다. 'N / M곳' 의
+    // 분모도 담당 몫이라야 표와 말이 맞습니다.
+    const mine = svFilterRows(stRows, (s) => s.store);
+    const rows = mine.filter((s) => stsMatchesFilter(s.store, filter));
+    $("sts-month-shown").textContent = filter && mine.length
+        ? `${int(rows.length)} / ${int(mine.length)}곳` : "";
+    if (!mine.length) {
         $("t-settlement").innerHTML =
             '<p class="hint">이 달에는 매출도 청구도 없습니다. 다른 달을 골라 보세요.</p>';
         return;
@@ -245,8 +247,7 @@ async function generateInvoices() {
     const now = new Date();
     const thisYm = now.getFullYear() * 100 + (now.getMonth() + 1);
     if (ym >= thisYm) {
-        msg.textContent = "이번 달은 아직 끝나지 않았습니다 — 다음 달 1일 이후에 생성하세요. "
-            + "지금 예상액은 표의 '예상' 값으로 보세요.";
+        msg.textContent = "이번 달은 아직 안 끝났습니다 — 다음 달 1일 이후에 생성하세요.";
         return;
     }
     button.disabled = true;
@@ -273,7 +274,7 @@ async function submitPayment() {
 
     if (!invoiceId) {
         notice.className = "notice error";
-        notice.textContent = "매장을 고르세요. 청구가 없는 달이면 먼저 '청구 생성·갱신'을 누르세요.";
+        notice.textContent = "매장을 고르세요.";
         return;
     }
     if (!$("pay-date").value) {
@@ -519,7 +520,7 @@ async function openRateModal() {
     rateStores = d.stores || [];
     rateDefaultPct = d.default_rate_pct;
     $("rate-default-meta").textContent =
-        `공통 요율 ${rateDefaultPct != null ? rateDefaultPct : "—"}% · 다른 요율을 줄 매장만 고르세요`;
+        `공통 요율 ${rateDefaultPct != null ? rateDefaultPct : "—"}%`;
     renderRateList();
     $("rate-search").focus();
 }
@@ -562,7 +563,7 @@ async function saveRate(reset) {
     rateNotice((reset
             ? `${rateSelected.store}을(를) 공통 요율 ${rateDefaultPct}%로 되돌렸습니다.`
             : `${rateSelected.store} 요율을 ${rate}%로 저장했습니다.`)
-        + " 이미 만들어진 청구는 그대로입니다 — '청구 생성·갱신'을 누르면 반영됩니다.",
+        + " 이미 만들어진 청구는 그대로입니다.",
         false);
     renderRateList();
     // 미청구 매장의 '예상 청구' 미리보기가 이 요율을 쓰므로 같이 새로 그립니다.
@@ -824,11 +825,7 @@ async function refreshSettlementStore() {
     }
 
     $("sts-note").textContent =
-        (state === "closed"
-            ? "폐점 매장입니다 — 옛 기록은 열람용이고, 남은 미수는 아래 미수 목록에서 처리합니다. "
-            : "")
-        + "청구·입금은 아래 '월별 로열티 청구'와 같은 원천입니다 — 청구가 없는 달은 "
-        + "'청구 없음'으로 보이고, 그 달을 골라 '청구 생성·갱신'을 누르면 만들어집니다.";
+        state === "closed" ? "폐점 매장 — 옛 기록입니다" : "";
 }
 
 async function initSettlementStoreView() {
@@ -866,8 +863,14 @@ async function refreshReceivables() {
         return;
     }
     const d = data || {};
-    const items = d.items || [];
-    const totals = d.totals || {};
+    // 담당자 조건을 **세기 전에** 겁니다. 서버 totals 를 그대로 쓰면 목록은
+    // 줄었는데 위 숫자는 전사 값이라 둘이 어긋납니다 — 행마다 outstanding 이
+    // 있어 여기서 정확히 다시 셀 수 있습니다(2026-09-11 감사).
+    const items = svFilterRows(d.items || [], (r) => r.store);
+    const totals = {
+        count: items.length,
+        outstanding: items.reduce((sum, r) => sum + Number(r.outstanding || 0), 0),
+    };
 
     $("st-recv-meta").textContent = items.length
         ? `${int(totals.count)}건 · ${wonFull(totals.outstanding)}`
@@ -894,7 +897,6 @@ async function refreshReceivables() {
         facts: recvCount
             ? `${int(recvCount)}건 · 매장 ${new Set(items.map((r) => r.store)).size}곳`
             + (worstRow ? ` — 가장 오래된 건 ${worstRow.store} ${int(worstDays)}일` : "")
-            + " · 아래 목록에서 입금 기록하거나 발송 승인을 요청합니다."
             : "납기가 지난 미수가 없습니다.",
     });
 

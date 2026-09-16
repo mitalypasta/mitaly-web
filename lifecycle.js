@@ -169,8 +169,7 @@ async function submitLifecycleEvent() {
             const message = /row-level security/i.test(error.message || "")
                 ? "로그인 세션이 만료됐습니다. 새로고침해 다시 로그인해 주세요."
                 : /store_lifecycle_events_type_check/.test(error.message || "")
-                    ? "이 환경의 DB 가 아직 '오픈 예정·폐점 예정' 을 받지 않습니다"
-                      + " (103_store_status.sql 미적용). 담당자에게 알려 주세요."
+                    ? "이 환경의 DB 가 아직 '오픈 예정·폐점 예정' 을 안 받습니다"
                     : error.message;
             laNotice("저장하지 못했습니다: " + message, true);
             return;
@@ -288,7 +287,7 @@ function renderLifecycleStatus() {
             ? `오픈 예정 ${int(counts.planned_open)} · 폐점 예정 ${int(counts.planned_close)}`
               + ` — 전 매장 ${int(rows.length)}곳 중 상태 미상 ${int(counts.unknown)}`
               + (gapRows.length
-                  ? ` · 매출 끊겼는데 폐점 기록 없는 곳 ${int(gapRows.length)} (후보일 뿐 판정 아님)`
+                  ? ` · 매출 끊겼는데 폐점 기록 없는 곳 ${int(gapRows.length)}곳 (후보)`
                   : "")
             : "매장 상태 기록이 없습니다.",
     });
@@ -307,7 +306,7 @@ function renderLifecycleStatus() {
             + gapRows.slice(0, 12).map((r) =>
                 `${r.store_name} (마지막 매출 ${ymLabel(r.last_sales_ym)})`).join(" · ")
             + (gapRows.length > 12 ? ` 외 ${int(gapRows.length - 12)}곳` : "")
-            + ". 폐점 후보일 뿐 판정이 아닙니다 — 폐점이 확정된 매장은 위 폼에서 폐점 기록을 남기세요.";
+            + " — 폐점 후보입니다";
     } else {
         hint.hidden = true;
         hint.textContent = "";
@@ -315,7 +314,7 @@ function renderLifecycleStatus() {
 
     if (!rows.length) {
         $("t-lifecycle-status").innerHTML =
-            '<p class="hint">아직 기록이 없습니다. 위 폼에서 추가하면 여기 나타납니다.</p>';
+            '<p class="hint">기록이 없습니다.</p>';
         return;
     }
 
@@ -370,7 +369,7 @@ async function refreshLifecycleHistory() {
 
     if (!list.length) {
         $("t-lifecycle").innerHTML =
-            '<p class="hint">이력이 없습니다. 위 폼에서 추가하면 여기 나타납니다.</p>';
+            '<p class="hint">이력이 없습니다.</p>';
         return;
     }
 
@@ -444,6 +443,5 @@ async function refreshMismatchAndYears() {
     box.textContent =
         `가맹점 DB 영업시작일과 오픈 이력 일자가 다른 매장 ${int(mismatches.length)}곳 — `
         + mismatches.map((m) =>
-            `${m.name} (가맹점 DB ${m.profDate} / 오픈 이력 ${m.openDate})`).join(" · ")
-        + ". 가맹점 DB 쪽이 최신 값이고, 오픈 이력은 처음 기록한 날짜로 남습니다.";
+            `${m.name} (가맹점 DB ${m.profDate} / 오픈 이력 ${m.openDate})`).join(" · ");
 }

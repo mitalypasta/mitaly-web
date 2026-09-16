@@ -48,7 +48,7 @@ async function refreshOurhome() {
         $("oh-meta").textContent = "";
         $("oh-coverage").textContent = "";
         $("t-ourhome-months").innerHTML =
-            '<p class="hint">아직 반입된 발주량이 없습니다.</p>';
+            '<p class="hint">발주량이 없습니다.</p>';
         $("t-ourhome-stores").innerHTML = "";
         return;
     }
@@ -97,7 +97,7 @@ async function refreshOurhome() {
     $("oh-coverage").textContent =
         `아워홈 사업장 ${int(total.busipl)}곳 → 매장 ${int(total.stores)}곳` +
         (cov.stores_matched < cov.stores_total
-            ? ` · 이 중 ${unmatched}곳은 우리 매장 대장과 아직 안 이어졌습니다`
+            ? ` · 미연결 ${unmatched}곳`
             : "");
 
     table($("t-ourhome-months"), ["월", "사업장", "수량", "발주 금액"],

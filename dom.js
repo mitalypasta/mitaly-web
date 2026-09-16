@@ -6,7 +6,7 @@
 // 전 화면이 같은 동작을 갖도록 공통 층 한 곳에만 둡니다.
 
 import { escape } from "./util.js";
-import { svAllows } from "./svfilter.js";
+import { svAllows, storeColumnOf } from "./svfilter.js";
 import { ymDash } from "./format.js";
 
 // id 로 요소를 잡는 짧은 헬퍼. 화면 모듈 어디서나 씁니다.
@@ -64,6 +64,17 @@ export function table(container, headers, rows, options = {}) {
     const cell = options.html ? (v) => String(v ?? "") : escape;
     const sort = options.sortState;
 
+    // 전역 담당자 필터가 어느 열을 봐야 하는지 **표에 적어 둡니다**. 예전에는
+    // svfilter.js 가 머리글 글자 6종을 맞혀서 찾았고, '지점명'·'매장(분류)'
+    // 처럼 조금만 달라도 소리 없이 필터 밖이었습니다. 여기서 찍어 두면 표를
+    // 만드는 모든 화면이 자동으로 표식을 갖습니다 — 머리글이 특이한 표는
+    // options.storeCol 로 직접 알려 줍니다(-1 이면 매장 표가 아니라는 뜻).
+    const storeCol = options.storeCol != null
+        ? options.storeCol : storeColumnOf(exp.headers);
+    const svCol = options.svNameCol;
+    const mark = (storeCol >= 0 ? ` data-sv-store-col="${storeCol}"` : "")
+        + (svCol != null && svCol >= 0 ? ` data-sv-name-col="${svCol}"` : "");
+
     // 첫 열은 CSS 가 이미 좌측입니다. 둘째 열부터 숫자 열만 우측에 남기고
     // 텍스트 열은 tl 클래스로 좌측에 되돌립니다(styles.css 의 th.tl, td.tl).
     const textCol = headers.map((_, i) => i > 0 && !numericColumn(rows, i));
@@ -85,7 +96,7 @@ export function table(container, headers, rows, options = {}) {
     }).join("");
 
     container.innerHTML =
-        `<table><thead><tr>${head}</tr></thead><tbody>` +
+        `<table${mark}><thead><tr>${head}</tr></thead><tbody>` +
         rows.map((r) => "<tr>" + r.map((v, i) =>
             `<td${textCol[i] ? ' class="tl"' : ""}>${cell(v)}</td>`).join("") + "</tr>").join("") +
         "</tbody></table>";
@@ -418,7 +429,6 @@ function registerExport(container, headers, rows) {
     btn.type = "button";
     btn.className = "linkish xlsx-btn";
     btn.textContent = "엑셀";
-    btn.title = "이 카드의 표를 엑셀 파일로 내려받습니다";
     btn.addEventListener("click", (e) => {
         e.preventDefault();            // cardfold summary 안에서 접힘 토글 방지
         e.stopPropagation();
@@ -480,8 +490,9 @@ async function exportCard(card) {
     const title = (card.querySelector("h2")?.textContent || "표").trim();
     parts.forEach((d, i) => {
         // 전역 담당자 필터가 걸려 있으면 화면과 같은 행만 내보냅니다('매장' 열 기준).
-        const storeCol = d.headers.findIndex((h) =>
-            ["매장", "매장명", "지점", "매장 이름", "가맹점", "가맹점명"].includes(String(h).trim()));
+        // 열 찾기는 svfilter.js 와 같은 함수를 씁니다 — 전에는 같은 글자 6개가
+        // 여기 또 박혀 있어서 한쪽만 고치면 표와 엑셀이 어긋났습니다.
+        const storeCol = storeColumnOf(d.headers);
         const rowsIn = storeCol < 0 ? d.rows
             : d.rows.filter((r) => svAllows(String(exportCell(r[storeCol]) ?? "")));
         let aoa = [d.headers.map((h) => exportCell(h)),

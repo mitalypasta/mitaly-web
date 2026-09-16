@@ -15,6 +15,7 @@ import { db } from "./client.js";
 import { won, int, ymLabel } from "./format.js";
 import { escape, monthsBetween } from "./util.js";
 import { $ } from "./dom.js";
+import { svFilterRows, onSvChange } from "./svfilter.js";
 import { S } from "./state.js";
 
 let diagData = null;   // 마지막 api_kpi_diagnosis 응답
@@ -106,14 +107,16 @@ function renderDiagnosis() {
     if (!d) { box.innerHTML = '<p class="hint">아직 올라온 데이터가 없습니다.</p>'; return; }
 
     const rules = new Map((d.rules || []).map((r) => [r.code, r]));
-    const stores = d.stores || [];
+    // **세기 전에** 담당자로 거릅니다. 전에는 전 매장으로 세어 놓고 svfilter.js
+    // 가 렌더 뒤에 행을 숨겨서, 머리글 숫자가 표와 달랐습니다(2026-09-11 감사).
+    const stores = svFilterRows(d.stores || [], (s) => s.store);
     const flagged = stores.filter((s) => (s.symptoms || []).length);
     const onlyFlagged = $("diag-only").checked;
     const rows = onlyFlagged ? flagged : stores;
 
     $("diag-meta").textContent =
         `진단 대상 ${int(flagged.length)}곳 / 전체 ${int(stores.length)}곳 · `
-        + `${ymLabel(d.ym)} 기준 — 위 필터와 무관`;
+        + `${ymLabel(d.ym)} 기준`;
 
     if (!rows.length) {
         box.innerHTML = flagged.length === 0 && stores.length > 0
@@ -240,6 +243,8 @@ async function refreshDiagnosis() {
 }
 
 export function initDiagnosis() {
+    // 헤더 담당자가 바뀌면 이 화면의 숫자·표를 다시 계산합니다.
+    onSvChange(() => { if (diagData) renderDiagnosis(); });
     const ymEl = $("diag-ym");
     const range = S.filterRange || {};
     const base = defaultYm();

@@ -18,63 +18,38 @@ import { ctLock } from "./contacts.js";
 
 const AREA_KEY = "mitaly.area";
 
-// ---- 탭 머리 설명 (카드 #138, 담당자 지시) ------------------------------
+// ---- 탭 머리 (카드 #138) ------------------------------------------------
 //
-// 탭마다 "여기는 무엇을 보고 무엇을 하는 곳인지" 를 카드 위 한 줄로 답니다.
-// 상자는 index.html 의 #area-head 하나이고, 탭을 옮길 때 문구만 바꿉니다.
-// 매출은 서브탭마다 하는 일이 달라 SALES_HEAD 가 덮어씁니다(showSalesSub).
-// 문구는 각 화면의 실제 카드 구성 기준입니다 — 카드가 바뀌면 여기도 고치세요.
+// 탭마다 화면 이름 한 줄. 딸려 있던 설명 줄은 2026-09-11 담당자 지시로
+// 뺐습니다 — 조작법("…를 누르면 …됩니다")이거나, 숫자에 붙은 각주와 같은
+// 말을 두 번 하는 자리였습니다(예: '단계는 발송 승인이 아닙니다' 3곳 ·
+// '폐점 후보일 뿐' 3곳). 남긴 곳은 숫자에 붙은 한 곳뿐입니다.
+// 상자는 index.html 의 #area-head 하나이고, 탭을 옮길 때 이름만 바꿉니다.
 
 const AREA_HEAD = {
-    home: ["홈",
-        "타일과 이상 신호를 누르면 그 화면으로 갑니다."],
-    tasks: ["업무",
-        "승인 대기는 눌러야 다음 단계로 넘어갑니다."],
-    sales: ["매출",
-        "위 단추로 화면을 고르세요."],
-    settlement: ["정산",
-        "청구는 매출×요율 예상치입니다 — 본사 자료가 오면 그 값이 우선입니다."],
-    ads: ["광고",
-        "광고비는 직접 입력해 쌓습니다 — 본사에 집행 내역 자료가 없습니다."],
-    tradearea: ["상권 분석",
-        "분석 결과는 이력에 자동 저장되고, 리포트로 뽑을 수 있습니다."],
-    map: ["매장 지도",
-        "동 단위 배달 매출을 색으로, 매장 위치를 마커로 봅니다."],
-    reviews: ["리뷰",
-        "맨 위 필터(기간·매장)가 리뷰 목록에도 걸립니다."],
-    visits: ["방문·점검",
-        "60일 넘게 안 간 곳이 기한 초과입니다."],
-    notices: ["위반·공문",
-        "단계는 계산 결과이지 발송 승인이 아닙니다."],
-    ingredients: ["식자재·발주",
-        "원가율은 매장을 골라야 나옵니다."],
-    posmenu: ["POS 메뉴",
-        "승인해도 실제 반영은 실행 단계에서 따로 일어납니다."],
-    stores: ["매장 정보",
-        "계정과 연락처는 2차 암호로 엽니다."],
-    lifecycle: ["오픈·폐점",
-        "매출이 끊긴 매장은 폐점 후보일 뿐 판정이 아닙니다."],
-    comms: ["공지",
-        "승인해야 발송 대기로 넘어갑니다."],
-    settings: ["설정",
-        "여기서 고친 매핑은 다음 대시보드 재구축부터 반영됩니다."],
+    home: "홈",
+    tasks: "업무",
+    sales: "매출",
+    settlement: "정산",
+    ads: "광고",
+    tradearea: "상권 분석",
+    map: "매장 지도",
+    reviews: "리뷰",
+    visits: "방문·점검",
+    notices: "위반·공문",
+    ingredients: "식자재·발주",
+    posmenu: "POS 메뉴",
+    stores: "매장 정보",
+    lifecycle: "오픈·폐점",
+    comms: "공지",
+    settings: "설정",
 };
 
 const SALES_HEAD = {
-    // 첫 문장("무엇을 봅니다")은 화면이 이미 보여 주고 있어 뺐습니다 —
-    // 매장 미선택 빈 상태가 같은 말을 하고 있었습니다(2026-09-10, UX 원칙 ⑤).
-    // 남긴 것은 **모르면 실수하는 것 하나**입니다: 기준일 하나가 전 카드를 정합니다.
-    "선택 매장 매출": ["매출 · 선택 매장 매출",
-        "기준일 하나가 모든 카드의 날짜 기준을 정합니다."],
-    // 2026-09-10: 상품 축(메뉴·시간)을 갈라 내면서 문구도 그 화면 몫만 남기고
-    // 줄였습니다. '무엇을 봅니다' 는 카드가 이미 보여 줍니다 — 남길 것은
-    // 모르면 실수하는 것 하나입니다(UX 원칙 ⑤).
-    "전체 매장 매출": ["매출 · 전체 매장 매출",
-        "맨 위 필터(기간·매장·채널)가 이 화면 전 카드에 걸립니다."],
-    "메뉴·시간": ["매출 · 메뉴 · 시간",
-        "맨 위 필터가 여기도 그대로 걸립니다 — 매장을 좁히면 메뉴 순위도 그 매장 것입니다."],
-    "보고서": ["매출 · 보고서",
-        "기간은 맨 위 필터를 따릅니다."],
+    "선택 매장 매출": "매출 · 선택 매장 매출",
+    "전체 매장 매출": "매출 · 전체 매장 매출",
+    "메뉴·시간": "매출 · 메뉴 · 시간",
+    "보고서": "매출 · 보고서",
 };
 
 // 서브탭 개명 별칭(카드 #149 — '매장 대시보드' → '선택 매장 매출' ·
@@ -85,19 +60,16 @@ const SALES_SUB_ALIAS = {
     "전체 매장 요약": "전체 매장 매출",
 };
 
-function setAreaHead(entry) {
+function setAreaHead(title) {
     const box = $("area-head");
     if (!box) return;
-    if (!entry) { box.hidden = true; return; }
+    if (!title) { box.hidden = true; return; }
     if (!box.firstElementChild) {
         const h = document.createElement("h2");
         h.className = "area-head-title";
-        const p = document.createElement("p");
-        p.className = "area-head-desc";
-        box.append(h, p);
+        box.append(h);
     }
-    box.firstElementChild.textContent = entry[0];
-    box.lastElementChild.textContent = entry[1];
+    box.firstElementChild.textContent = title;
     box.hidden = false;
 }
 
@@ -198,6 +170,14 @@ export function showArea(area) {
     // 같이 쓰므로 버튼 칸만 따로 숨깁니다.
     const exportField = $("sales-export-field");
     if (exportField) exportField.hidden = !salesOnly;
+
+    // 채널(홀/배달) 칸은 **리뷰에서 숨깁니다** — 리뷰 조회가 안 쓰는 칸입니다.
+    // app.js reviewArgs()·summaryArgs() 는 p_platform 만 넘기고 p_channel 은
+    // 안 넘기므로 여기서 채널을 바꿔도 목록은 한 줄도 안 변하고, 뒤에서 매출
+    // 조회만 헛돕니다. 리뷰의 플랫폼 고르개는 '리뷰 관리' 카드 안 rv-platform
+    // 입니다(2026-09-11 감사 — 죽은 컨트롤).
+    const channelField = $("f-channel") && $("f-channel").closest(".field");
+    if (channelField) channelField.hidden = area === "reviews";
 
     // 탭 머리 문구 — 매출은 바로 아래 showSalesSub 가 서브탭 문구로 덮습니다.
     setAreaHead(AREA_HEAD[area]);

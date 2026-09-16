@@ -14,6 +14,7 @@ import { escape } from "./util.js";
 import { int } from "./format.js";
 import { palette, drawLine, drawBars } from "./charts.js";
 import { db } from "./client.js";
+import { svFilterRows, onSvChange } from "./svfilter.js";
 
 const DEMO = new URLSearchParams(location.search).get("demo") === "1";
 const WORKER_ANALYZE = "https://throbbing-bush-cf08.mitaly-pasta.workers.dev/analyze";
@@ -545,8 +546,7 @@ async function drawMap(r) {
     const box = $("ta-map");
     if (DEMO) {
         box.hidden = false;
-        box.innerHTML = '<p class="hint" style="padding:16px">지도는 실서비스에서'
-            + " 표시됩니다 — 분석 지점과 반경 원을 그려 지형을 확인합니다.</p>";
+        box.innerHTML = '<p class="hint" style="padding:16px">지도는 실서비스에서 표시됩니다</p>';
         return;
     }
     if (!r.geo || !r.geo.y || !r.geo.x || !KAKAO_JS_KEY) { box.hidden = true; return; }
@@ -623,14 +623,18 @@ async function loadHistory() {
         tv.innerHTML = `<p class="hint">이력을 불러오지 못했습니다: ${escape(error.message)}</p>`;
         return;
     }
-    const rows = Array.isArray(data) ? data : [];
+    const all = Array.isArray(data) ? data : [];
     historyLoaded = true;
+    // 담당자 조건을 세기 전에 겁니다. '지점명' 은 매장 이름 6종 목록에 없어
+    // 이 표는 소리 없이 필터 밖이었습니다(2026-09-11 감사) — 아래 표에
+    // data-sv-store-col 로 열을 못박아 둡니다.
+    const rows = svFilterRows(all, (h) => h.name);
     $("ta-h-meta").textContent = rows.length ? `${rows.length}건` : "";
     if (!rows.length) {
-        tv.innerHTML = '<p class="hint">저장된 분석이 없습니다 — 위에서 주소를 분석하면 자동으로 쌓입니다.</p>';
+        tv.innerHTML = '<p class="hint">저장된 분석이 없습니다.</p>';
         return;
     }
-    tv.innerHTML = "<table><thead><tr><th scope='col' class='tl'>지점명</th><th scope='col' class='tl'>주소</th>"
+    tv.innerHTML = "<table data-sv-store-col='0'><thead><tr><th scope='col' class='tl'>지점명</th><th scope='col' class='tl'>주소</th>"
         + "<th scope='col'>반경</th><th scope='col'>예상매출</th><th scope='col' class='tl'>분석일</th><th></th></tr></thead><tbody>"
         + rows.map((h) => `<tr class="ta-row" data-id="${h.id}">`
             + `<td class="tl">${escape(h.name || "—")}</td>`
@@ -683,6 +687,8 @@ async function run() {
 }
 
 export function initTradeArea() {
+    // 헤더 담당자가 바뀌면 이 화면의 숫자·표를 다시 계산합니다.
+    onSvChange(() => { if (historyLoaded) loadHistory(); });
     $("ta-run").addEventListener("click", run);
     $("ta-report-print").addEventListener("click", () => window.print());
     for (const id of ["ta-address", "ta-name"]) {

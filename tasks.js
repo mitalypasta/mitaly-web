@@ -10,6 +10,7 @@ import { refreshViolations } from "./notices.js";
 import { refreshAnnouncements } from "./comms.js";
 import { refreshPosMenu, refreshPosMenuSummary, refreshPosMenuRequests } from "./pos.js";
 import { refreshInquiries } from "./inquiries.js";
+import { svFilterRows, onSvChange } from "./svfilter.js";
 
 // ================================================================ 업무 (11번 영역)
 //
@@ -34,17 +35,6 @@ export const TASK_STATUS_LABEL = {
     escalated: "이관",
     done: "완료",
     rejected: "반려",
-};
-
-// 상태 이름만으로는 뜻이 안 읽힌다는 담당자 피드백(3라운드 2차) — 태그에
-// 마우스를 올리면 풀이가 보입니다. 필터 select 의 풀이(index.html)와 같은 말.
-const TASK_STATUS_DESC = {
-    received: "들어왔지만 아직 아무도 안 잡은 건",
-    in_progress: "담당자가 잡고 처리하고 있는 건",
-    waiting_approval: "담당자가 승인해야 다음으로 넘어가는 건",
-    escalated: "판단이 어려워 담당 SV에게 넘긴 건",
-    done: "끝난 건",
-    rejected: "처리하지 않기로 한 건",
 };
 
 // 목록 정렬 순서 — 담당자가 눌러야 풀리는 것(승인 대기·접수)이 앞(3라운드
@@ -94,6 +84,8 @@ function applicablePreauth(kind) {
 }
 
 export async function initTasks() {
+    // 헤더 담당자가 바뀌면 이 화면의 숫자·표를 다시 계산합니다.
+    onSvChange(drawTaskList);
     const { data: kinds } = await db.from("task_kinds").select("kind,name,needs_approval,enabled");
     taskKinds = (kinds || []).filter((k) => k.enabled !== false);
     // '기타' 는 목록 맨 아래가 자연스럽습니다 — 나머지는 DB 차례 그대로.
@@ -200,13 +192,12 @@ export async function refreshTasksSummary() {
     }
     const by = data.by_status || {};
     $("tk-overdue").textContent = int(data.overdue);
-    $("tk-overdue-sub").textContent = `접수 후 ${int(data.overdue_days)}일이 지나도록 끝나지 않은 건`;
+    $("tk-overdue-sub").textContent = `접수 후 ${int(data.overdue_days)}일 초과`;
     $("tk-received").textContent = int(by.received);
     $("tk-in-progress").textContent = int(by.in_progress);
     $("tk-waiting").textContent = int(by.waiting_approval);
     $("tk-escalated").textContent = int(by.escalated);
-    $("tasks-summary-meta").textContent =
-        `미처리 기준 ${int(data.overdue_days)}일 — 본사가 정합니다`;
+    $("tasks-summary-meta").textContent = `미처리 기준 ${int(data.overdue_days)}일`;
 
     // ---- hero: 이 화면의 답 (디자인 시스템 v1 · 카드 3계급) ----------------
     //
@@ -230,17 +221,12 @@ export async function refreshTasksSummary() {
             ? `미처리 ${overdue}건 먼저 (접수 후 ${days}일 초과 · 상태 무관)`
                 + ` · 승인 대기 ${waiting} · 접수 ${received}`
                 + ` — 처리 중 ${Number(by.in_progress || 0)} · 이관 ${Number(by.escalated || 0)} 제외`
-                + " (이미 손이 가 있는 건)"
             : "지금 새로 손댈 건이 없습니다.",
     });
 
     // 홈 '오늘 할 일' 타일. 같은 숫자를 두 번 묻지 않으려고 여기서 같이 채웁니다.
     const homeTasks = $("home-tasks");
-    if (homeTasks) {
-        homeTasks.textContent = int(data.overdue);
-        $("home-tasks-sub").textContent =
-            `접수 후 ${int(data.overdue_days)}일이 지난 건 (전체 기간)`;
-    }
+    if (homeTasks) homeTasks.textContent = int(data.overdue);
 }
 
 export async function refreshTaskList() {
@@ -266,7 +252,9 @@ export async function refreshTaskList() {
 function drawTaskList() {
     const openOnly = $("tk-filter-status").value === "open";
     const overdueOnly = $("tk-filter-overdue").checked;
-    const rows = taskRows.filter((t) =>
+    // 매장이 안 잡힌 업무(store_name 없음)는 담당과 무관하게 늘 보입니다 —
+    // svAllows 가 빈 이름을 통과시킵니다.
+    const rows = svFilterRows(taskRows, (t) => t.store_name).filter((t) =>
         (!openOnly || !["done", "rejected"].includes(t.status)) &&
         (!overdueOnly || t.overdue));
     // 검토·승인 대기를 앞으로(3라운드 2차 ①). sort 는 안정 정렬이라 같은
@@ -280,7 +268,7 @@ function drawTaskList() {
 
     if (!rows.length) {
         $("t-tasks").innerHTML =
-            '<p class="hint">해당하는 업무가 없습니다. 위 폼에서 접수하면 여기 나타납니다.</p>';
+            '<p class="hint">해당하는 업무가 없습니다.</p>';
         return;
     }
 
@@ -304,13 +292,11 @@ function drawTaskList() {
 
 export function taskStatusTag(status) {
     const label = escape(TASK_STATUS_LABEL[status] || status);
-    const desc = TASK_STATUS_DESC[status];
-    const title = desc ? ` title="${escape(desc)}"` : "";
-    if (status === "done") return `<span class="tag up"${title}>${label}</span>`;
+    if (status === "done") return `<span class="tag up">${label}</span>`;
     if (status === "waiting_approval" || status === "escalated") {
-        return `<span class="tag h-warn"${title}>${label}</span>`;
+        return `<span class="tag h-warn">${label}</span>`;
     }
-    return `<span class="tag"${title}>${label}</span>`;
+    return `<span class="tag">${label}</span>`;
 }
 
 function taskActionButtons(t) {
@@ -594,7 +580,7 @@ async function refreshPreauths() {
 
     if (!taskPreauths.length) {
         $("t-preauths").innerHTML =
-            '<p class="hint">등록된 승인이 없습니다. 지금은 승인이 필요한 업무가 모두 건별 승인을 거칩니다.</p>';
+            '<p class="hint">등록된 승인이 없습니다.</p>';
         return;
     }
 

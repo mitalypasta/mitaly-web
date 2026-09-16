@@ -162,7 +162,7 @@ function syncMenuRecipeRows() {
 function renderMenuRecipes() {
     if (!menuRecipeRows.length) {
         $("t-menu-recipes").innerHTML =
-            '<p class="hint">반입된 조리 레시피가 없습니다. tools/import_menu_recipes.py 로 반입하면 여기 나타납니다.</p>';
+            '<p class="hint">조리 레시피가 없습니다.</p>';
         return;
     }
     const menu = $("mr-menu").value;
@@ -184,7 +184,7 @@ function renderMenuRecipes() {
             || list.some((r) => (r.ingredient || "").includes(query))));
 
     $("mr-shown").textContent = shown.length === groups.size
-        ? `메뉴 ${int(groups.size)}개 · 행을 누르면 원료가 펼쳐집니다`
+        ? `메뉴 ${int(groups.size)}개`
         : `메뉴 ${int(shown.length)} / ${int(groups.size)}개`;
 
     // 74 — 레들은 oz, 계량컵은 ml. 원본이 적은 단위 그대로입니다.
@@ -267,7 +267,7 @@ function initSupplyProducts(spRes) {
 function renderSupplyProducts() {
     if (!supplyRows.length) {
         $("t-supply-products").innerHTML =
-            '<p class="hint">반입된 발주 상품이 없습니다. tools/import_recipes.py 로 반입하면 여기 나타납니다.</p>';
+            '<p class="hint">발주 상품이 없습니다.</p>';
         return;
     }
     const query = $("sp-q").value.trim();
@@ -292,7 +292,7 @@ function renderSupplyProducts() {
 function renderRecipes() {
     if (!recipeRows.length) {
         $("t-recipes").innerHTML =
-            '<p class="hint">반입된 레시피가 없습니다. tools/import_recipes.py 로 반입하면 여기 나타납니다.</p>';
+            '<p class="hint">레시피가 없습니다.</p>';
         return;
     }
     const menu = $("rc-menu").value;
@@ -340,7 +340,7 @@ async function refreshIngredientUsage() {
     const cov = d.coverage || {};
     if (!cov.qty_total) {
         setHero("ingredients-hero", { num: "—",
-            facts: "선택한 기간에 판매 자료가 없어 커버리지를 잴 수 없습니다." });
+            facts: "이 기간에 판매 자료가 없습니다." });
         $("iu-coverage").textContent = "";
         $("t-ingredient-usage").innerHTML =
             '<p class="hint">선택한 기간에 판매 데이터가 없습니다.</p>';
@@ -348,12 +348,10 @@ async function refreshIngredientUsage() {
         return;
     }
 
-    // 커버리지를 숨기지 않습니다 — 원가분석 메뉴명과 매핑표 메뉴명이 어긋난
-    // 만큼 계산에서 빠지므로, 몇 % 가 들어간 숫자인지 같이 보여야 합니다.
+    // 몇 % 가 들어간 숫자인지 숨기지 않습니다 — 원가분석 메뉴명과 매핑표
+    // 메뉴명이 어긋난 만큼 계산에서 빠집니다.
     const pct = Math.round((1000 * cov.qty_matched) / cov.qty_total) / 10;
-    $("iu-coverage").textContent =
-        `원가분석이 있는 메뉴 ${int(cov.menu_matched)}/${int(cov.menu_total)}개 · ` +
-        `판매 수량 기준 ${pct}% 가 이 계산에 들어갔습니다.`;
+    $("iu-coverage").textContent = `판매 수량의 ${pct}%만 들어간 값입니다`;
 
     // ---- hero: 이 화면의 답 -------------------------------------------
     //
@@ -366,18 +364,13 @@ async function refreshIngredientUsage() {
     //    엉뚱한 매장을 가리킵니다.
     //
     // 이 숫자는 위 기간·매장 고르개를 따릅니다 — 전사 고정값이 아닙니다.
-    const openTop = Array.isArray(d.unmatched_top) ? d.unmatched_top.length : 0;
     const scope = $("iu-store").value ? `${$("iu-store").value} 기준` : "전 매장 기준";
     setHero("ingredients-hero", {
         num: `${pct}%`,
         tone: pct < 50 ? "critical" : pct < 80 ? "attn" : "good",
         badge: pct < 50 ? "보강 필요" : pct < 80 ? "확인" : "정상",
         facts: `원가분석이 있는 메뉴 ${int(cov.menu_matched)}/${int(cov.menu_total)}개`
-            + ` — 판매 수량 기준 ${pct}% 만 이 계산에 들어갔습니다 (${scope}).`
-            + (openTop
-                ? ` 아래 '원가분석 없는 메뉴' 상위 ${int(openTop)}개부터 채우면 커버리지가 오릅니다`
-                  + " — 그중 다수는 조리 레시피는 있고 원가분석만 없습니다."
-                : ""),
+            + ` — 판매 수량의 ${pct}%만 들어간 값입니다 (${scope})`,
     });
 
     // 단가가 빈 재료는 공급가 합계에 0 으로 들어가 과소 표시됩니다 ([H]).
