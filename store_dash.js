@@ -29,6 +29,31 @@ const md = (iso) => `${iso.slice(5, 7)}/${iso.slice(8, 10)}`;
 let last = null;          // 마지막 응답 — 서브탭 전환 시 차트 재그리기용
 let lastStoreId = null;
 
+// 기준일은 언제 열어도 '오늘' 입니다(2026-09-16 담당자 지시 — "언제 들어가도 오늘의
+// 날짜"). 첫 진입·매장 변경 때 오늘로 놓고, 화면을 켜 둔 채 날이 바뀌면 다시 보일 때
+// 오늘로 옮깁니다. 사람이 손으로 고른 기준일은 그 세션 안에서는 지킵니다(새로고침하면
+// 다시 오늘). 서버 기본 닻(마지막 완성월 말일)은 더 이상 첫 화면의 기준이 아닙니다 —
+// 기준월·연도는 currentArgs 가 기준일에서 풀므로 함께 이번 달·올해가 됩니다.
+const todayIso = () => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+};
+let anchorAuto = true;    // 기준일 칸의 값이 자동(오늘)인가, 사람이 고른 것인가
+
+function anchorToday() {
+    const today = todayIso();
+    $("sd-day").value = today;
+    $("sd-ym").value = today.slice(0, 7).replace("-", "");
+    anchorAuto = true;
+}
+
+// 자동 기준일이 어제 것으로 남아 있으면(밤을 넘긴 화면) 오늘로 옮기고 다시 받습니다.
+function reanchorIfStale() {
+    if (!anchorAuto || $("sd-day").value === todayIso()) return;
+    anchorToday();
+    refresh();
+}
+
 const pctText = (v, digits = 1) =>
     v == null ? "—" : `${(v * 100).toFixed(digits)}%`;
 
@@ -1101,6 +1126,9 @@ export async function initStoreDash() {
         }
         $("sd-ym").value = String(ym);
     }
+    // 기준일 = 오늘(위 주석). 숨긴 기준월 칸의 '마지막 완성월' 은 기준일이 비었을
+    // 때의 예비값으로만 남습니다.
+    anchorToday();
 
     // 매장 목록 — 폐점 매장 포함(stores 전체) + 폐점 배지.
     const select = $("sd-store");
@@ -1123,8 +1151,10 @@ export async function initStoreDash() {
 
     for (const id of ["sd-store", "sd-ym", "sd-day", "sd-year"]) {
         $(id).addEventListener("change", () => {
-            // 매장을 바꾸면 닻은 그 매장의 서버 기본값으로 다시 잡습니다.
-            if (id === "sd-store") $("sd-day").value = "";
+            // 매장을 바꿔도 기준일은 오늘입니다(담당자 지시 — 서버 기본 닻으로 돌리지 않음).
+            if (id === "sd-store") anchorToday();
+            // 사람이 기준일을 고르면 그 세션에서는 지킵니다.
+            if (id === "sd-day") anchorAuto = false;
             // 기준일을 바꾸면 기준월·연도가 따라갑니다 — 연도 고르개는 그 해가
             // 목록에 있으면 맞추고, 없으면 비워 서버 기본(기준월의 해)으로.
             if (id === "sd-day" && $("sd-day").value) {
@@ -1152,6 +1182,15 @@ export async function initStoreDash() {
             && Math.abs(svt.clientWidth - svt.viewBox.baseVal.width) > 2) {
             drawSvt();
         }
+    });
+
+    // 화면을 켜 둔 채 날이 바뀐 경우 — 서브탭이 다시 보이거나 창이 다시 보일 때
+    // 자동 기준일을 오늘로 옮깁니다(손으로 고른 값은 그대로).
+    document.addEventListener("mitaly:area-shown", (e) => {
+        if (e.detail && e.detail.sub === "선택 매장 매출") reanchorIfStale();
+    });
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") reanchorIfStale();
     });
 
     initSvt();

@@ -227,9 +227,10 @@
                     <label for="sd-ym">기준월</label>
                     <input type="month" id="sd-ym">
                 </div>
-                <!-- 기준일 = 기준월·연도·일간 28일·주간 13주의 닻 한 개. 비우면
-                     마지막 완성월의 서버 기본 닻으로 잡히고, 응답의 실제 닻이
-                     이 칸에 다시 채워집니다. -->
+                <!-- 기준일 = 기준월·연도·일간 28일·주간 13주의 닻 한 개. 언제 열어도
+                     **오늘**로 놓입니다(2026-09-16 담당자 지시 — 첫 진입·매장 변경·
+                     밤을 넘긴 화면이 다시 보일 때, store_dash.js anchorToday). 손으로
+                     고르면 그 세션에서는 그 날이 원본입니다. -->
                 <div class="field">
                     <label for="sd-day">기준일</label>
                     <input type="date" id="sd-day">
@@ -2875,6 +2876,6 @@
      v= 가 바뀌면 브라우저가 옛 파일을 아예 안 씁니다.
      ⚠️ 모듈 34개는 맨 경로로 불려 이 쿼리가 안 걸립니다 — 모듈의 export 를
         없애거나 이름을 바꾸는 배포라면 그것만으로 부족합니다(카드 #181). -->
-<script type="module" src="app.js?v=20260916b"></script>
+<script type="module" src="app.js?v=20260916c"></script>
 </body>
 </html>
