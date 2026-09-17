@@ -8,7 +8,8 @@
 //   두 달을 나란히 적습니다. 마이프차 응답에는 기준월이 없어 '수집' 이라 씁니다.
 // · 판정 안 한 매장(홀매출 0·주변 가게 0)은 칩이 회색 '판정 없음'(결정 ①).
 // · 규칙 문장은 tradearea_diag_text.js(순수 모듈)가 만듭니다.
-// · 조회는 상권 분석 탭에 처음 들어올 때 한 번, 달을 바꿀 때만 다시(명세 7.1).
+// · 자기 탭('상권 진단', area=tradediag — 9/17 상권 분석에서 분리)입니다.
+//   조회는 그 탭에 처음 들어올 때 한 번, 달을 바꿀 때만 다시(명세 7.1).
 //   담당자 전역 필터는 행을 거르고 요약·4분면도 거른 매장으로 다시 셉니다
 //   (진단 카드 #115 가 세기 전에 거르는 것과 같은 규칙). 중앙값·판정 자체는
 //   전 매장 기준 그대로입니다 — 담당자를 바꿔도 매장의 칸이 바뀌면 안 됩니다.
@@ -305,10 +306,10 @@ function wire() {
 export function initTradeAreaDiag() {
     wire();
     document.addEventListener("mitaly:area-shown", (e) => {
-        if ((e.detail || {}).area !== "tradearea") return;
+        if ((e.detail || {}).area !== "tradediag") return;
         if (!loaded) { loaded = true; load(null); }
         else if (data) renderScatter(visibleStores().filter((s) => s.quad));
     });
-    // 첫 화면이 이미 상권 분석 탭이면(새로고침) 그 area-shown 은 지나갔습니다.
+    // 첫 화면이 이미 상권 진단 탭이면(새로고침) 그 area-shown 은 지나갔습니다.
     if (!$("tad-card").hidden && !loaded) { loaded = true; load(null); }
 }

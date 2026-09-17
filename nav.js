@@ -33,6 +33,7 @@ const AREA_HEAD = {
     settlement: "정산",
     ads: "광고",
     tradearea: "상권 분석",
+    tradediag: "상권 진단",
     map: "매장 지도",
     reviews: "리뷰",
     visits: "방문·점검",
