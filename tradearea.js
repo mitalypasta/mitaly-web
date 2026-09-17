@@ -233,7 +233,7 @@ export function computeModel(raw, name) {
 
 // ---------------------------------------------------------------- 수집 (Worker 호출)
 
-async function fetchAnalysis(address, radius) {
+export async function fetchAnalysis(address, radius) {
     if (DEMO) {
         await new Promise((r) => setTimeout(r, 500));
         return demoRaw(address, radius);

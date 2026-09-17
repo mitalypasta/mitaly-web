@@ -3029,6 +3029,9 @@ const HANDLERS = {
                 pct2: self ? Math.round(100 * ests.filter((v) => v < self).length / ests.length) : null,
                 cat_sum, chicken_share: sumBrand ? Number((chicken / sumBrand).toFixed(3)) : null,
                 lunch_signals: brands.filter((b) => b.role === "lunch").map((b) => b.brand),
+                // 126 동네 신호 — 데모는 lunch 역할을 직장형, chicken 역할을 주거형으로 봅니다.
+                work_brands: i % 4 < 2 ? ["써브웨이"] : [],
+                home_brands: i % 3 === 0 ? ["BHC"] : [],
                 top3: brands.map((b) => ({ brand_std: b.brand, branch_name: `${b.brand} 데모점`, est_sale: b.est[0] }))
                     .sort((a, b) => b.est_sale - a.est_sale).slice(0, 3),
                 brands: brands.map(({ brand, category, est }) => ({ brand, category, est })),
@@ -3039,6 +3042,9 @@ const HANDLERS = {
         const sMed = med(judged.map((r) => r.S));
         const rMed = med(judged.map((r) => r.ratio));
         for (const r of rows) {
+            const w = r.work_brands.length > 0; const h = r.home_brands.length > 0;
+            r.signal = w && !h ? "직장형만" : w && h ? "둘 다" : h ? "주거형만" : "둘 다 없음";
+            r.cats = { "커피/음료": { n: 12, s: 120_000_000 }, "분식": { n: 6, s: 40_000_000 } };
             r.quad = r.hall && r.N ? `${r.S >= sMed ? "상권강" : "상권약"}·${r.ratio >= rMed ? "매장강" : "매장약"}` : null;
             r.S_pct = Math.round(100 * judged.filter((o) => o.S < r.S).length / judged.length);
         }
@@ -3051,7 +3057,32 @@ const HANDLERS = {
                  pos_q25: null, pos_med: med(pos), pos_q75: null, ratio2_med: null,
                  rules: { ratio_hi: 1, ratio_mid: 0.6, ratio_lo: 0.4, pos_ok: 0.9, pos_warn: 0.5,
                           chicken_share: 0.3, days_short: 22, mom_pct: 10 },
+                 signal_groups: ["직장형만", "둘 다", "둘 다 없음", "주거형만"].map((signal) => {
+                     const hs = judged.filter((r) => r.signal === signal).map((r) => r.hall).sort((p, q) => p - q);
+                     const at = (p) => (hs.length ? hs[Math.floor((hs.length - 1) * p)] : null);
+                     return { signal, n: hs.length, hall_q25: at(0.25), hall_med: at(0.5), hall_q75: at(0.75) };
+                 }),
                  stores: rows };
+    },
+
+    // 126 후보지 신호 — 데모 Worker 응답(tradearea.js demoRaw)의 가게 이름으로 조합을 정합니다.
+    api_trade_area_signal: ({ p_sales } = {}) => {
+        const diag = HANDLERS.api_store_diagnosis({});
+        const sales = (p_sales || []).filter((s) => Number(s.estSale) > 0 && !String(s.name).includes("미태리"));
+        const has = (words) => sales.filter((s) => words.some((w) => String(s.name).includes(w))).map((s) => words.find((w) => String(s.name).includes(w)));
+        const work = [...new Set(has(["써브웨이", "투썸"]))];
+        const home = [...new Set(has(["BBQ", "교촌", "BHC"]))];
+        const signal = work.length && !home.length ? "직장형만" : work.length ? "둘 다" : home.length ? "주거형만" : "둘 다 없음";
+        const S = sales.reduce((a, s) => a + Number(s.estSale), 0);
+        const judged = diag.stores.filter((r) => r.quad);
+        return { ok: true, ym: diag.ym, hall_ym: diag.hall_ym, N: sales.length, S, M: null, n_brand: work.length + home.length,
+                 work_brands: work, home_brands: home, signal,
+                 S_pct: Math.round(100 * judged.filter((r) => r.S < S).length / Math.max(1, judged.length)),
+                 n_judged: judged.length,
+                 group: diag.signal_groups.find((g) => g.signal === signal) || null,
+                 groups: diag.signal_groups,
+                 similar: judged.filter((r) => r.signal === signal).slice(0, 5)
+                     .map((r) => ({ store_name: r.store_name, hall: r.hall, S: r.S })) };
     },
 
     // 매장별 일별 — 120_daily_sales.sql(api_daily_sales)과 같은 모양(jsonb 한 줄).

@@ -18,10 +18,26 @@ const has = (v) => v !== null && v !== undefined && v !== "" && !Number.isNaN(Nu
 // 상위 몇 % — S_pct(그 달 판정 매장 중 이 매장보다 작은 곳의 비율)에서.
 const topPct = (sPct) => Math.max(1, 100 - Number(sPct));
 
+// 동네 신호 한 문장 — 진단 목록과 후보지 조회가 같이 씁니다.
+// s: {signal, work_brands, home_brands} · d: {signal_groups} (api_store_diagnosis 최상위)
+export function signalSentence(s, d) {
+    if (!s || !s.signal) return "";
+    const work = Array.isArray(s.work_brands) ? s.work_brands : [];
+    const home = Array.isArray(s.home_brands) ? s.home_brands : [];
+    const parts = [];
+    parts.push(work.length ? `점심·직장형 ${work.join("·")}` : "점심·직장형 없음");
+    parts.push(home.length ? `주거·배달형 ${home.join("·")}` : "주거·배달형 없음");
+    const g = ((d && d.signal_groups) || []).find((x) => x.signal === s.signal);
+    const tail = g && has(g.hall_med)
+        ? ` — 이 조합 우리 매장 ${g.n}곳 홀매출 중앙 ${man(g.hall_med)}만 원(가운데 절반 ${man(g.hall_q25)}~${man(g.hall_q75)}만).`
+        : ".";
+    return `300m 안 ${parts.join(" · ")}${tail}`;
+}
+
 export function diagSentences(s, d) {
     const r = (d && d.rules) || {};
-    // 7문장을 넘으면 덜 중요한 것부터 뺍니다(순서는 그대로) — 판정·주의는 끝까지 남고,
-    // '생략' 안내 → 추정 대비 중립 문장 → 점심 신호 순으로 빠집니다.
+    // 7문장을 넘으면 덜 중요한 것부터 뺍니다(순서는 그대로) — 판정·주의·동네 신호는
+    // 끝까지 남고, '생략' 안내 → 추정 대비 중립 문장 → 치킨 비중 순으로 빠집니다.
     const out = [];
     const keep = [];
     const add = (text, rank = 9) => { out.push(text); keep.push(rank); };
@@ -97,11 +113,11 @@ export function diagSentences(s, d) {
         }
     }
 
-    // 6 옆 브랜드
-    const lunch = Array.isArray(s.lunch_signals) ? s.lunch_signals : [];
-    if (lunch.length) add(`점심·직장 수요 신호: ${lunch.join("·")} 300m 안.`, 3);
+    // 6 동네 신호 (127 — 점심·직장형 / 주거·배달형 브랜드 유무와 같은 조합 우리 매장 분포)
+    const signalLine = signalSentence(s, d);
+    if (signalLine) add(signalLine, 8);
     if (has(s.chicken_share) && has(r.chicken_share) && Number(s.chicken_share) >= r.chicken_share) {
-        add(`치킨 브랜드가 주변 브랜드 매출의 ${Math.round(Number(s.chicken_share) * 100)}% — 배달·주거형 상권.`);
+        add(`치킨 브랜드가 주변 브랜드 매출의 ${Math.round(Number(s.chicken_share) * 100)}% — 배달·주거형 상권.`, 3);
     }
 
     // 7 주의

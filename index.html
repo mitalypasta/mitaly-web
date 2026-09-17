@@ -532,6 +532,23 @@
          9/17 담당자 지시로 상권 분석(후보지)과 탭을 나눴습니다(data-area="tradediag").
          9/16 마케팅팀 보고서를 매달 자동으로 봅니다. 화면은 tradearea_diag.js,
          문장은 tradearea_diag_text.js. 브랜드는 매월 3일 새벽 수집(121). -->
+    <!-- 후보지 넣어보기 — 주소의 300m 동네 신호와 같은 조합 우리 매장 분포(127 api_trade_area_signal). -->
+    <section data-area="tradediag" class="card full" id="tadc-card">
+        <header><h2>후보지 넣어보기</h2></header>
+        <div class="reqform">
+            <div class="field grow">
+                <label for="tadc-address">주소</label>
+                <input type="text" id="tadc-address" placeholder="예: 서울 마포구 양화로 186">
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" id="tadc-run" class="btn-primary">확인</button>
+            </div>
+        </div>
+        <p class="notice" id="tadc-status" hidden></p>
+        <div id="tadc-result" hidden></div>
+    </section>
+
     <section data-area="tradediag" class="card full" id="tad-card">
         <header>
             <h2>상권 진단</h2>
@@ -542,6 +559,8 @@
         <div id="tad-body" hidden>
             <div class="kpis" id="tad-tiles"></div>
             <div class="tad-quads" id="tad-quads"></div>
+            <h3>동네 신호</h3>
+            <div class="tad-quads" id="tad-signals"></div>
             <svg class="plot" id="c-tad-scatter" role="img" aria-label="매장별 상권 합계와 홀매출"></svg>
             <div class="tad-filter"><span id="tad-filter-note"></span>
                 <button type="button" class="ghost" id="tad-filter-clear" hidden>전체 보기</button></div>
@@ -2980,6 +2999,6 @@
      v= 가 바뀌면 브라우저가 옛 파일을 아예 안 씁니다.
      ⚠️ 모듈 34개는 맨 경로로 불려 이 쿼리가 안 걸립니다 — 모듈의 export 를
         없애거나 이름을 바꾸는 배포라면 그것만으로 부족합니다(카드 #181). -->
-<script type="module" src="app.js?v=20260917b"></script>
+<script type="module" src="app.js?v=20260917c"></script>
 </body>
 </html>

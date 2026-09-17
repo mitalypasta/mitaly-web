@@ -17,7 +17,8 @@ import { db } from "./client.js";
 import { escape } from "./util.js";
 import { $ } from "./dom.js";
 import { svFilterRows, onSvChange } from "./svfilter.js";
-import { diagSentences } from "./tradearea_diag_text.js";
+import { diagSentences, signalSentence } from "./tradearea_diag_text.js";
+import { fetchAnalysis } from "./tradearea.js";
 
 const QUADS = [
     // [서버 값, 칩 문구, 칩 클래스, 칸 설명]
@@ -35,6 +36,14 @@ const QUAD_COLOR = {
     "상권약·매장강": "var(--action-primary)",
 };
 const CATS = ["커피", "음료·디저트", "패스트푸드", "외식", "도시락"];
+// 동네 신호 조합(127 mitaly_area_signal) — 칩 문구·색. 순서는 표·칸 순서.
+const SIGNALS = [
+    ["직장형만", "tag up"],
+    ["둘 다", "tag"],
+    ["둘 다 없음", "tag"],
+    ["주거형만", "tag h-warn"],
+];
+const SIGNAL_CLS = new Map(SIGNALS);
 
 const man = (won) => (won == null ? "—" : Math.round(Number(won) / 10000).toLocaleString("ko-KR"));
 const eok = (won) => (won == null ? "—" : `${(Number(won) / 1e8).toFixed(1)}억`);
@@ -53,6 +62,7 @@ let seq = 0;
 let sortKey = "hall";
 let sortAsc = false;
 let quadFilter = "";
+let signalFilter = "";
 const open = new Set();
 
 async function load(ym) {
@@ -93,6 +103,7 @@ function render() {
 
     renderTiles(stores, judged);
     renderQuads(judged);
+    renderSignals();
     renderScatter(judged);
     renderTable(stores);
 }
@@ -126,6 +137,22 @@ function renderQuads(judged) {
                 <span class="tad-quad-med">미태리 중앙 ${man(hallMed)}만</span></div>
             <div class="tad-quad-desc">${escape(desc)}</div>
             <div class="tad-quad-names">${rows.map((s) => escape(s.store_name)).join(" · ") || "—"}</div>
+        </button>`;
+    }).join("");
+}
+
+// 동네 신호 조합 4칸 — 조합별 우리 매장 수·홀매출 중앙(서버 signal_groups, 전 매장 기준).
+// 누르면 아래 목록이 그 조합 매장만 남습니다(4분면 칸과 겹쳐 걸립니다).
+function renderSignals() {
+    const groups = new Map((data.signal_groups || []).map((g) => [g.signal, g]));
+    $("tad-signals").innerHTML = SIGNALS.map(([key, cls]) => {
+        const g = groups.get(key) || { n: 0 };
+        const on = signalFilter === key;
+        return `<button type="button" class="tad-quad${on ? " on" : ""}" data-signal="${escape(key)}" aria-pressed="${on}">
+            <div class="tad-quad-head"><span class="${cls}">${escape(key)}</span>
+                <strong>${g.n || 0}곳</strong>
+                <span class="tad-quad-med">홀 중앙 ${man(g.hall_med)}만</span></div>
+            <div class="tad-quad-desc">가운데 절반 ${man(g.hall_q25)}~${man(g.hall_q75)}만</div>
         </button>`;
     }).join("");
 }
@@ -204,21 +231,22 @@ function brandTable(s) {
 }
 
 function renderTable(stores) {
-    const rows = stores.filter((s) => !quadFilter || s.quad === quadFilter);
+    const rows = stores.filter((s) => (!quadFilter || s.quad === quadFilter)
+        && (!signalFilter || s.signal === signalFilter));
     const key = SORTS[sortKey] || SORTS.hall;
     rows.sort((a, b) => {
         const va = key(a); const vb = key(b);
         const c = typeof va === "string" ? va.localeCompare(vb, "ko") : va - vb;
         return sortAsc ? c : -c;
     });
-    $("tad-filter-note").textContent = quadFilter
-        ? `${QUAD.get(quadFilter)[1]} ${rows.length}곳만 보는 중` : "";
-    $("tad-filter-clear").hidden = !quadFilter;
+    const on = [quadFilter && QUAD.get(quadFilter)[1], signalFilter].filter(Boolean);
+    $("tad-filter-note").textContent = on.length ? `${on.join(" · ")} ${rows.length}곳만 보는 중` : "";
+    $("tad-filter-clear").hidden = !on.length;
 
-    const head = [["name", "매장"], [null, "판정"], ["hall", "홀매출"], ["S", "상권 합계"],
+    const head = [["name", "매장"], [null, "판정"], [null, "동네 신호"], ["hall", "홀매출"], ["S", "상권 합계"],
                   ["ratio", "주변 대비"], ["pos", "추정 대비"]];
     const th = head.map(([k, label], i) => {
-        const cls = i < 2 ? "tl" : "";
+        const cls = i < 3 ? "tl" : "";
         if (!k) return `<th scope="col" class="${cls}">${label}</th>`;
         const dir = sortKey === k ? (sortAsc ? "ascending" : "descending") : "none";
         return `<th scope="col" class="sortable ${cls}" tabindex="0" data-sort="${k}" aria-sort="${dir}">${label}</th>`;
@@ -235,13 +263,14 @@ function renderTable(stores) {
             <td class="tl"><button type="button" class="alerts-exp${isOpen ? " open" : ""}" data-exp="${escape(s.store_name)}"
                 aria-expanded="${isOpen}" aria-label="${escape(s.store_name)} 진단 펼치기"></button>${escape(s.store_name)}</td>
             <td class="tl">${chip}</td>
+            <td class="tl">${s.signal ? `<span class="${SIGNAL_CLS.get(s.signal) || "tag"}">${escape(s.signal)}</span>` : "—"}</td>
             <td>${man(s.hall)}만</td>
             <td>${eok(s.S)}</td>
             <td>${s.ratio == null ? "—" : `${x2(s.ratio)}배`}</td>
             <td>${s.pos_ratio == null ? "—" : `${x2(s.pos_ratio)}배`}</td>
         </tr>
         <tr class="alerts-chrow tad-drow" data-parent="${escape(s.store_name)}"${isOpen ? "" : " hidden"}>
-            <td class="tl" colspan="6"><div class="tad-detail">
+            <td class="tl" colspan="7"><div class="tad-detail">
                 ${desc ? `<div class="tad-desc">${desc}</div>` : ""}
                 <ul class="tad-lines">${lines}</ul>
                 ${top3 ? `<div class="tad-top3">주변 매출 상위: ${top3}</div>` : ""}
@@ -255,6 +284,62 @@ function renderTable(stores) {
         : '<p class="hint">해당하는 매장이 없습니다.</p>';
 }
 
+// ---- 후보지 넣어보기 (127 api_trade_area_signal) -----------------------------
+// 주소 → Worker 300m(상권 분석 탭과 같은 길) → 서버가 사전과 맞춰 신호 조합을 정하고
+// 같은 조합 우리 매장의 홀매출 분포를 돌려줍니다. 예측 숫자 하나는 만들지 않습니다 —
+// 9/17 실측에서 위치 자료만으로 한 매장 매출을 맞히는 오차가 35% 안팎이었고, 조합별
+// 분포 차이(중앙 609만~2,198만)가 그보다 훨씬 뚜렷했기 때문입니다.
+let candSeq = 0;
+
+async function runCandidate() {
+    const address = $("tadc-address").value.trim();
+    const box = $("tadc-result");
+    if (!address) return;
+    const my = ++candSeq;
+    $("tadc-status").textContent = "확인 중…";
+    $("tadc-status").hidden = false;
+    box.hidden = true;
+    const raw = await fetchAnalysis(address, 300).catch((e) => ({ ok: false, error: e.message }));
+    if (my !== candSeq) return;
+    if (!raw || !raw.ok) {
+        $("tadc-status").textContent = `주소를 확인하지 못했습니다 — ${(raw && raw.error) || "응답 없음"}`;
+        return;
+    }
+    if (raw.radius !== 300) {
+        $("tadc-status").textContent = `반경 300m 로 받지 못했습니다(받은 반경 ${raw.radius}m).`;
+        return;
+    }
+    const { data: r, error } = await db.rpc("api_trade_area_signal", { p_sales: raw.sales || [] });
+    if (my !== candSeq) return;
+    const res = Array.isArray(r) ? r[0] : r;
+    if (error || !res || res.ok === false) {
+        $("tadc-status").textContent = "신호를 계산하지 못했습니다" + (error ? ` — ${error.message}` : "");
+        return;
+    }
+    $("tadc-status").hidden = true;
+    box.hidden = false;
+    const where = (raw.geo && raw.geo.address_name) || address;
+    const groups = res.groups || [];
+    const rows = SIGNALS.map(([key, cls]) => {
+        const g = groups.find((x) => x.signal === key) || { n: 0 };
+        const on = key === res.signal;
+        return `<tr${on ? ' class="tad-cand-on"' : ""}><td class="tl"><span class="${cls}">${escape(key)}</span>${on ? " ◀ 이 자리" : ""}</td>`
+            + `<td>${g.n || 0}곳</td><td>${man(g.hall_med)}만</td><td>${man(g.hall_q25)}~${man(g.hall_q75)}만</td></tr>`;
+    }).join("");
+    const similar = (res.similar || []).map((x) => `${escape(x.store_name)} ${man(x.hall)}만(${eok(x.S)})`).join(" · ");
+    box.innerHTML = `
+        <div class="tad-cand-head"><strong>${escape(where)}</strong>
+            <span class="${SIGNAL_CLS.get(res.signal) || "tag"}">${escape(res.signal)}</span></div>
+        <p class="tad-cand-line">주변 가게 ${Number(res.N || 0).toLocaleString("ko-KR")}곳 · 홀 추정 합계 ${eok(res.S)}`
+        + (res.S_pct != null && res.n_judged ? ` (우리 ${res.n_judged}곳 중 상위 ${Math.max(1, 100 - Number(res.S_pct))}% 크기)` : "")
+        + `</p>
+        <p class="tad-cand-line">${escape(signalSentence(res, { signal_groups: groups }))}</p>
+        <table class="tad-brands"><thead><tr><th scope="col" class="tl">동네 신호</th><th scope="col">우리 매장</th>
+            <th scope="col">홀매출 중앙</th><th scope="col">가운데 절반</th></tr></thead><tbody>${rows}</tbody></table>
+        ${similar ? `<p class="tad-cand-line">같은 조합 · 동네 크기가 가까운 우리 매장: ${similar}</p>` : ""}
+        <p class="hint">브랜드 수집 ${ymText(res.ym)} · 홀매출 ${ymText(res.hall_ym)} 기준</p>`;
+}
+
 function wire() {
     $("tad-ym").addEventListener("change", () => load(Number($("tad-ym").value)));
     $("tad-quads").addEventListener("click", (e) => {
@@ -263,12 +348,21 @@ function wire() {
         quadFilter = quadFilter === b.dataset.quad ? "" : b.dataset.quad;
         render();
     });
-    $("tad-filter-clear").addEventListener("click", () => { quadFilter = ""; render(); });
+    $("tad-signals").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-signal]");
+        if (!b) return;
+        signalFilter = signalFilter === b.dataset.signal ? "" : b.dataset.signal;
+        render();
+    });
+    $("tad-filter-clear").addEventListener("click", () => { quadFilter = ""; signalFilter = ""; render(); });
+    $("tadc-run").addEventListener("click", runCandidate);
+    $("tadc-address").addEventListener("keydown", (e) => { if (e.key === "Enter") runCandidate(); });
     $("c-tad-scatter").addEventListener("click", (e) => {
         const c = e.target.closest("circle[data-store]");
         if (!c) return;
         open.add(c.dataset.store);
         quadFilter = "";
+        signalFilter = "";
         render();
         const btn = [...$("t-tad").querySelectorAll(".alerts-exp")].find((x) => x.dataset.exp === c.dataset.store);
         if (btn) btn.scrollIntoView({ block: "center", behavior: "smooth" });
