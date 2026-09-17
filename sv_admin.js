@@ -5,6 +5,12 @@
 // (123 설계 판단 [3]). 이미 있는 다른 이름으로는 못 바꿉니다 — 합치기는 매장
 // 배정에서 옮기는 것으로 합니다.
 //
+// [삭제 · 펼쳐 보기] (124_sv_delete.sql · 담당자 지시 2026-09-17 2차)
+//   삭제하면 담당 매장은 '미배정', 수신처의 담당 칸은 비워지고 명단 행이 지워집니다.
+//   SV 행의 ▸ 를 펼치면 담당 매장이 나오고, 거기서 매장 하나를 빼거나 묶음을
+//   아래 배정 표로 넘겨 다른 SV 에게 옮깁니다. 모든 길이 afterChange 로 모여
+//   헤더 필터·다른 화면과 같이 움직입니다.
+//
 // [모든 화면에 반영]
 //   저장이 끝나면 svfilter.reloadSvFilter() 가 헤더 담당자 목록·판정 표를 다시
 //   받고 mitaly:sv-changed 를 쏩니다(담당자 필터를 쓰는 화면은 이미 이것을
@@ -33,6 +39,7 @@ let svList = [];        // api_sv_admin().svs
 let svStores = [];      // api_sv_admin().stores
 let editingName = null; // 고치는 중인 SV 의 원래 이름 (null = 새로 만들기)
 const picked = new Set();   // 배정 표에서 고른 store_id
+const svOpen = new Set();   // 펼쳐 둔 SV 이름 — 다시 그려도 유지
 let selfRefresh = false;    // 이 카드가 쏜 storedb-refresh 는 다시 받지 않습니다
 
 async function loadSvAdmin() {
@@ -54,21 +61,58 @@ async function loadSvAdmin() {
 
 // ---- 명단 --------------------------------------------------------------
 
+// SV 한 명(또는 '미배정')의 매장 목록 — 운영 매장 먼저, 폐점은 뒤에 배지로.
+function storesOf(name) {
+    return svStores
+        .filter((s) => (name === UNASSIGNED ? !s.sv_name : s.sv_name === name))
+        .sort((a, b) => (a.state === "closed") - (b.state === "closed")
+            || a.store_name.localeCompare(b.store_name, "ko"));
+}
+
+// 펼침 행 — 매장마다 '빼기'(담당 비우기), 묶음 전체는 '배정 표에서 고르기'
+// (아래 배정 표로 넘겨 다른 SV 에게 옮깁니다). 둘 다 같은 저장 길(api_sv_assign
+// → afterChange)이라 헤더 필터·다른 화면이 같이 따라옵니다.
+function storeChips(name) {
+    const list = storesOf(name);
+    if (!list.length) return '<span class="meta">담당 매장이 없습니다.</span>';
+    const chips = list.map((s) =>
+        `<span class="sva-chip">`
+        + escape(s.store_name)
+        + (s.state === "closed" ? ' <span class="tag down">폐점</span>' : "")
+        + (name === UNASSIGNED ? ""
+            : ` <button type="button" class="linkish" data-sva-unassign="${s.store_id}"`
+              + ` aria-label="${escape(s.store_name)} 담당 비우기">빼기</button>`)
+        + "</span>").join("");
+    return `<div class="sva-chips">${chips}</div>`
+        + `<button type="button" class="linkish" data-sva-pick="${escape(name)}">`
+        + `이 매장들 배정 표에서 고르기</button>`;
+}
+
 function drawSvList() {
     const unassigned = svStores.filter((s) => !s.sv_name).length;
     $("sva-summary").textContent = `SV ${int(svList.length)}명`
         + (unassigned ? ` · 미배정 매장 ${int(unassigned)}곳` : "");
-    if (!svList.length) {
+    if (!svList.length && !unassigned) {
         $("sva-list").innerHTML = '<p class="hint">SV 가 없습니다.</p>';
         return;
     }
     const head = ["이름", "직함", "전화", "이메일", "담당 매장", "수신처", "상태", ""]
         .map((h, i) => `<th scope="col"${i > 0 && i !== 4 && i !== 5 ? ' class="tl"' : ""}>${escape(h)}</th>`)
         .join("");
+    const toggle = (name, count) => {
+        const open = svOpen.has(name);
+        return `<button type="button" class="alerts-exp${open ? " open" : ""}"`
+            + ` data-sva-exp="${escape(name)}" aria-expanded="${open}"`
+            + ` aria-label="${escape(name)} 담당 매장 ${count}곳 펼치기"></button>`;
+    };
+    const child = (name) =>
+        `<tr class="alerts-chrow" data-sva-parent="${escape(name)}"${svOpen.has(name) ? "" : " hidden"}>`
+        + `<td class="tl" colspan="8">${storeChips(name)}</td></tr>`;
+
     const body = svList.map((sv) => {
         const closed = sv.stores - sv.stores_open;
         return `<tr${sv.active ? "" : ' class="sva-off"'}>`
-            + `<td>${escape(sv.name)}`
+            + `<td>${toggle(sv.name, sv.stores)}${escape(sv.name)}`
             + (sv.in_roster ? "" : ' <span class="tag">연락처 없음</span>')
             + "</td>"
             + `<td class="tl">${escape(sv.title || "—")}</td>`
@@ -77,12 +121,88 @@ function drawSvList() {
             + `<td>${int(sv.stores_open)}${closed ? ` <span class="meta">(+폐점 ${int(closed)})</span>` : ""}</td>`
             + `<td>${int(sv.recipients)}</td>`
             + `<td class="tl">${sv.active ? "사용" : "사용 안 함"}</td>`
-            + `<td><button type="button" class="linkish" data-sva-edit="${escape(sv.name)}">고치기</button></td>`
-            + "</tr>";
-    }).join("");
+            + `<td><button type="button" class="linkish" data-sva-edit="${escape(sv.name)}">고치기</button>`
+            + ` <button type="button" class="linkish" data-sva-del="${escape(sv.name)}">삭제</button></td>`
+            + "</tr>" + child(sv.name);
+    }).join("")
+        // 미배정 묶음 — 고치기·삭제는 없고 펼쳐 보기와 배정 표로 넘기기만.
+        + (unassigned
+            ? `<tr><td>${toggle(UNASSIGNED, unassigned)}<span class="meta">${UNASSIGNED}</span></td>`
+              + `<td class="tl">—</td><td class="tl">—</td><td class="tl">—</td>`
+              + `<td>${int(unassigned)}</td><td>—</td><td class="tl">—</td><td></td></tr>`
+              + child(UNASSIGNED)
+            : "");
     // 매장 표가 아닙니다 — 전역 담당자 필터의 DOM 그물이 짐작하지 않게 -1.
+    // 펼침 행도 data-parent 가 아니라 data-sva-parent 라 svfilter 가 손대지 않습니다.
     $("sva-list").innerHTML =
         `<table data-sv-store-col="-1"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function toggleSv(name) {
+    if (svOpen.has(name)) svOpen.delete(name); else svOpen.add(name);
+    const on = svOpen.has(name);
+    for (const b of $("sva-list").querySelectorAll("[data-sva-exp]")) {
+        if (b.dataset.svaExp !== name) continue;
+        b.classList.toggle("open", on);
+        b.setAttribute("aria-expanded", String(on));
+    }
+    for (const tr of $("sva-list").querySelectorAll("tr[data-sva-parent]")) {
+        if (tr.dataset.svaParent === name) tr.hidden = !on;
+    }
+}
+
+async function deleteSv(name) {
+    const sv = svList.find((s) => s.name === name);
+    if (!sv) return;
+    const lines = [`'${name}' 을(를) 명단에서 삭제합니다.`];
+    if (sv.stores) lines.push(`담당 매장 ${int(sv.stores)}곳은 '미배정' 이 됩니다 — 넘길 SV 가 있으면 먼저 배정 표에서 옮기세요.`);
+    if (sv.recipients) lines.push(`수신처 ${int(sv.recipients)}명의 담당 SV 칸이 비워집니다(수신은 계속됩니다).`);
+    lines.push("삭제할까요?");
+    if (!window.confirm(lines.join("\n"))) return;
+
+    const notice = $("sva-notice");
+    const { data, error } = await db.rpc("api_sv_delete", { p_name: name });
+    if (error || !data?.ok) {
+        notice.textContent = "삭제하지 못했습니다: " + (error?.message || data?.reason || "");
+        return;
+    }
+    if (editingName === name) fillForm(null);
+    svOpen.delete(name);
+    picked.clear();   // 지운 SV 의 매장을 골라 둔 채면 다음 배정이 엉뚱한 묶음을 옮깁니다
+    notice.textContent = `삭제했습니다 — ${name}`
+        + (data.stores ? ` · 매장 ${int(data.stores)}곳 미배정` : "")
+        + (data.recipients ? ` · 수신처 ${int(data.recipients)}건 담당 비움` : "");
+    // 헤더에서 이 SV 를 보고 있었으면 '전체' 로 돌아갑니다(renamedTo 없음).
+    await afterChange({ renamedFrom: name, renamedTo: "" });
+}
+
+// 펼침 행의 '빼기' — 매장 하나의 담당을 비웁니다.
+async function unassignOne(storeId) {
+    const store = svStores.find((s) => s.store_id === storeId);
+    if (!store) return;
+    if (!window.confirm(`${store.store_name} — ${store.sv_name} 담당을 비웁니다. 그대로 저장할까요?`)) return;
+    const { data, error } = await db.rpc("api_sv_assign",
+        { p_store_ids: [storeId], p_sv_name: null });
+    if (error || !data?.ok) {
+        $("sva-notice").textContent = "저장하지 못했습니다: " + (error?.message || data?.reason || "");
+        return;
+    }
+    picked.delete(storeId);
+    $("sva-notice").textContent = `${store.store_name} — 담당을 비웠습니다.`;
+    await afterChange({});
+}
+
+// 펼침 행의 '배정 표에서 고르기' — 그 SV 의 매장을 전부 골라 둔 채 배정 표로 갑니다.
+function pickForAssign(name) {
+    const list = storesOf(name);
+    picked.clear();
+    for (const s of list) picked.add(s.store_id);
+    $("sva-f-sv").value = name;
+    $("sva-f-q").value = "";
+    if (list.some((s) => s.state === "closed")) $("sva-f-closed").checked = true;
+    drawAssign();
+    $("sva-target").scrollIntoView({ block: "center" });
+    $("sva-target").focus();
 }
 
 function fillForm(sv) {
@@ -134,6 +254,7 @@ async function saveSv() {
         const message = notice.textContent;
         fillForm(null);
         notice.textContent = message;
+        if (data.renamed_from && svOpen.delete(data.renamed_from)) svOpen.add(data.name);
         await afterChange({ renamedFrom: data.renamed_from, renamedTo: data.name });
     } finally {
         button.disabled = false;
@@ -251,6 +372,14 @@ export async function initSvAdmin() {
     $("sva-save").addEventListener("click", saveSv);
     $("sva-new").addEventListener("click", () => fillForm(null));
     $("sva-list").addEventListener("click", (e) => {
+        const exp = e.target.closest("[data-sva-exp]");
+        if (exp) { toggleSv(exp.dataset.svaExp); return; }
+        const del = e.target.closest("[data-sva-del]");
+        if (del) { deleteSv(del.dataset.svaDel); return; }
+        const out = e.target.closest("[data-sva-unassign]");
+        if (out) { unassignOne(Number(out.dataset.svaUnassign)); return; }
+        const pick = e.target.closest("[data-sva-pick]");
+        if (pick) { pickForAssign(pick.dataset.svaPick); return; }
         const b = e.target.closest("[data-sva-edit]");
         if (!b) return;
         const sv = svList.find((s) => s.name === b.dataset.svaEdit);

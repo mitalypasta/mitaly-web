@@ -4163,6 +4163,38 @@ const HANDLERS = {
         return { ok: true, sv_name: sv, stores: count };
     },
 
+    // 125_store_rename.sql — 매장 이름 변경. 데모는 STORES·storeProfiles 이름을 같이 바꿉니다.
+    api_store_rename: (args) => {
+        const key = (v) => String(v ?? "").replace(/^(미태리파스타-|미태리파스타 |미태리 |미태리-)/, "")
+            .replace(/\s+/g, "").toLowerCase();
+        const store = STORES.find((x) => x.id === Number(args.p_store_id));
+        if (!store) return { ok: false, reason: "그런 매장이 없습니다." };
+        const name = String(args.p_name ?? "").replace(/\s+/g, " ").trim();
+        if (!name) return { ok: false, reason: "매장 이름을 넣어 주세요." };
+        if (name === store.name) return { ok: true, store_id: store.id, name, renamed_from: null };
+        const other = STORES.find((x) => x.id !== store.id && key(x.name) === key(name));
+        if (other) return { ok: false, reason: `'${name}' 은(는) 다른 매장(${other.name})이 쓰는 이름입니다.` };
+        const old = store.name;
+        store.name = name;
+        for (const p of storeProfiles) if (p.store_id === store.id) p.store_name = name;
+        return { ok: true, store_id: store.id, name, renamed_from: old };
+    },
+
+    // 124_sv_delete.sql — 삭제: 담당 매장은 미배정, 수신처 담당 칸은 비우고 명단 행 삭제.
+    api_sv_delete: (args) => {
+        const name = String(args.p_name ?? "").trim();
+        if (!name || name === "미배정") return { ok: false, reason: "지울 SV 를 골라 주세요." };
+        let stores = 0, recipients = 0;
+        for (const p of storeProfiles) if (p.sv_name === name) { p.sv_name = null; stores += 1; }
+        for (const r of demoRecipients) if (r.sv_name === name) { r.sv_name = null; recipients += 1; }
+        const before = demoSvContacts.length;
+        demoSvContacts = demoSvContacts.filter((c) => c.name !== name);
+        if (!stores && !recipients && before === demoSvContacts.length) {
+            return { ok: false, reason: `'${name}' 은(는) 명단에 없습니다.` };
+        }
+        return { ok: true, name, stores, recipients };
+    },
+
     // 65_hq_imports.sql — 수신처 목록. 상태는 위 demoRecipients 입니다.
     api_notify_recipients: () => ({
         items: demoRecipients.map((r) => ({ ...r })),

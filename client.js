@@ -50,6 +50,12 @@ export const db = client;
 // 사실상 안 바뀌므로(신규 등록은 화면 새로고침 뒤에 보여도 충분) 캐시가
 // 안전합니다. 실패하면 캐시를 비워 다음 호출이 다시 시도합니다.
 let storesPromise = null;
+// 매장 이름을 바꾼 뒤(store_db.js · 125) 캐시를 비웁니다 — 다음 fetchStores 가
+// 새 이름을 받습니다.
+export function invalidateStores() {
+    storesPromise = null;
+}
+
 export function fetchStores() {
     if (!storesPromise) {
         storesPromise = db.from("stores").select("id,name").order("name")

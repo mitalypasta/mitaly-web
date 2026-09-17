@@ -11,7 +11,7 @@
 // 폐점 상태는 api_store_lifecycle_status(27)를 조인해 배지·필터로 보여줍니다
 // (진단 [F] — 기록이 없는 매장은 '운영' 으로 칩니다).
 
-import { db } from "./client.js";
+import { db, fetchStores, invalidateStores } from "./client.js";
 import { int } from "./format.js";
 import { escape, debounce } from "./util.js";
 import { table, $ } from "./dom.js";
@@ -187,8 +187,10 @@ function sdbEditRow(r) {
         return `<td><input type="text" data-key="${key}" autocomplete="off"${list}
             value="${escape(r[key] || "")}"></td>`;
     }).join("");
+    // 매장 이름도 여기서 고칩니다(125). 저장하면 옛 이름은 수집 별칭으로 남습니다.
     return `<tr data-id="${r.store_id}" class="sdb-editing">`
-        + `<td>${escape(r.store_name)}</td>${inputs}`
+        + `<td><input type="text" data-name autocomplete="off" aria-label="매장 이름"
+            value="${escape(r.store_name)}"></td>${inputs}`
         + `<td><button type="button" class="primary" id="sdb-save">저장</button> `
         + `<button type="button" class="linkish" id="sdb-cancel">취소</button></td></tr>`;
 }
@@ -248,7 +250,21 @@ async function sdbSave(storeId) {
     const notice = $("sdb-notice");
     const row = $("sdb-table").querySelector(`tr[data-id="${storeId}"]`);
     const values = {};
-    for (const input of row.querySelectorAll("input")) {
+    const nameInput = row.querySelector("input[data-name]");
+    const local = sdbRows.find((r) => r.store_id === storeId);
+    const oldName = local.store_name;
+    const newName = (nameInput?.value || "").replace(/\s+/g, " ").trim();
+    if (!newName) {
+        sdbNotice(notice, "매장 이름을 넣어 주세요.", true);
+        return;
+    }
+    const renaming = newName !== oldName;
+    if (renaming && !window.confirm(
+        `'${oldName}' → '${newName}' 으로 매장 이름을 바꿉니다.\n`
+        + "모든 화면에 새 이름으로 보이고, 계정표·POS 에 남은 옛 이름으로 들어오는 매출·리뷰도 이 매장으로 모입니다.\n"
+        + "그대로 저장할까요?")) return;
+
+    for (const input of row.querySelectorAll("input[data-key]")) {
         const key = input.dataset.key;
         const text = input.value.trim();
         // 숫자 열은 숫자로 접어 보냅니다 — 못 읽는 값(브라우저가 대부분
@@ -260,6 +276,17 @@ async function sdbSave(storeId) {
     }
 
     $("sdb-save").disabled = true;
+    // 이름 먼저 — 겹치는 이름이면 여기서 멈추고 프로필은 안 건드립니다.
+    if (renaming) {
+        const res = await db.rpc("api_store_rename", { p_store_id: storeId, p_name: newName });
+        if (res.error || !res.data?.ok) {
+            $("sdb-save").disabled = false;
+            sdbNotice(notice, "이름을 바꾸지 못했습니다: "
+                + (res.error ? res.error.message : (res.data?.reason || "알 수 없는 이유")), true);
+            return;
+        }
+        applyStoreRename(storeId, oldName, res.data.name);
+    }
     const { data, error } = await db.rpc("save_store_profile", {
         p_store_id: storeId,
         p_category: values.category,
@@ -281,19 +308,62 @@ async function sdbSave(storeId) {
         return;
     }
 
-    const local = sdbRows.find((r) => r.store_id === storeId);
     const svChanged = (local.sv_name || null) !== (values.sv_name || null);
     Object.assign(local, values, { has_profile: true });
     sdbEditingId = null;
-    sdbNotice(notice, `${data.store_name} 저장했습니다.`);
+    sdbNotice(notice, `${data.store_name} 저장했습니다.`
+        + (renaming ? ` (옛 이름 ${oldName})` : ""));
     refreshOptions();          // 새 SV·지역 값이 필터·후보에 바로 잡히게 ([H])
     sdbRender();
-    if (svChanged) {
+    if (renaming) {
+        await broadcastStoreRename(storeId, oldName, local.store_name);
+    } else if (svChanged) {
         // 담당이 바뀌면 헤더 담당자 필터와 담당 이름 사본을 든 화면들이 낡습니다 —
         // SV 관리(sv_admin.js)와 같은 두 신호를 보냅니다.
         await reloadSvFilter();
         document.dispatchEvent(new CustomEvent("mitaly:sv-data-changed", { detail: {} }));
     }
+}
+
+// ---- 매장 이름 변경을 이 화면 + 모든 화면에 (125) --------------------------
+//
+// 이 화면의 표·상태 사본을 새 이름으로 옮깁니다(서버 재조회 전 즉시 반영).
+function applyStoreRename(storeId, oldName, newName) {
+    const local = sdbRows.find((r) => r.store_id === storeId);
+    if (local) local.store_name = newName;
+    if (sdbStatus.has(oldName)) {
+        sdbStatus.set(newName, sdbStatus.get(oldName));
+        sdbStatus.delete(oldName);
+    }
+    sdbRows.sort((a, b) => a.store_name.localeCompare(b.store_name, "ko"));
+}
+
+// 다른 화면들은 부팅 때 매장 목록(fetchStores)으로 선택기를 채우고, 일부는 이름을
+// 값으로 씁니다(방문 기록 등). 그래서 ① 캐시를 비우고 ② 이미 그려진 선택기의
+// 옵션 글자·값을 새 이름으로 바꾸고(꼬리 ' (폐점)'·' — 폐점' 유지) ③ 헤더 필터·
+// 담당 사본·가맹점 DB 신호를 쏘고 ④ mitaly:store-renamed 로 이름을 들고 있는
+// 화면이 다시 조회하게 합니다. 표는 각 화면이 다시 조회할 때 서버의 새 이름으로 그려집니다.
+async function broadcastStoreRename(storeId, oldName, newName) {
+    // 화면들이 들고 있는 매장 배열(방문·정산 등)은 fetchStores 캐시의 **같은 객체**
+    // 입니다 — 캐시를 비우기 전에 그 객체의 이름을 바꾸면 그 화면들이 선택기를
+    // 다시 그릴 때도 새 이름이 나옵니다(비우기만 하면 옛 배열로 다시 그립니다).
+    try {
+        const { data } = await fetchStores();
+        for (const s of data || []) if (s.id === storeId) s.name = newName;
+    } catch (e) { /* 캐시가 없으면 바꿀 사본도 없습니다 */ }
+    invalidateStores();
+    for (const option of document.querySelectorAll("option")) {
+        const text = option.textContent;
+        if (text === oldName || text.startsWith(oldName + " (") || text.startsWith(oldName + " — ")) {
+            option.textContent = newName + text.slice(oldName.length);
+        }
+        if (option.value === oldName) option.value = newName;
+    }
+    await reloadSvFilter();
+    document.dispatchEvent(new CustomEvent("mitaly:store-renamed",
+        { detail: { storeId, oldName, newName } }));
+    document.dispatchEvent(new CustomEvent("mitaly:sv-data-changed", { detail: {} }));
+    window.dispatchEvent(new Event("mitaly:storedb-refresh"));
 }
 
 // 신규 매장 등록 — 매출 이력 0인 매장을 stores+프로필로 미리 만듭니다(44).

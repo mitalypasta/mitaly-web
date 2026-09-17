@@ -530,6 +530,10 @@ async function loadSvData() {
     for (const s of stores) {
         const name = String(s.name || "").trim();
         if (name) storeNames.add(name);
+        // 프로필이 없는 매장은 '미배정' 입니다(108 api_sv_daily · 123 SV 관리와 같은
+        // 규칙). 전에는 storeSv 에 없어 '매장 이름이 아님' 으로 읽혀 어느 담당자를
+        // 골라도 보였고, 헤더의 미배정 수가 SV 관리 카드와 어긋났습니다(2026-09-17).
+        if (name && !storeSv.has(name)) storeSv.set(name, UNASSIGNED);
     }
 
     fillControl();
