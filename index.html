@@ -526,6 +526,26 @@
          D38 — DB 가 원본, 이 화면이 수정 창구입니다. 여기서 고친 매핑은
          export_menu_mapping.py 가 xlsx 로 재생성해 repo 로 나가야 빌더에
          닿습니다(그 사슬은 큐 #130 설계 표 — 이번 카드는 제안까지). -->
+    <!-- 상권 진단 — 전 매장 × 300m 주변 가게 (큐 #185 · 122_store_diagnosis).
+         9/16 마케팅팀 보고서를 매달 자동으로 봅니다. 화면은 tradearea_diag.js,
+         문장은 tradearea_diag_text.js. 브랜드는 매월 3일 새벽 수집(121). -->
+    <section data-area="tradearea" class="card full" id="tad-card">
+        <header>
+            <h2>상권 진단</h2>
+            <span class="meta" id="tad-meta"></span>
+            <select id="tad-ym" aria-label="브랜드 수집 달"></select>
+        </header>
+        <p class="notice" id="tad-status" hidden></p>
+        <div id="tad-body" hidden>
+            <div class="kpis" id="tad-tiles"></div>
+            <div class="tad-quads" id="tad-quads"></div>
+            <svg class="plot" id="c-tad-scatter" role="img" aria-label="매장별 상권 합계와 홀매출"></svg>
+            <div class="tad-filter"><span id="tad-filter-note"></span>
+                <button type="button" class="ghost" id="tad-filter-clear" hidden>전체 보기</button></div>
+            <div class="tablewrap" id="t-tad"></div>
+        </div>
+    </section>
+
     <!-- 상권 분석 — 옛 구글시트 '예상매출 계산기'의 주소→반경 분석 이식
          (2026-08-29, 담당자 지시 "실시간 검색"). 수집은 Cloudflare Worker
          (/analyze — 카카오 지오코딩 + 마이프차)가 대신하고, 계산 모델은

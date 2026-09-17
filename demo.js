@@ -2987,6 +2987,67 @@ const HANDLERS = {
                  last_day: rows.length ? rows[rows.length - 1].day : null, rows };
     },
 
+    // 상권 진단 — 122_store_diagnosis.sql(api_store_diagnosis)과 같은 모양(jsonb 한 줄).
+    // 매장마다 결정적 값 + 그 목록의 중앙값으로 4분면을 가릅니다(서버와 같은 규칙).
+    api_store_diagnosis: ({ p_ym } = {}) => {
+        const ym = p_ym || 202609;
+        const hallYm = ym % 100 === 1 ? ym - 89 : ym - 1;
+        const BR = [["메가커피", "커피"], ["투썸플레이스", "커피", "lunch"], ["파리바게뜨", "음료·디저트"],
+                    ["교촌치킨", "외식", "chicken"], ["BBQ", "외식", "chicken"], ["써브웨이", "패스트푸드", "lunch"],
+                    ["본죽", "외식"], ["한솥도시락", "도시락"]];
+        const rows = STORES.slice(0, 40).map((st, i) => {
+            const N = 20 + (i * 37) % 180;
+            const S = N * (6_000_000 + (i * 1_300_000) % 9_000_000);
+            const M = Math.round(S / N * 0.55);
+            const hall = i % 17 === 5 ? 0 : 4_000_000 + (i * 2_700_000) % 38_000_000;
+            const self = i % 4 === 0 ? null : Math.round(hall * (1.1 + (i % 5) * 0.12));
+            const brands = BR.filter((_, j) => (i + j) % 3 !== 0).map(([brand, category, role], j) => ({
+                brand, category, role, est: j % 4 === 0 ? [9_000_000 + j * 1_000_000, 5_000_000] : [7_000_000 + ((i + j) * 1_700_000) % 30_000_000] }));
+            const ests = brands.flatMap((b) => b.est);
+            const cat_sum = {};
+            for (const b of brands) cat_sum[b.category] = (cat_sum[b.category] || 0) + b.est.reduce((a, v) => a + v, 0);
+            const sumBrand = ests.reduce((a, v) => a + v, 0);
+            const chicken = brands.filter((b) => b.role === "chicken").flatMap((b) => b.est).reduce((a, v) => a + v, 0);
+            return {
+                store_id: i + 1, store_name: st.name, floor_group: ["1층", "2층 이상", "특수상권"][i % 3],
+                sv_name: null, region: null, trade_area_desc: `데모 상권 ${i + 1}`, trade_area_note: null,
+                hall: hall || null, prev_hall: hall ? Math.round(hall * (0.85 + (i % 7) * 0.05)) : null,
+                days: hall ? 18 + (i % 12) : null, daily: hall ? Math.round(hall / (18 + (i % 12))) : null,
+                mom_pct: hall ? Number(((1 / (0.85 + (i % 7) * 0.05) - 1) * 100).toFixed(1)) : null,
+                N, S, M, n_brand: ests.length, sum_brand: sumBrand,
+                ratio: hall ? Number((hall / M).toFixed(2)) : null,
+                ratio2: self ? Number((self / M).toFixed(2)) : null,
+                pos_ratio: self && hall ? Number((hall / self).toFixed(2)) : null,
+                self_est: self,
+                pct: hall ? Math.round(100 * ests.filter((v) => v < hall).length / ests.length) : null,
+                pct2: self ? Math.round(100 * ests.filter((v) => v < self).length / ests.length) : null,
+                cat_sum, chicken_share: sumBrand ? Number((chicken / sumBrand).toFixed(3)) : null,
+                lunch_signals: brands.filter((b) => b.role === "lunch").map((b) => b.brand),
+                top3: brands.map((b) => ({ brand_std: b.brand, branch_name: `${b.brand} 데모점`, est_sale: b.est[0] }))
+                    .sort((a, b) => b.est_sale - a.est_sale).slice(0, 3),
+                brands: brands.map(({ brand, category, est }) => ({ brand, category, est })),
+            };
+        });
+        const med = (xs) => { const a = [...xs].sort((p, q) => p - q); const m = Math.floor(a.length / 2); return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
+        const judged = rows.filter((r) => r.hall && r.N);
+        const sMed = med(judged.map((r) => r.S));
+        const rMed = med(judged.map((r) => r.ratio));
+        for (const r of rows) {
+            r.quad = r.hall && r.N ? `${r.S >= sMed ? "상권강" : "상권약"}·${r.ratio >= rMed ? "매장강" : "매장약"}` : null;
+            r.S_pct = Math.round(100 * judged.filter((o) => o.S < r.S).length / judged.length);
+        }
+        rows.sort((a, b) => (b.hall || 0) - (a.hall || 0));
+        const pos = rows.filter((r) => r.pos_ratio != null).map((r) => r.pos_ratio);
+        return { ok: true, ym, hall_ym: hallYm, yms: [202609, 202608],
+                 n_stores: rows.length, n_judged: judged.length, n_with_brands: rows.length,
+                 n_self: rows.filter((r) => r.self_est).length,
+                 S_q25: null, S_med: sMed, S_q75: null, ratio_q25: null, ratio_med: rMed, ratio_q75: null,
+                 pos_q25: null, pos_med: med(pos), pos_q75: null, ratio2_med: null,
+                 rules: { ratio_hi: 1, ratio_mid: 0.6, ratio_lo: 0.4, pos_ok: 0.9, pos_warn: 0.5,
+                          chicken_share: 0.3, days_short: 22, mom_pct: 10 },
+                 stores: rows };
+    },
+
     // 매장별 일별 — 120_daily_sales.sql(api_daily_sales)과 같은 모양(jsonb 한 줄).
     // 날마다 결정적 파형 + 주말 융기, 매장별 {날: 금액} 지도, 홀/배달 필터 반영.
     api_daily_sales: ({ p_day_from, p_day_to, p_store, p_channel } = {}) => {
