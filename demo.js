@@ -4163,6 +4163,14 @@ const HANDLERS = {
         return { ok: true, sv_name: sv, stores: count };
     },
 
+    // 126_store_hide.sql — 매장 숨기기·복원.
+    api_store_hide: (args) => {
+        const store = STORES.find((x) => x.id === Number(args.p_store_id));
+        if (!store) return { ok: false, reason: "그런 매장이 없습니다." };
+        store.hidden_at = args.p_hidden ? (store.hidden_at || new Date().toISOString()) : null;
+        return { ok: true, store_id: store.id, name: store.name, hidden: !!args.p_hidden };
+    },
+
     // 125_store_rename.sql — 매장 이름 변경. 데모는 STORES·storeProfiles 이름을 같이 바꿉니다.
     api_store_rename: (args) => {
         const key = (v) => String(v ?? "").replace(/^(미태리파스타-|미태리파스타 |미태리 |미태리-)/, "")
@@ -4814,7 +4822,7 @@ export function demoClient() {
                     hostname: "DEMO-PC", busy: false, current_note: "대기 중",
                 }];
             case "stores":
-                return STORES.map((s) => ({ id: s.id, name: s.name }))
+                return STORES.map((s) => ({ id: s.id, name: s.name, hidden_at: s.hidden_at || null }))
                     .sort((a, b) => a.name.localeCompare(b.name));
             case "task_kinds":
                 return DEMO_TASK_KINDS;

@@ -50,19 +50,33 @@ export const db = client;
 // 사실상 안 바뀌므로(신규 등록은 화면 새로고침 뒤에 보여도 충분) 캐시가
 // 안전합니다. 실패하면 캐시를 비워 다음 호출이 다시 시도합니다.
 let storesPromise = null;
-// 매장 이름을 바꾼 뒤(store_db.js · 125) 캐시를 비웁니다 — 다음 fetchStores 가
-// 새 이름을 받습니다.
+let allStoresPromise = null;
+// 매장 이름을 바꾸거나(125) 숨긴 뒤(126) 캐시를 비웁니다 — 다음 호출이 새로 받습니다.
 export function invalidateStores() {
     storesPromise = null;
+    allStoresPromise = null;
 }
 
+// 숨긴 매장(126 stores.hidden_at)까지 전부. 매장 정보 화면과 전역 필터만 씁니다.
+// select("*") 인 이유: 126 적용 전 환경에서 "hidden_at" 을 이름으로 고르면 조회가
+// 통째로 실패해 웹 전체의 매장 목록이 빕니다 — 없는 열은 없는 대로 받습니다.
+export function fetchAllStores() {
+    if (!allStoresPromise) {
+        allStoresPromise = db.from("stores").select("*").order("name")
+            .then((r) => {
+                if (r.error) allStoresPromise = null;
+                return r;
+            }, (e) => { allStoresPromise = null; throw e; });
+    }
+    return allStoresPromise;
+}
+
+// 화면용 매장 목록 — 숨긴 매장은 뺍니다(126). 객체는 fetchAllStores 와 같은 것을
+// 나눠 씁니다(이름 변경 방송이 객체 이름을 바꾸는 길 — store_db.js).
 export function fetchStores() {
     if (!storesPromise) {
-        storesPromise = db.from("stores").select("id,name").order("name")
-            .then((r) => {
-                if (r.error) storesPromise = null;
-                return r;
-            }, (e) => { storesPromise = null; throw e; });
+        storesPromise = fetchAllStores().then((r) => (r.error ? r
+            : { ...r, data: (r.data || []).filter((s) => !s.hidden_at) }));
     }
     return storesPromise;
 }

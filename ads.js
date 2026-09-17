@@ -378,7 +378,7 @@ export async function initAds() {
 
     // 매장 이름 자동완성 — 목록에서 고르면 '매장을 찾지 못했습니다' 오타를
     // 겪지 않습니다(저장 함수는 이름 정확 일치).
-    const { data: stores } = await db.from("stores").select("name").order("name");
+    const { data: stores } = await fetchStores();     // 숨긴 매장 제외(126)
     const list = $("ads-store-list");
     for (const s of stores || []) {
         const opt = document.createElement("option");

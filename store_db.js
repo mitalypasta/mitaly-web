@@ -11,7 +11,7 @@
 // 폐점 상태는 api_store_lifecycle_status(27)를 조인해 배지·필터로 보여줍니다
 // (진단 [F] — 기록이 없는 매장은 '운영' 으로 칩니다).
 
-import { db, fetchStores, invalidateStores } from "./client.js";
+import { db, fetchStores, fetchAllStores, invalidateStores } from "./client.js";
 import { int } from "./format.js";
 import { escape, debounce } from "./util.js";
 import { table, $ } from "./dom.js";
@@ -64,7 +64,8 @@ export async function initStoreDb() {
 async function loadStoreDbData() {
     const [profRes, storeRes, statusRes] = await Promise.all([
         db.rpc("api_store_profiles"),
-        db.from("stores").select("id,name").order("name"),
+        // 숨긴 매장(126)까지 받습니다 — 이 화면이 숨기기·복원을 하는 곳입니다.
+        fetchAllStores(),
         db.rpc("api_store_lifecycle_status"),
     ]);
     if (profRes.error) {
@@ -77,6 +78,7 @@ async function loadStoreDbData() {
     for (const p of (Array.isArray(profRes.data) ? profRes.data : [])) {
         byId.set(Number(p.store_id), { ...p, has_profile: true });
     }
+    const hiddenAt = new Map((storeRes.data || []).map((s) => [Number(s.id), s.hidden_at || null]));
     for (const s of storeRes.data || []) {
         if (!byId.has(Number(s.id))) {
             byId.set(Number(s.id), {
@@ -88,6 +90,7 @@ async function loadStoreDbData() {
             });
         }
     }
+    for (const r of byId.values()) r.hidden_at = hiddenAt.get(Number(r.store_id)) || null;
     sdbRows = [...byId.values()].sort((a, b) =>
         a.store_name.localeCompare(b.store_name, "ko"));
 
@@ -146,9 +149,11 @@ function sdbFiltered() {
     const status = $("sdb-status").value;
     const search = $("sdb-search").value.trim();
     // 담당자 조건이 먼저 — 이 배열을 세는 곳이 아래 건수·표입니다.
-    return svFilterRows(sdbRows, (r) => r.store_name).filter((r) =>
-        (!region || r.region === region)
-        && (!status || (status === "closed") === sdbClosed(r))
+    // 숨긴 매장(126)은 '숨긴 매장' 을 고를 때만 — 다른 상태에서는 빠집니다.
+    return svFilterRows(sdbRows, (r) => r.store_name, { withHidden: true }).filter((r) =>
+        (status === "hidden" ? !!r.hidden_at : !r.hidden_at)
+        && (!region || r.region === region)
+        && (!status || status === "hidden" || (status === "closed") === sdbClosed(r))
         && (!search || r.store_name.includes(search)));
 }
 
@@ -198,11 +203,14 @@ function sdbEditRow(r) {
 // 표 한 벌을 그립니다. sdbEditingId 가 가리키는 행만 입력칸으로 바뀝니다.
 function sdbRender() {
     const list = sdbFiltered();
-    const missing = sdbRows.filter((r) => !r.has_profile).length;
-    const closed = sdbRows.filter(sdbClosed).length;
+    const shown = sdbRows.filter((r) => !r.hidden_at);
+    const hidden = sdbRows.length - shown.length;
+    const missing = shown.filter((r) => !r.has_profile).length;
+    const closed = shown.filter(sdbClosed).length;
     $("sdb-summary").textContent =
-        `${int(list.length)}곳 표시 · 전체 ${int(sdbRows.length)}곳`
+        `${int(list.length)}곳 표시 · 전체 ${int(shown.length)}곳`
         + (closed ? ` · 폐점 ${int(closed)}곳` : "")
+        + (hidden ? ` · 숨김 ${int(hidden)}곳` : "")
         + (missing ? ` · 프로필 없는 매장 ${int(missing)}곳` : "");
 
     if (!list.length) {
@@ -223,14 +231,20 @@ function sdbRender() {
         }).join("");
         return `<tr data-id="${r.store_id}"><td>${escape(r.store_name)}`
             + (sdbClosed(r) ? ' <span class="tag down">폐점</span>' : "")
+            + (r.hidden_at ? ' <span class="tag">숨김</span>' : "")
             + (r.has_profile ? "" : ' <span class="tag">프로필 없음</span>')
             + `</td>${cells}`
-            + `<td><button type="button" class="linkish sdb-edit" data-id="${r.store_id}">수정</button></td></tr>`;
+            + `<td><button type="button" class="linkish sdb-edit" data-id="${r.store_id}">수정</button>`
+            + ` <button type="button" class="linkish sdb-hide" data-id="${r.store_id}">`
+            + `${r.hidden_at ? "복원" : "숨기기"}</button></td></tr>`;
     }).join("");
 
     $("sdb-table").innerHTML =
         `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 
+    for (const b of $("sdb-table").querySelectorAll(".sdb-hide")) {
+        b.addEventListener("click", () => sdbToggleHidden(Number(b.dataset.id)));
+    }
     for (const b of $("sdb-table").querySelectorAll(".sdb-edit")) {
         b.addEventListener("click", () => sdbStartEdit(Number(b.dataset.id)));
     }
@@ -323,6 +337,39 @@ async function sdbSave(storeId) {
         await reloadSvFilter();
         document.dispatchEvent(new CustomEvent("mitaly:sv-data-changed", { detail: {} }));
     }
+}
+
+// ---- 매장 숨기기·복원 (126) -------------------------------------------------
+//
+// 행을 지우지 않고 목록에서만 뺍니다(126 설계 판단 [1]). 숨기면 웹의 매장 목록·
+// 선택기·매장 표에서 빠지고(전역 필터가 거릅니다), 과거 매출은 전사 합계에 남습니다.
+async function sdbToggleHidden(storeId) {
+    const notice = $("sdb-notice");
+    const r = sdbRows.find((x) => x.store_id === storeId);
+    if (!r) return;
+    const hide = !r.hidden_at;
+    const question = hide
+        ? `'${r.store_name}' 을(를) 매장 목록에서 숨깁니다.\n`
+          + "모든 화면의 매장 목록·선택기·매장 표에서 빠집니다. 과거 매출은 전사 합계에 남고, "
+          + "'상태: 숨긴 매장' 에서 복원할 수 있습니다.\n숨길까요?"
+        : `'${r.store_name}' 을(를) 다시 매장 목록에 보이게 합니다. 복원할까요?`;
+    if (!window.confirm(question)) return;
+
+    const { data, error } = await db.rpc("api_store_hide", { p_store_id: storeId, p_hidden: hide });
+    if (error || !data?.ok) {
+        sdbNotice(notice, (hide ? "숨기지" : "복원하지") + " 못했습니다: "
+            + (error ? error.message : (data?.reason || "알 수 없는 이유")), true);
+        return;
+    }
+    sdbNotice(notice, `${data.name} — ${hide ? "숨겼습니다" : "복원했습니다"}.`);
+    if (sdbEditingId === storeId) sdbEditingId = null;
+    invalidateStores();
+    // 전역 필터가 숨긴 매장 목록을 다시 받아 모든 선택기·표에 거릅니다 → sv-changed.
+    await reloadSvFilter();
+    document.dispatchEvent(new CustomEvent("mitaly:stores-hidden-changed",
+        { detail: { storeId, name: data.name, hidden: hide } }));
+    document.dispatchEvent(new CustomEvent("mitaly:sv-data-changed", { detail: {} }));
+    window.dispatchEvent(new Event("mitaly:storedb-refresh"));
 }
 
 // ---- 매장 이름 변경을 이 화면 + 모든 화면에 (125) --------------------------

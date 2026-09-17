@@ -29,7 +29,7 @@ import { int } from "./format.js";
 import { escape } from "./util.js";
 import { $ } from "./dom.js";
 import { db } from "./client.js";
-import { reloadSvFilter } from "./svfilter.js";
+import { reloadSvFilter, isStoreHidden } from "./svfilter.js";
 
 const UNASSIGNED = "미배정";
 const STATE_LABEL = { operating: "운영", planned_open: "오픈 예정",
@@ -50,7 +50,15 @@ async function loadSvAdmin() {
         return false;
     }
     svList = Array.isArray(data?.svs) ? data.svs : [];
-    svStores = Array.isArray(data?.stores) ? data.stores : [];
+    // 매장 정보에서 숨긴 매장(126)은 배정·담당 수에서 뺍니다. 서버 수(123)는 숨김을
+    // 모르므로 여기서 다시 셉니다.
+    svStores = (Array.isArray(data?.stores) ? data.stores : [])
+        .filter((s) => !isStoreHidden(s.store_name));
+    for (const sv of svList) {
+        const mine = svStores.filter((s) => s.sv_name === sv.name);
+        sv.stores = mine.length;
+        sv.stores_open = mine.filter((s) => s.state !== "closed").length;
+    }
     const alive = new Set(svStores.map((s) => s.store_id));
     for (const id of [...picked]) if (!alive.has(id)) picked.delete(id);
     drawSvList();

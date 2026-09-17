@@ -4,7 +4,7 @@
 import { int } from "./format.js";
 import { escape, clip } from "./util.js";
 import { $, table } from "./dom.js";
-import { db } from "./client.js";
+import { db, fetchStores } from "./client.js";
 import { svFilterRows, onSvChange } from "./svfilter.js";
 
 // ---- 답글 대행 동의 매장 (42_consents + 65 source) ------------------------
@@ -124,7 +124,7 @@ export async function initConsents() {
 
     // 매장 이름 자동완성 — 목록에서 고르면 오타로 '매장을 찾지 못했습니다' 를
     // 겪지 않습니다(기록 함수는 이름 정확 일치).
-    const { data: stores } = await db.from("stores").select("name").order("name");
+    const { data: stores } = await fetchStores();     // 숨긴 매장 제외(126)
     for (const s of stores || []) {
         const opt = document.createElement("option");
         opt.value = s.name;

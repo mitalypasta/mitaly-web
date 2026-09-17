@@ -75,7 +75,7 @@
 //     표와 같은 배열에서 그리므로 표를 거르면 카드도 같이 걸러집니다).
 // 새 카드 목록을 만들면 여기에 한 줄 더하고 그 화면에서 거르세요.
 
-import { fetchStores } from "./client.js";
+import { fetchAllStores } from "./client.js";
 
 const STORAGE_KEY = "mitaly.svFilter";
 const CLOSED_KEY = "mitaly.includeClosed";
@@ -105,6 +105,9 @@ let current = "";               // 선택된 담당자 ('' = 전체)
 let allowed = null;             // 현재 담당의 매장 이름 Set (전체면 null)
 let includeClosed = false;      // '폐점 포함' 인가
 let statusOk = false;           // 상태를 실제로 받았나 — 못 받으면 안 겁니다
+let hiddenNames = new Set();   // 목록에서 숨긴 매장(126) — 담당자와 무관하게 늘 빠짐
+// 숨긴 매장도 보여야 하는 자리의 표식(매장 정보 화면 — 숨기기·복원을 하는 곳).
+const SHOW_HIDDEN = "[data-show-hidden-stores]";
 let storeTotal = 0;             // 전 매장 수(컨트롤의 개수 표시용)
 let observer = null;
 let applyTimer = 0;
@@ -116,9 +119,15 @@ export function closedIncluded() { return includeClosed; }
 // 매장 select 가 아닌 것을 잘못 숨기지 않기 위해서입니다.
 // ⚠️ 이 함수는 **담당자 조건만** 봅니다. 표(dom.js 의 엑셀 내보내기 포함)가
 //    이것을 그대로 쓰기 때문입니다 — 폐점은 표에 안 겁니다(머리주석).
-export function svAllows(name) {
-    if (!allowed) return true;
+// 숨긴 매장인가(126). 매장 정보 화면처럼 숨긴 매장을 다루는 곳이 따로 묻습니다.
+export function isStoreHidden(name) {
+    return hiddenNames.has(normalizeStoreText(name));
+}
+
+export function svAllows(name, { withHidden = false } = {}) {
     const key = normalizeStoreText(name);
+    if (!withHidden && key && hiddenNames.has(key)) return false;
+    if (!allowed) return true;
     if (!key) return true;
     if (allowed.has(key)) return true;
     if (!storeSv.has(key)) return true;     // 매장 이름이 아님 → 판정 안 함
@@ -130,10 +139,10 @@ export function svAllows(name) {
 // 그대로 돌려줍니다 — 쓸데없이 복사하지 않습니다.
 //   pick — 행에서 매장 이름을 꺼내는 함수. 기본은 행 자체가 이름인 경우.
 // ⚠️ 담당자 조건만 봅니다(svAllows 와 같은 이유 — 폐점은 표에 안 겁니다).
-export function svFilterRows(rows, pick = (r) => r) {
+export function svFilterRows(rows, pick = (r) => r, { withHidden = false } = {}) {
     const list = Array.isArray(rows) ? rows : [];
-    if (!allowed) return list;
-    return list.filter((r) => svAllows(pick(r)));
+    if (!allowed && (withHidden || !hiddenNames.size)) return list;
+    return list.filter((r) => svAllows(pick(r), { withHidden }));
 }
 
 // 머리글 배열에서 매장 이름 열을 찾습니다. dom.js 의 table() 과 이 파일이
@@ -231,7 +240,9 @@ function applyToSelect(select) {
         if (o.value === "") { o.hidden = false; continue; }
         const key = normalizeStoreText(o.textContent);
         const closed = !closedOff && statusOk && storeState.get(key) === "closed";
-        const hide = !svAllows(key) || (closed && !includeClosed && o !== cur);
+        const withHidden = !!select.closest(SHOW_HIDDEN);
+        const hide = !svAllows(key, { withHidden })
+            || (closed && !includeClosed && o !== cur);
         if (o.hidden !== hide) { o.hidden = hide; changed = true; }
         if (markClosed(o, closed)) changed = true;
     }
@@ -323,6 +334,7 @@ function applyToTable(tbl) {
     //
     //    자식 행은 자기 부모를 따릅니다 — 부모가 걸러지면 같이 숨기되,
     //    **펼치지는 않습니다.**
+    const showHidden = !!tbl.closest(SHOW_HIDDEN);   // 매장 정보 화면(126)
     const kids = [];
     const childKey = (tr) => {
         if (tr.dataset.parent != null) return tr.dataset.parent;
@@ -338,7 +350,7 @@ function applyToTable(tbl) {
             // '매장' 열이 없는 표(다우 게시판 모양 등)는 행의 data-store 로 판정합니다.
             const name = col >= 0 ? (tr.cells[col] ? tr.cells[col].textContent : null) : tr.dataset.store;
             if (name == null) continue;
-            const hide = !svAllows(name);
+            const hide = !svAllows(name, { withHidden: showHidden });
             if (tr.hidden !== hide) tr.hidden = hide;
         }
     }
@@ -440,7 +452,10 @@ function fillControl() {
     const select = document.getElementById("sv-global");
     if (!select) return;
     const counts = new Map();
-    for (const who of storeSv.values()) counts.set(who, (counts.get(who) || 0) + 1);
+    for (const [name, who] of storeSv) {
+        if (hiddenNames.has(name)) continue;      // 숨긴 매장은 담당 수에서 뺍니다(126)
+        counts.set(who, (counts.get(who) || 0) + 1);
+    }
     const names = [...svNames];
     if (counts.has(UNASSIGNED)) names.push(UNASSIGNED);
     select.innerHTML = '<option value="">전체</option>'
@@ -460,8 +475,10 @@ function fillClosedControl() {
         return;
     }
     let closed = 0;
-    for (const state of storeState.values()) if (state === "closed") closed += 1;
-    const total = Math.max(storeTotal, storeState.size);
+    for (const [name, state] of storeState) {
+        if (state === "closed" && !hiddenNames.has(name)) closed += 1;
+    }
+    const total = storeTotal || storeState.size;   // 매장 목록을 못 받았으면 상태 행 수로
     select.disabled = false;
     select.innerHTML =
         `<option value="">운영 중 ${total - closed}곳</option>`
@@ -495,7 +512,7 @@ async function loadSvData() {
     const [profiles, statusRows, storeRes] = await Promise.all([
         rpcRows("api_store_profiles"),
         rpcRows("api_store_lifecycle_status"),
-        fetchStores().then((r) => r, () => ({ error: true })),
+        fetchAllStores().then((r) => r, () => ({ error: true })),
     ]);
 
     storeSv = new Map();
@@ -520,7 +537,9 @@ async function loadSvData() {
 
     const stores = (storeRes && !storeRes.error && Array.isArray(storeRes.data))
         ? storeRes.data : [];
-    storeTotal = stores.length;
+    hiddenNames = new Set(stores.filter((s) => s.hidden_at)
+        .map((s) => String(s.name || "").trim()));
+    storeTotal = stores.length - hiddenNames.size;
 
     // 아는 매장 이름 = 세 출처의 합집합. 프로필이 없는 매장도 선택기 판정
     // (selectLooksLikeStores)·이름 정리(normalizeStoreText)에 들어와야 합니다.
