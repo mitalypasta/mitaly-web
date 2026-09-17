@@ -1148,6 +1148,8 @@ export async function initStoreDash() {
     searchify(select);
 
     $("sd-export").addEventListener("click", exportStoreDash);
+    // 매장 기본 정보의 '담당' 은 조회 응답에 들어 있습니다 — 담당이 바뀌면 다시 받습니다.
+    document.addEventListener("mitaly:sv-data-changed", () => { if (currentArgs()) refresh(); });
 
     for (const id of ["sd-store", "sd-ym", "sd-day", "sd-year"]) {
         $(id).addEventListener("change", () => {

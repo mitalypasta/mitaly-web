@@ -15,7 +15,7 @@ import { db } from "./client.js";
 import { int } from "./format.js";
 import { escape, debounce } from "./util.js";
 import { table, $ } from "./dom.js";
-import { svFilterRows } from "./svfilter.js";
+import { svFilterRows, reloadSvFilter } from "./svfilter.js";
 
 const SDB_COLS = [
     ["category", "분류"],
@@ -282,11 +282,18 @@ async function sdbSave(storeId) {
     }
 
     const local = sdbRows.find((r) => r.store_id === storeId);
+    const svChanged = (local.sv_name || null) !== (values.sv_name || null);
     Object.assign(local, values, { has_profile: true });
     sdbEditingId = null;
     sdbNotice(notice, `${data.store_name} 저장했습니다.`);
     refreshOptions();          // 새 SV·지역 값이 필터·후보에 바로 잡히게 ([H])
     sdbRender();
+    if (svChanged) {
+        // 담당이 바뀌면 헤더 담당자 필터와 담당 이름 사본을 든 화면들이 낡습니다 —
+        // SV 관리(sv_admin.js)와 같은 두 신호를 보냅니다.
+        await reloadSvFilter();
+        document.dispatchEvent(new CustomEvent("mitaly:sv-data-changed", { detail: {} }));
+    }
 }
 
 // 신규 매장 등록 — 매출 이력 0인 매장을 stores+프로필로 미리 만듭니다(44).

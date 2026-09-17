@@ -488,9 +488,9 @@ async function rpcRows(name) {
     }
 }
 
-export async function initSvFilter(client) {
-    db = client;
-    buildControl();
+// 담당 배정·상태·매장 이름을 받아 판정 표를 새로 만듭니다. 부팅(initSvFilter)과
+// SV 관리 저장 뒤(reloadSvFilter) 둘 다 이 길을 씁니다.
+async function loadSvData() {
     // 매장 목록은 client.js 가 한 번만 조회해 나눠 씁니다(추가 호출 아님).
     const [profiles, statusRows, storeRes] = await Promise.all([
         rpcRows("api_store_profiles"),
@@ -534,6 +534,27 @@ export async function initSvFilter(client) {
 
     fillControl();
     fillClosedControl();
+}
+
+// SV 관리(sv_admin.js)가 이름·배정을 바꾼 뒤 부릅니다 — 헤더 담당자 목록과
+// 판정 표를 다시 받고, 고른 담당자의 이름이 바뀌었으면 새 이름으로 따라갑니다.
+// 그다음 mitaly:sv-changed 를 **항상** 쏩니다: 담당자 선택이 그대로여도 그
+// 담당의 매장 묶음이 바뀌었으니 모든 화면이 다시 세야 합니다.
+export async function reloadSvFilter({ renamedFrom = null, renamedTo = null } = {}) {
+    if (!db) return;
+    await loadSvData();
+    let next = current;
+    if (renamedFrom && current === renamedFrom) next = renamedTo || "";
+    if (next && next !== UNASSIGNED && !svNames.includes(next)) next = "";
+    const global = document.getElementById("sv-global");
+    if (global) global.value = next;
+    setCurrent(next);
+}
+
+export async function initSvFilter(client) {
+    db = client;
+    buildControl();
+    await loadSvData();
 
     let saved = "";
     try { saved = localStorage.getItem(STORAGE_KEY) || ""; } catch (e) { saved = ""; }

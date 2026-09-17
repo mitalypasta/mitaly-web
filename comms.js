@@ -28,6 +28,17 @@ export async function initComms() {
     }
     const { data: profiles } = await db.rpc("api_store_profiles");
     anProfiles = Array.isArray(profiles) ? profiles : [];
+    // 담당이 바뀌면(SV 관리) 'SV 별' 대상 수가 낡습니다 — 사본을 다시 받습니다.
+    document.addEventListener("mitaly:sv-data-changed", async () => {
+        const { data } = await db.rpc("api_store_profiles");
+        if (Array.isArray(data)) anProfiles = data;
+        const picked = $("an-value").value;
+        onAnnouncementAudienceChange();
+        if ([...$("an-value").options].some((o) => o.value === picked)) {
+            $("an-value").value = picked;
+            drawAnnouncementTargetCount();
+        }
+    });
 
     $("an-audience").addEventListener("change", onAnnouncementAudienceChange);
     $("an-value").addEventListener("change", drawAnnouncementTargetCount);

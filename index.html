@@ -680,6 +680,86 @@
         <div class="tableview tall" id="t-mapping"></div>
     </section>
 
+    <!-- SV 관리 — 명단·연락처 + 매장 담당 배정 (123_sv_admin.sql · web/sv_admin.js,
+         담당자 지시 2026-09-17). 이름을 바꾸면 매장 담당·수신처 담당이 같이
+         바뀌고, 저장 뒤 헤더 담당자 필터와 담당 이름을 쓰는 화면이 다시 받습니다. -->
+    <section data-area="settings" class="card full" id="sv-admin-card">
+        <header>
+            <h2>SV 관리</h2>
+            <span class="meta" id="sva-summary"></span>
+        </header>
+        <div class="reqform">
+            <div class="field">
+                <label for="sva-name">이름</label>
+                <input type="text" id="sva-name" autocomplete="off">
+            </div>
+            <div class="field">
+                <label for="sva-title">직함</label>
+                <input type="text" id="sva-title" autocomplete="off">
+            </div>
+            <div class="field">
+                <label for="sva-phone">전화</label>
+                <input type="tel" id="sva-phone" autocomplete="off">
+            </div>
+            <div class="field grow">
+                <label for="sva-email">이메일</label>
+                <input type="email" id="sva-email" autocomplete="off">
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <label class="recheck">
+                    <input type="checkbox" id="sva-active" checked>
+                    <span>사용</span>
+                </label>
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" id="sva-save" class="btn-primary">SV 추가</button>
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" class="ghost" id="sva-new">비우기</button>
+            </div>
+        </div>
+        <p class="notice" id="sva-notice"></p>
+        <div class="tableview" id="sva-list"></div>
+
+        <h3>매장 담당 배정</h3>
+        <div class="reqform">
+            <div class="field">
+                <label for="sva-f-sv">현재 담당</label>
+                <select id="sva-f-sv"><option value="">전체</option></select>
+            </div>
+            <div class="field grow">
+                <label for="sva-f-q">매장 찾기</label>
+                <input type="search" id="sva-f-q" autocomplete="off">
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <label class="recheck">
+                    <input type="checkbox" id="sva-f-closed">
+                    <span>폐점 포함</span>
+                </label>
+            </div>
+        </div>
+        <div class="reqform">
+            <div class="field">
+                <label for="sva-target">고른 매장을</label>
+                <select id="sva-target"><option value="">담당 SV 고르기</option></select>
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button type="button" id="sva-assign" class="btn-secondary" disabled>배정</button>
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <span class="meta" id="sva-picked"></span>
+            </div>
+        </div>
+        <p class="notice" id="sva-a-notice"></p>
+        <div class="tableview tall" id="sva-stores"></div>
+    </section>
+
     <!-- 수집 커버리지 — 매출 '수집 현황' 서브탭에서 이전(카드 #130).
          데이터는 종전대로 매출 필터 조회(load)의 api_coverage_* 가 채우고,
          기간 기준은 카드 머리(meta)에 표시합니다(설정 탭에는 필터 줄이 없음). -->

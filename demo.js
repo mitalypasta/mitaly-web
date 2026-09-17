@@ -1314,6 +1314,12 @@ let nextAnnouncementId = 2;
 // 꺼진 행도 하나 섞어 '사용/꺼짐' 이 화면에서 갈리는지 봅니다.
 // 쓰기 핸들러(save/toggle)가 이 배열을 고칩니다 — 저장 흐름을 데모로 검증
 // 할 수 있게(큐 #106 [E]).
+// SV 명단(123 sv_contacts) — 둘만 연락처가 있고 나머지는 배정에만 있는 이름(실데이터 모양).
+let demoSvContacts = [
+    { name: "김SV", title: "팀장", phone: "010-0000-0001", email: "kim@example.com", active: true },
+    { name: "박SV", title: "대리", phone: "010-0000-0002", email: "park@example.com", active: true },
+];
+
 let demoRecipients = [
     { id: 1, kind: "report", channel: "mail", recipient: "sv1@demo.example",
       display_name: "샘플 SV1", sv_name: "샘플 SV1", enabled: true,
@@ -4085,6 +4091,77 @@ const HANDLERS = {
     // (행 삭제가 배열을 고치므로 여기서 매번 베끼지 않고 그대로 읽습니다).
     api_notifications: ({ p_limit }) =>
         demoNotifications.slice(0, Number(p_limit) || 200),
+
+    // 123_sv_admin.sql — SV 관리. 명단은 demoSvContacts, 배정은 storeProfiles,
+    // 수신처 담당은 demoRecipients 를 같이 고칩니다(실제 함수의 연쇄 그대로).
+    api_sv_admin: () => {
+        const state = new Map(computeLifecycleStatus(null).map((r) => [r.store_id, r.state]));
+        const prof = new Map(storeProfiles.map((p) => [p.store_id, p]));
+        const stores = STORES.map((s) => ({
+            store_id: s.id, store_name: s.name,
+            sv_name: (prof.get(s.id)?.sv_name || "").trim() || null,
+            state: state.get(s.id) || "unknown",
+        }));
+        const names = new Set(demoSvContacts.map((c) => c.name));
+        for (const s of stores) if (s.sv_name) names.add(s.sv_name);
+        for (const r of demoRecipients) if (r.sv_name) names.add(r.sv_name);
+        const svs = [...names].map((name) => {
+            const c = demoSvContacts.find((x) => x.name === name);
+            const mine = stores.filter((s) => s.sv_name === name);
+            return {
+                name, title: c?.title || null, phone: c?.phone || null, email: c?.email || null,
+                active: c ? c.active : true, in_roster: !!c, updated_at: c?.updated_at || null,
+                stores: mine.length, stores_open: mine.filter((s) => s.state !== "closed").length,
+                recipients: new Set(demoRecipients.filter((r) => r.sv_name === name)
+                    .map((r) => r.recipient)).size,
+            };
+        }).sort((a, b) => (a.active === b.active ? a.name.localeCompare(b.name, "ko") : a.active ? -1 : 1));
+        return { svs, stores };
+    },
+    api_sv_save: (args) => {
+        const trim = (v) => String(v ?? "").trim() || null;
+        const old = trim(args.p_old_name);
+        const name = trim(args.p_name);
+        if (!name) return { ok: false, reason: "이름을 넣어 주세요." };
+        if (name === "미배정") return { ok: false, reason: "'미배정' 은 담당이 빈 매장을 묶는 이름이라 쓸 수 없습니다." };
+        let stores = 0, recipients = 0;
+        if (old && old !== name) {
+            const taken = demoSvContacts.some((c) => c.name === name)
+                || storeProfiles.some((p) => p.sv_name === name)
+                || demoRecipients.some((r) => r.sv_name === name);
+            if (taken) return { ok: false, reason: `'${name}' 은(는) 이미 있는 SV 입니다. 합치려면 매장 배정에서 옮겨 주세요.` };
+            for (const p of storeProfiles) if (p.sv_name === old) { p.sv_name = name; stores += 1; }
+            for (const r of demoRecipients) if (r.sv_name === old) { r.sv_name = name; recipients += 1; }
+            for (const c of demoSvContacts) if (c.name === old) c.name = name;
+        } else if (!old && demoSvContacts.some((c) => c.name === name)) {
+            return { ok: false, reason: `'${name}' 은(는) 이미 명단에 있습니다. 표에서 고치기를 눌러 주세요.` };
+        }
+        let row = demoSvContacts.find((c) => c.name === name);
+        if (!row) { row = { name }; demoSvContacts.push(row); }
+        Object.assign(row, { title: trim(args.p_title), phone: trim(args.p_phone),
+            email: trim(args.p_email)?.toLowerCase() || null, active: args.p_active !== false,
+            updated_at: new Date().toISOString() });
+        return { ok: true, name, renamed_from: old && old !== name ? old : null, stores, recipients };
+    },
+    api_sv_assign: (args) => {
+        let sv = String(args.p_sv_name ?? "").trim() || null;
+        if (sv === "미배정") sv = null;
+        const ids = (args.p_store_ids || []).map(Number);
+        if (!ids.length) return { ok: false, reason: "매장을 하나 이상 골라 주세요." };
+        let count = 0;
+        for (const id of ids) {
+            const store = STORES.find((s) => s.id === id);
+            if (!store) continue;
+            let p = storeProfiles.find((x) => x.store_id === id);
+            if (!p) { p = { store_id: id, store_name: store.name }; storeProfiles.push(p); }
+            p.sv_name = sv;
+            count += 1;
+        }
+        if (sv && !demoSvContacts.some((c) => c.name === sv)) {
+            demoSvContacts.push({ name: sv, title: null, phone: null, email: null, active: true });
+        }
+        return { ok: true, sv_name: sv, stores: count };
+    },
 
     // 65_hq_imports.sql — 수신처 목록. 상태는 위 demoRecipients 입니다.
     api_notify_recipients: () => ({

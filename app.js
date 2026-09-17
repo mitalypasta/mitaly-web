@@ -40,6 +40,7 @@ import { initSettlement } from "./settlement.js";
 import { initDeliveryMap, dmapFilterChanged } from "./map.js";
 import { initNotifications } from "./notifications.js";
 import { initRecipients } from "./recipients.js";
+import { initSvAdmin } from "./sv_admin.js";
 import { initConsents } from "./consents.js";
 import { initReport, drawReport } from "./report.js";
 import { initKpiSettings } from "./kpi.js";
@@ -413,7 +414,7 @@ async function initDashboard() {
         initLifecycle, initKakaoStats, initNotifications, initRecipients,
         initConsents, initSettlement, initAds, initIngredients,
         initOurhome, initIngStore, initPosMenu, initComms, initKpiSettings,
-        initSettings, initTradeArea, initTradeAreaDiag,
+        initSettings, initSvAdmin, initTradeArea, initTradeAreaDiag,
     ]));
     loadLastUpdated();
 }
@@ -1292,6 +1293,13 @@ function initHome() {
     if (S.area === "home") loadHome();
 }
 
+// 홈 담당자 카드(108). 담당이 바뀌면(SV 관리) 다시 받습니다 — 서버가 담당별로 묶어 줍니다.
+function loadHomeSv() {
+    db.rpc("api_sv_daily", { p_day: null })
+        .then(drawHomeSv, (e) => drawHomeSv({ error: e }));
+}
+document.addEventListener("mitaly:sv-data-changed", loadHomeSv);
+
 async function loadHome() {
     if (Date.now() - homeLoadedAt < 10 * 60_000) return;
     homeLoadedAt = Date.now();
@@ -1316,8 +1324,7 @@ async function loadHome() {
     const reviewFromYm = shiftYm(nowYm, -1);
 
     // 담당자별 오늘 할 일(#168) — 다른 홈 조회와 독립이라 따로 던지고 따로 그립니다.
-    db.rpc("api_sv_daily", { p_day: null })
-        .then(drawHomeSv, (e) => drawHomeSv({ error: e }));
+    loadHomeSv();
 
     const [cmpRes, alertRes, negRes, negSumRes, covRes] = await Promise.all([
         db.rpc("api_sales_compare", { p_ym: baseYm, p_store: null }),
@@ -3684,6 +3691,20 @@ function initDaouBoard() {
     loadDaouBoard();
 }
 
+// 매장 ↔ SV 배정 사본(방문 화면용). 원본은 store_profiles.sv_name.
+async function loadVisitSv() {
+    const { data: profiles, error: profErr } = await db.rpc("api_store_profiles");
+    if (profErr || !Array.isArray(profiles)) return;
+    visitSvByStore = new Map();
+    visitStoresBySv = new Map();
+    for (const p of profiles) {
+        if (!p.sv_name) continue;
+        visitSvByStore.set(p.store_name, p.sv_name);
+        if (!visitStoresBySv.has(p.sv_name)) visitStoresBySv.set(p.sv_name, new Set());
+        visitStoresBySv.get(p.sv_name).add(p.store_name);
+    }
+}
+
 async function initVisits() {
     initDaouBoard();
     const storeSelect = $("vs-store");
@@ -3692,15 +3713,15 @@ async function initVisits() {
     rebuildVisitStoreOptions();
 
     // SV 배정 — 자료가 없으면 빈 select 대신 짧은 안내를 보여줍니다(진단 [B]).
-    const { data: profiles, error: profErr } = await db.rpc("api_store_profiles");
-    if (!profErr && Array.isArray(profiles)) {
-        for (const p of profiles) {
-            if (!p.sv_name) continue;
-            visitSvByStore.set(p.store_name, p.sv_name);
-            if (!visitStoresBySv.has(p.sv_name)) visitStoresBySv.set(p.sv_name, new Set());
-            visitStoresBySv.get(p.sv_name).add(p.store_name);
-        }
-    }
+    await loadVisitSv();
+    // SV 관리·가맹점 DB 에서 담당이 바뀌면 배정 사본을 다시 받고 목록을 다시 셉니다.
+    document.addEventListener("mitaly:sv-data-changed", async () => {
+        await loadVisitSv();
+        rebuildVisitStoreOptions();
+        await refreshVisits();
+        await refreshVisitStoreMetrics();
+        await refreshVisitDue();
+    });
     // 담당자 선택은 헤더(sv-global) 하나뿐입니다. 이 자리에 있던 'vs-sv' 는
     // 헤더와 값을 공유하지 않아, 둘을 다르게 고르면 두 조건이 겹쳐 목록이
     // 비면서도 화면은 건수를 그대로 말했습니다(2026-09-11 감사 · 카드 #168).

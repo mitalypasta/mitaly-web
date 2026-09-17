@@ -398,5 +398,7 @@ export async function initAllStores() {
     $("as-ym").addEventListener("change", refresh);
     // 헤더 담당자를 바꾸면 다시 그립니다 — 건수·순번이 표와 같이 움직여야 합니다.
     document.addEventListener("mitaly:sv-changed", () => { if (stores.length) render(); });
+    // 담당 SV 열은 서버(93)가 붙여 줍니다 — 담당이 바뀌면(SV 관리) 다시 받습니다.
+    document.addEventListener("mitaly:sv-data-changed", () => { if (stores.length) refresh(); });
     await refresh();
 }

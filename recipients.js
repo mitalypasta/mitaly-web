@@ -247,5 +247,7 @@ export async function initRecipients() {
         const box = event.target.closest("input[data-act='rc-kind']");
         if (box) toggleKind(box);
     });
+    // SV 이름을 바꾸면(SV 관리) 이 표의 '담당 SV' 열도 서버에서 바뀝니다.
+    document.addEventListener("mitaly:sv-data-changed", refreshRecipients);
     await refreshRecipients();
 }

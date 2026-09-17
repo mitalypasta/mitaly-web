@@ -3836,3 +3836,7 @@ tr.vs-drow td { white-space: normal; }
     /* 표가 화면보다 넓어 가로로 밀리는 동안에도 펼친 문장은 화면 폭 안에서 줄바꿈 */
     .tad-detail { position: sticky; left: 0; max-width: calc(100vw - 48px); }
 }
+
+/* SV 관리(설정 탭) — 사용 안 함 SV 는 흐리게. 행을 지우지 않는 이유는 123 설계 판단 [5]. */
+#sv-admin-card tr.sva-off td { color: var(--text-muted); }
+#sv-admin-card h3 { margin-top: var(--sp-5); }
