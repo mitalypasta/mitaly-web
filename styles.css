@@ -3882,6 +3882,22 @@ tr.vs-drow td { white-space: normal; }
 
 /* 동네 신호 · 후보지 넣어보기 (127) */
 #tad-card h3 { margin: var(--sp-7) 0 0; font-size: var(--sz-3); }
-.tad-cand-head { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-3); }
-.tad-cand-line { margin: 0 0 var(--sp-3); line-height: 1.6; }
+.tad-cand-head { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; margin: var(--sp-5) 0 var(--sp-4); font-size: var(--sz-4); }
+.tad-cand-tiles { margin-bottom: var(--sp-6); }
+.tad-cand-tiles .tile .sub { line-height: 1.5; }
+.tad-cand-signal .tag { font-size: var(--sz-5); padding: var(--sp-2) var(--sp-4); }
+.tad-cand-h { font-size: var(--sz-3); font-weight: 600; color: var(--text-secondary); margin: var(--sp-6) 0 var(--sp-3); }
+.tad-cand-table td, .tad-cand-similar td { padding-top: var(--sp-3); padding-bottom: var(--sp-3); }
 .tad-cand-on td { background: var(--action-soft); }
+.tad-cand-on td:first-child { box-shadow: inset 3px 0 0 var(--action-primary); }
+.tad-cand-here {
+    display: inline-block;
+    margin-left: var(--sp-3);
+    padding: var(--sp-1) var(--sp-3);
+    border-radius: var(--r-md);
+    background: var(--action-primary);
+    color: var(--text-on-accent);
+    font-size: var(--sz-1);
+    font-weight: 600;
+    vertical-align: middle;
+}

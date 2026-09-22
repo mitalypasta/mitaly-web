@@ -19,19 +19,41 @@ const has = (v) => v !== null && v !== undefined && v !== "" && !Number.isNaN(Nu
 const topPct = (sPct) => Math.max(1, 100 - Number(sPct));
 
 // 동네 신호 한 문장 — 진단 목록과 후보지 조회가 같이 씁니다.
+// 동네 유형 — 서버 값(127 mitaly_area_signal: 직장형만·둘 다·둘 다 없음·주거형만)을
+// 화면 이름으로. 2026-09-22 담당자 "'직장형만'? '둘 다'는 뭐고 '둘 다 없음'은 뭐야?" —
+// 서버 값은 그대로 두고(시험·SQL·저장 값이 걸려 있음) 화면 이름·설명만 바꿉니다.
+// 유형은 300m 안 '표지 브랜드' 유무로 갈립니다: 점심·직장형 표지(써브웨이·투썸·본도시락 등)가
+// 있으면 '직장', 주거·배달형 표지(치킨 등)가 있으면 '주거'.
+export const SIGNAL_LABEL = {
+    "직장형만": "직장 동네",
+    "주거형만": "주거 동네",
+    "둘 다": "직장·주거 섞임",
+    "둘 다 없음": "표지 없음",
+};
+export const SIGNAL_DESC = {
+    "직장형만": "점심·직장형 표지 브랜드만 있음",
+    "주거형만": "주거·배달형 표지 브랜드만 있음",
+    "둘 다": "두 종류 표지가 다 있음",
+    "둘 다 없음": "어느 쪽 표지도 없음",
+};
+export const signalLabel = (key) => SIGNAL_LABEL[key] || key || "";
+
+// 무엇이 유형을 정했나 — "점심·직장형 표지 없음 · 주거·배달형 표지 굽네치킨"
+export function signalWhy(s) {
+    const work = Array.isArray(s && s.work_brands) ? s.work_brands : [];
+    const home = Array.isArray(s && s.home_brands) ? s.home_brands : [];
+    return `${work.length ? `점심·직장형 표지 ${work.join("·")}` : "점심·직장형 표지 없음"} · `
+        + `${home.length ? `주거·배달형 표지 ${home.join("·")}` : "주거·배달형 표지 없음"}`;
+}
+
 // s: {signal, work_brands, home_brands} · d: {signal_groups} (api_store_diagnosis 최상위)
 export function signalSentence(s, d) {
     if (!s || !s.signal) return "";
-    const work = Array.isArray(s.work_brands) ? s.work_brands : [];
-    const home = Array.isArray(s.home_brands) ? s.home_brands : [];
-    const parts = [];
-    parts.push(work.length ? `점심·직장형 ${work.join("·")}` : "점심·직장형 없음");
-    parts.push(home.length ? `주거·배달형 ${home.join("·")}` : "주거·배달형 없음");
     const g = ((d && d.signal_groups) || []).find((x) => x.signal === s.signal);
     const tail = g && has(g.hall_med)
-        ? ` — 이 조합 우리 매장 ${g.n}곳 홀매출 중앙 ${man(g.hall_med)}만 원(가운데 절반 ${man(g.hall_q25)}~${man(g.hall_q75)}만).`
-        : ".";
-    return `300m 안 ${parts.join(" · ")}${tail}`;
+        ? ` 같은 유형 우리 매장 ${g.n}곳 홀매출 중앙 ${man(g.hall_med)}만 원(절반이 ${man(g.hall_q25)}~${man(g.hall_q75)}만 사이).`
+        : "";
+    return `동네 유형 '${signalLabel(s.signal)}' — 300m 안 ${signalWhy(s)}.${tail}`;
 }
 
 export function diagSentences(s, d) {

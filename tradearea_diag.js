@@ -17,7 +17,7 @@ import { db } from "./client.js";
 import { escape } from "./util.js";
 import { $ } from "./dom.js";
 import { svFilterRows, onSvChange } from "./svfilter.js";
-import { diagSentences, signalSentence } from "./tradearea_diag_text.js";
+import { diagSentences, signalLabel, signalWhy, SIGNAL_DESC } from "./tradearea_diag_text.js";
 import { fetchAnalysis } from "./tradearea.js";
 
 const QUADS = [
@@ -36,7 +36,8 @@ const QUAD_COLOR = {
     "상권약·매장강": "var(--action-primary)",
 };
 const CATS = ["커피", "음료·디저트", "패스트푸드", "외식", "도시락"];
-// 동네 신호 조합(127 mitaly_area_signal) — 칩 문구·색. 순서는 표·칸 순서.
+// 동네 유형(127 mitaly_area_signal) — 서버 값·칩 색. 순서는 표·칸 순서. 화면 이름은
+// tradearea_diag_text.js 의 SIGNAL_LABEL(서버 값은 안 바꿉니다 — data-signal 에 그대로).
 const SIGNALS = [
     ["직장형만", "tag up"],
     ["둘 다", "tag"],
@@ -44,6 +45,22 @@ const SIGNALS = [
     ["주거형만", "tag h-warn"],
 ];
 const SIGNAL_CLS = new Map(SIGNALS);
+const signalChip = (key) => key
+    ? `<span class="${SIGNAL_CLS.get(key) || "tag"}" data-signal="${escape(key)}" title="${escape(SIGNAL_DESC[key] || "")}">${escape(signalLabel(key))}</span>`
+    : "—";
+
+// 유형 설명 한 줄 — 표지 브랜드 예시는 자료에서 뽑습니다(사전이 바뀌어도 화면이 따라오게).
+function signalLegend(stores) {
+    const top = (pick) => {
+        const cnt = new Map();
+        for (const s of stores) for (const b of (pick(s) || [])) cnt.set(b, (cnt.get(b) || 0) + 1);
+        return [...cnt.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([b]) => b);
+    };
+    const w = top((s) => s.work_brands), h = top((s) => s.home_brands);
+    return `300m 안에 어떤 프랜차이즈가 있는지로 동네를 넷으로 나눕니다. `
+        + `점심·직장형 표지(${w.length ? w.join("·") + " 등" : "써브웨이·투썸 등"})가 있으면 '직장', `
+        + `주거·배달형 표지(${h.length ? h.join("·") + " 등" : "치킨 등"})가 있으면 '주거'입니다.`;
+}
 
 const man = (won) => (won == null ? "—" : Math.round(Number(won) / 10000).toLocaleString("ko-KR"));
 const eok = (won) => (won == null ? "—" : `${(Number(won) / 1e8).toFixed(1)}억`);
@@ -145,14 +162,16 @@ function renderQuads(judged) {
 // 누르면 아래 목록이 그 조합 매장만 남습니다(4분면 칸과 겹쳐 걸립니다).
 function renderSignals() {
     const groups = new Map((data.signal_groups || []).map((g) => [g.signal, g]));
-    $("tad-signals").innerHTML = SIGNALS.map(([key, cls]) => {
+    const legend = $("tad-signals-legend");
+    if (legend) legend.textContent = signalLegend(data.stores || []);
+    $("tad-signals").innerHTML = SIGNALS.map(([key]) => {
         const g = groups.get(key) || { n: 0 };
         const on = signalFilter === key;
         return `<button type="button" class="tad-quad${on ? " on" : ""}" data-signal="${escape(key)}" aria-pressed="${on}">
-            <div class="tad-quad-head"><span class="${cls}">${escape(key)}</span>
+            <div class="tad-quad-head">${signalChip(key)}
                 <strong>${g.n || 0}곳</strong>
-                <span class="tad-quad-med">홀 중앙 ${man(g.hall_med)}만</span></div>
-            <div class="tad-quad-desc">가운데 절반 ${man(g.hall_q25)}~${man(g.hall_q75)}만</div>
+                <span class="tad-quad-med">홀매출 중앙 ${man(g.hall_med)}만</span></div>
+            <div class="tad-quad-desc">${escape(SIGNAL_DESC[key] || "")} · 절반이 ${man(g.hall_q25)}~${man(g.hall_q75)}만 사이</div>
         </button>`;
     }).join("");
 }
@@ -243,7 +262,7 @@ function renderTable(stores) {
     $("tad-filter-note").textContent = on.length ? `${on.join(" · ")} ${rows.length}곳만 보는 중` : "";
     $("tad-filter-clear").hidden = !on.length;
 
-    const head = [["name", "매장"], [null, "판정"], [null, "동네 신호"], ["hall", "홀매출"], ["S", "상권 합계"],
+    const head = [["name", "매장"], [null, "판정"], [null, "동네 유형"], ["hall", "홀매출"], ["S", "상권 합계"],
                   ["ratio", "주변 대비"], ["pos", "추정 대비"]];
     const th = head.map(([k, label], i) => {
         const cls = i < 3 ? "tl" : "";
@@ -263,7 +282,7 @@ function renderTable(stores) {
             <td class="tl"><button type="button" class="alerts-exp${isOpen ? " open" : ""}" data-exp="${escape(s.store_name)}"
                 aria-expanded="${isOpen}" aria-label="${escape(s.store_name)} 진단 펼치기"></button>${escape(s.store_name)}</td>
             <td class="tl">${chip}</td>
-            <td class="tl">${s.signal ? `<span class="${SIGNAL_CLS.get(s.signal) || "tag"}">${escape(s.signal)}</span>` : "—"}</td>
+            <td class="tl">${signalChip(s.signal)}</td>
             <td>${man(s.hall)}만</td>
             <td>${eok(s.S)}</td>
             <td>${s.ratio == null ? "—" : `${x2(s.ratio)}배`}</td>
@@ -318,25 +337,58 @@ async function runCandidate() {
     }
     $("tadc-status").hidden = true;
     box.hidden = false;
-    const where = (raw.geo && raw.geo.address_name) || address;
+    box.innerHTML = candidateHtml(res, (raw.geo && raw.geo.address_name) || address);
+}
+
+// 후보지 결과 — 답(타일 3개) → 근거(무엇이 유형을 정했나) → 비교 표 → 비슷한 매장 순
+// (web-hierarchy 답→근거→원장). 2026-09-22 담당자 "너무 보기 불편해" — 전에는 긴 문장
+// 두 줄 + 표 + 나열 한 줄이라 어디가 답인지 없었습니다. 숫자는 타일에, 이유는 칩에,
+// 나열은 표에 둡니다. 'S_pct' 는 우리 판정 매장 중 이 동네보다 작은 곳의 비율이라
+// "상위 74%" 처럼 뒤집어 읽히기 쉬워 "작은 편 · 하위 26%" 로 씁니다.
+function sizeWord(pct) {
+    if (pct == null) return "";
+    return pct < 34 ? "작은 편" : pct < 67 ? "중간" : "큰 편";
+}
+
+export function candidateHtml(res, where) {
     const groups = res.groups || [];
-    const rows = SIGNALS.map(([key, cls]) => {
+    const mine = groups.find((x) => x.signal === res.signal) || null;
+    const pct = res.S_pct != null ? Number(res.S_pct) : null;
+    const n = Number(res.N || 0);
+
+    const tiles = `<div class="kpis tad-cand-tiles">
+        <div class="tile"><div class="label">동네 유형</div>
+            <div class="value tad-cand-signal">${signalChip(res.signal)}</div>
+            <div class="sub">${escape(signalWhy(res))}</div></div>
+        <div class="tile"><div class="label">같은 유형 우리 매장 홀매출</div>
+            <div class="value">${mine && mine.hall_med != null ? `${man(mine.hall_med)}<span class="sv-unit">만</span>` : "—"}</div>
+            <div class="sub">${mine && mine.n ? `${mine.n}곳 중앙값 · 절반이 ${man(mine.hall_q25)}~${man(mine.hall_q75)}만 사이` : "같은 유형 매장 없음"}</div></div>
+        <div class="tile"><div class="label">동네 크기 (홀 추정 합계)</div>
+            <div class="value">${eok(res.S)}</div>
+            <div class="sub">주변 가게 ${n.toLocaleString("ko-KR")}곳${pct != null && res.n_judged ? ` · 우리 ${res.n_judged}곳 중 하위 ${pct}% (${sizeWord(pct)})` : ""}</div></div>
+    </div>`;
+
+    const rows = SIGNALS.map(([key]) => {
         const g = groups.find((x) => x.signal === key) || { n: 0 };
         const on = key === res.signal;
-        return `<tr${on ? ' class="tad-cand-on"' : ""}><td class="tl"><span class="${cls}">${escape(key)}</span>${on ? " ◀ 이 자리" : ""}</td>`
-            + `<td>${g.n || 0}곳</td><td>${man(g.hall_med)}만</td><td>${man(g.hall_q25)}~${man(g.hall_q75)}만</td></tr>`;
+        return `<tr${on ? ' class="tad-cand-on"' : ""}>
+            <td class="tl">${signalChip(key)}${on ? '<span class="tad-cand-here">이 자리</span>' : ""}</td>
+            <td class="num">${g.n || 0}곳</td><td class="num">${man(g.hall_med)}만</td><td class="num">${man(g.hall_q25)}~${man(g.hall_q75)}만</td></tr>`;
     }).join("");
-    const similar = (res.similar || []).map((x) => `${escape(x.store_name)} ${man(x.hall)}만(${eok(x.S)})`).join(" · ");
-    box.innerHTML = `
-        <div class="tad-cand-head"><strong>${escape(where)}</strong>
-            <span class="${SIGNAL_CLS.get(res.signal) || "tag"}">${escape(res.signal)}</span></div>
-        <p class="tad-cand-line">주변 가게 ${Number(res.N || 0).toLocaleString("ko-KR")}곳 · 홀 추정 합계 ${eok(res.S)}`
-        + (res.S_pct != null && res.n_judged ? ` (우리 ${res.n_judged}곳 중 상위 ${Math.max(1, 100 - Number(res.S_pct))}% 크기)` : "")
-        + `</p>
-        <p class="tad-cand-line">${escape(signalSentence(res, { signal_groups: groups }))}</p>
-        <table class="tad-brands"><thead><tr><th scope="col" class="tl">동네 신호</th><th scope="col">우리 매장</th>
-            <th scope="col">홀매출 중앙</th><th scope="col">가운데 절반</th></tr></thead><tbody>${rows}</tbody></table>
-        ${similar ? `<p class="tad-cand-line">같은 조합 · 동네 크기가 가까운 우리 매장: ${similar}</p>` : ""}
+    const table = `<h3 class="tad-cand-h">유형별 우리 매장 홀매출 (${ymText(res.hall_ym)})</h3>
+        <div class="tablewrap"><table class="tad-brands tad-cand-table"><thead><tr>
+            <th scope="col" class="tl">동네 유형</th><th scope="col" class="num">우리 매장</th>
+            <th scope="col" class="num">홀매출 중앙</th><th scope="col" class="num">절반이 드는 범위</th></tr></thead>
+            <tbody>${rows}</tbody></table></div>`;
+
+    const sim = (res.similar || []);
+    const similar = sim.length ? `<h3 class="tad-cand-h">같은 유형 · 동네 크기가 가까운 우리 매장</h3>
+        <div class="tablewrap"><table class="tad-brands tad-cand-similar"><thead><tr>
+            <th scope="col" class="tl">매장</th><th scope="col" class="num">홀매출 ${ymText(res.hall_ym)}</th><th scope="col" class="num">동네 크기</th></tr></thead>
+            <tbody>${sim.map((x) => `<tr><td class="tl">${escape(x.store_name)}</td><td class="num">${man(x.hall)}만</td><td class="num">${eok(x.S)}</td></tr>`).join("")}</tbody></table></div>` : "";
+
+    return `<div class="tad-cand-head"><strong>${escape(where)}</strong></div>
+        ${tiles}${table}${similar}
         <p class="hint">브랜드 수집 ${ymText(res.ym)} · 홀매출 ${ymText(res.hall_ym)} 기준</p>`;
 }
 
