@@ -3280,6 +3280,16 @@ tr.diag-drow td { white-space: normal; }
     .sv-global-wrap select { max-width: 120px; }
 }
 
+/* 홈 안 담당자 고르개 — 소제목 줄에 헤더와 같은 모양으로 (2026-09-22) */
+.home-sv-h {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-4);
+}
+.home-sv-h .home-sv-pick { font-weight: 400; margin-right: 0; }
+.home-sv-h .home-anom-sub { margin-left: 0; }
+
 /* ---- 방문 기록 출처 배지 (다우오피스 반입, 카드 #169) ------------------- */
 .vs-src { font-size: var(--sz-1); padding: var(--sp-1) var(--sp-3); border-radius: var(--r-md); background: var(--action-soft); color: var(--action-primary-hover); margin-left: var(--sp-2); white-space: nowrap; }
 .vs-src-link { font-size: var(--sz-2); margin-left: var(--sp-2); white-space: nowrap; }

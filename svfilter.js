@@ -90,6 +90,17 @@ const warned = new Set();
 // 폐점 조건을 끄는 선언적 표식. 이 속성이 달린 요소 안의 select 는 담당자
 // 조건만 받습니다.
 const NO_CLOSED = "[data-no-closed-filter]";
+// 헤더 밖에 두는 담당자 고르개의 표식(홈 카드 — 담당자 지시 2026-09-22 "홈 안에
+// 담당자 선택기 넣어줘"). 헤더 `#sv-global` 과 **같은 선택지·같은 값**을 갖는
+// 거울입니다. 값은 하나(current)이고 고르개는 여럿 — 어느 쪽을 바꿔도 전부
+// 따라갑니다. 9/11 에 홈 고르개를 뺐던 이유가 '헤더와 값이 갈림' 이었으니,
+// 다시 넣을 때는 값을 따로 들지 않게 이 파일이 채우고 맞춥니다.
+const PICKER = "select[data-sv-picker]";
+// 로그인 이메일로 자기 담당자를 한 번 고른 표식(이메일). 담당자마다 헤더에서
+// 자기 이름을 고르던 것을 SV 명단(123 sv_contacts.email)과 대조해 첫 진입에
+// 자동으로 고릅니다. 한 번 골라 준 뒤로는 사람이 고른 값이 우선입니다 —
+// '전체' 로 바꿔 둔 것을 다음 부팅이 도로 되돌리면 안 됩니다.
+const AUTO_KEY = "mitaly.svAutoPicked";
 // 이름에 이미 붙어 있는 폐점 꼬리 — map.js·store_dash.js 가 "(폐점)" 을 붙이고,
 // 매장 이름 자체에 "(폐업)"·"(사용x)" 가 달린 곳도 있습니다(103 머리주석 [0]).
 // 이미 붙어 있으면 덧붙이지 않습니다.
@@ -229,6 +240,7 @@ function markClosed(option, closed) {
 
 function applyToSelect(select) {
     if (select.id === "sv-global" || select.id === "store-closed-global") return;
+    if (select.hasAttribute("data-sv-picker")) return;      // 담당자 고르개 자신
     if (!selectWantsFilter(select)) return;
     // 폐점 조건만 끄는 표식(오픈·폐점 화면, 매장 정보 화면). 담당자 조건은 걸립니다.
     const closedOff = !!select.closest(NO_CLOSED);
@@ -401,10 +413,17 @@ function setCurrent(sv, { silent = false } = {}) {
         for (const [name, who] of storeSv) if (who === current) allowed.add(name);
     }
     try { localStorage.setItem(STORAGE_KEY, current); } catch (e) { /* 저장 못 해도 동작 */ }
-    const global = document.getElementById("sv-global");
-    if (global && global.value !== current) global.value = current;
+    for (const p of pickers()) if (p.value !== current) p.value = current;
     applySvFilter();
     if (!silent) document.dispatchEvent(new CustomEvent("mitaly:sv-changed", { detail: { sv: current } }));
+}
+
+// 담당자 고르개 전부 — 헤더 하나 + 홈 같은 거울(data-sv-picker).
+function pickers() {
+    return [
+        ...[document.getElementById("sv-global")].filter(Boolean),
+        ...document.querySelectorAll(PICKER),
+    ];
 }
 
 function setIncludeClosed(value, { silent = false } = {}) {
@@ -434,6 +453,11 @@ function buildControl() {
         meta.insertBefore(wrap, anchor);
         const select = wrap.querySelector("select");
         select.addEventListener("change", () => setCurrent(select.value));
+        // 거울 고르개(홈)는 화면이 다시 그릴 수 있어 문서에 위임합니다.
+        document.addEventListener("change", (e) => {
+            const p = e.target instanceof HTMLSelectElement && e.target.matches(PICKER) ? e.target : null;
+            if (p && p.value !== current) setCurrent(p.value);
+        });
     }
     if (!document.getElementById("store-closed-global")) {
         const wrap = document.createElement("label");
@@ -449,8 +473,8 @@ function buildControl() {
 }
 
 function fillControl() {
-    const select = document.getElementById("sv-global");
-    if (!select) return;
+    const all = pickers();
+    if (!all.length) return;
     const counts = new Map();
     for (const [name, who] of storeSv) {
         if (hiddenNames.has(name)) continue;      // 숨긴 매장은 담당 수에서 뺍니다(126)
@@ -458,8 +482,43 @@ function fillControl() {
     }
     const names = [...svNames];
     if (counts.has(UNASSIGNED)) names.push(UNASSIGNED);
-    select.innerHTML = '<option value="">전체</option>'
+    const html = '<option value="">전체</option>'
         + names.map((n) => `<option value="${n.replace(/"/g, "&quot;")}">${n} (${counts.get(n) || 0})</option>`).join("");
+    for (const select of all) {
+        select.innerHTML = html;
+        select.value = current;
+    }
+}
+
+// 로그인 이메일 ↔ SV 명단(123 api_sv_admin 의 svs[].email)으로 자기 담당자를
+// 고릅니다. 같은 이메일로 이미 골라 준 적이 있으면(AUTO_KEY) 다시 안 고릅니다 —
+// 그 뒤의 선택은 사람 몫입니다. 명단에 이메일이 없으면 아무것도 안 합니다
+// (SV 관리 카드에 이메일을 넣는 순간부터 그 사람의 다음 진입에 걸립니다).
+// 시험이 이메일을 직접 넣어 부릅니다(force 는 표식을 무시).
+// 돌려주는 값: 고른 담당자 이름, 못 골랐으면 null.
+export async function autoPickSv(email = null, { force = false } = {}) {
+    if (!db) return null;
+    let who = String(email || "").trim().toLowerCase();
+    if (!who) {
+        try {
+            const { data } = await db.auth.getSession();
+            who = String(data?.session?.user?.email || "").trim().toLowerCase();
+        } catch (e) { who = ""; }
+    }
+    if (!who || !who.includes("@")) return null;
+    let done = "";
+    try { done = localStorage.getItem(AUTO_KEY) || ""; } catch (e) { done = ""; }
+    if (!force && done === who) return null;
+
+    const rows = await rpcRows("api_sv_admin");
+    const admin = rows && rows[0];
+    const hit = ((admin && admin.svs) || []).find((s) =>
+        s && s.active !== false && String(s.email || "").trim().toLowerCase() === who);
+    const name = hit ? String(hit.name || "").trim() : "";
+    if (!name || !svNames.includes(name)) return null;
+    try { localStorage.setItem(AUTO_KEY, who); } catch (e) { /* 저장 못 해도 동작 */ }
+    if (name !== current) setCurrent(name);
+    return name;
 }
 
 function fillClosedControl() {
@@ -586,13 +645,19 @@ export async function initSvFilter(client) {
     try { savedClosed = localStorage.getItem(CLOSED_KEY) || ""; } catch (e) { savedClosed = ""; }
     setIncludeClosed(savedClosed === "1", { silent: true });
     setCurrent(saved, { silent: true });
+    // 로그인 이메일이 SV 명단과 맞으면 첫 진입에 자기 담당자로(한 번만). 실패해도
+    // 복원한 선택으로 그대로 갑니다. 골랐으면 setCurrent 가 이미 알렸으므로 아래
+    // 알림은 한 번만 나가게 건너뜁니다.
+    let picked = null;
+    try { picked = await autoPickSv(); } catch (e) { picked = null; }
 
     // 복원한 선택은 조용히 넣습니다(부팅 때 화면마다 두 번 조회하지 않게).
     // 다만 이 함수는 RPC 세 개를 기다리는 동안 화면 모듈들이 먼저 목록을 그릴
     // 수 있습니다 — 그러면 그 건수는 필터 없이 굳고, 그 뒤 DOM 층만 행을 숨겨
     // 머리글과 표가 어긋납니다(2026-09-11 검증에서 실측). 실제로 걸린 필터가
     // 있을 때만 한 번 알려 다시 세게 합니다. '전체' 면 거를 것이 없어 조용합니다.
-    if (current) {
+    // 자동 선택이 됐으면 setCurrent 가 이미 알렸으니 두 번 쏘지 않습니다.
+    if (current && !picked) {
         document.dispatchEvent(new CustomEvent("mitaly:sv-changed",
             { detail: { sv: current } }));
     }

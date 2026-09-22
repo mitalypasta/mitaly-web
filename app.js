@@ -1586,7 +1586,7 @@ function renderSv() {
     const pick = svCurrent();
     if (!pick) {
         $("home-sv-summary").innerHTML = "";
-        listEl.innerHTML = '<p class="home-anom-empty">담당자를 고르세요.</p>';
+        listEl.innerHTML = '<p class="home-anom-empty">위에서 담당자를 고르면 그 담당의 오늘 할 일이 보입니다.</p>';
         return;
     }
     const v = all.find((x) => x.sv === pick);
