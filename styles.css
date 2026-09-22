@@ -3253,6 +3253,15 @@ tr.diag-drow td { white-space: normal; }
     white-space: nowrap;
     color: var(--text-secondary);
 }
+/* 미영업 행의 전화 링크(128) — 번호가 줄 안에서 끊기지 않게, 숫자는 고정폭 */
+.sv-call {
+    color: var(--action-primary);
+    font-weight: 600;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    text-decoration: none;
+}
+.sv-call:hover { text-decoration: underline; }
 .sv-check:hover { border-color: var(--action-primary); color: var(--action-primary); }
 .sv-check.is-on { background: var(--action-soft); color: var(--action-primary-hover); border-color: transparent; }
 .sv-check:disabled { opacity: .6; cursor: default; }

@@ -252,6 +252,13 @@ const demoContacts = [
       business_number: "000-00-00002", contract_period: "2023.06 ~ 2028.06",
       transfer_note: "2025.03 양도(전 점주 최샘플)",
       updated_at: new Date(Date.now() - 43200_000).toISOString() },
+    // 홈 '전일 미영업' 행(샘플07점)의 전화 링크 시연(128). 샘플11점은 일부러 없음 —
+    // 번호 없는 매장 행에는 링크가 안 붙는 것을 같은 화면에서 봅니다.
+    { store_id: 7, store_name: "샘플07점", owner_name: "최샘플", owner_phone: "010-0000-0007",
+      operator_name: null, operator_phone: null, store_phone: "031-000-0007",
+      email: null, address: "경기 샘플시 예시로 77",
+      business_number: "000-00-00007", contract_period: "2025.01 ~ 2030.01",
+      transfer_note: null, updated_at: new Date(Date.now() - 7200_000).toISOString() },
 ];
 
 // POS 메뉴 데모(50_pos_menu.sql). 품절여부는 이지포스 공통코드 POS_246 이고
@@ -4086,6 +4093,15 @@ const HANDLERS = {
         };
     },
 
+    // 128_store_phones.sql — 전화번호만, 게이트 없이(홈 미영업 행의 전화).
+    api_store_phones: () => ({
+        phones: demoContacts
+            .filter((c) => c.owner_phone || c.operator_phone || c.store_phone)
+            .map((c) => ({ store_id: c.store_id, store: c.store_name,
+                           owner_name: c.owner_name, owner_phone: c.owner_phone,
+                           operator_name: c.operator_name, operator_phone: c.operator_phone,
+                           store_phone: c.store_phone })),
+    }),
     // 44_store_contacts.sql — 게이트 암호는 배달앱 계정과 같은 demo1234.
     api_store_contacts_summary: () => ({
         stores_with_contacts: demoContacts.length,

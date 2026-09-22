@@ -1506,6 +1506,39 @@ const SV_ITEMS = [
     ["unknown_state", "매장 상태 확인",      "lifecycle",  "lifecycle", "lifecycle-status-card",      true,  false],
 ];
 let svData = null;      // 마지막 응답 (필터 변경 때 다시 그리기용)
+// 매장 전화번호(128 api_store_phones) — store_id → {owner_phone, …}. 게이트 없이
+// 받습니다(담당자 지시 2026-09-22 "홈에서 암호 없이 바로"). 못 받으면 null 이고
+// 행에 링크가 안 붙을 뿐입니다.
+let homePhones = null;
+
+function loadHomePhones() {
+    db.rpc("api_store_phones", {}).then((res) => {
+        if (res.error) return;
+        const body = Array.isArray(res.data) ? (res.data[0] || {}) : (res.data || {});
+        homePhones = new Map((body.phones || []).map((p) => [Number(p.store_id), p]));
+        if (svData) renderSv();
+    }, () => {});
+}
+
+// '전일 미영업' 행의 전화 링크 — 점주 번호가 먼저, 없으면 실운영자, 그다음 매장.
+// 휴대폰에서는 누르면 바로 걸리고(tel:), PC 에서는 번호가 보입니다. 두 번째 번호가
+// 있으면 매장 번호 하나를 더 붙입니다 — 점주가 안 받을 때 거는 곳입니다.
+function svCallHtml(storeId) {
+    const p = homePhones && homePhones.get(Number(storeId));
+    if (!p) return "";
+    const cands = [
+        [p.owner_phone, p.owner_name ? `점주 ${p.owner_name}` : "점주"],
+        [p.operator_phone, p.operator_name ? `운영 ${p.operator_name}` : "운영"],
+        [p.store_phone, "매장"],
+    ].filter(([n]) => n && String(n).trim());
+    if (!cands.length) return "";
+    const link = ([n, who]) =>
+        `<a class="sv-call" href="tel:${String(n).replace(/[^0-9+]/g, "")}" title="${escape(who)}에게 전화">`
+        + `${escape(who.split(" ")[0])} ${escape(String(n).trim())}</a>`;
+    const first = cands[0];
+    const second = cands.slice(1).find(([, who]) => who === "매장") || cands[1];
+    return link(first) + (second ? " " + link(second) : "");
+}
 
 // 답글이 한 건도 수집된 적 없는 매장인가(117). 수집 범위를 못 받았으면
 // 언제나 false — 모르는 상태에서 '미수집' 이라고 단정하지 않습니다.
@@ -1528,8 +1561,11 @@ function svRowText(key, r) {
         return `${escape(r.platform || "")} <span class="ar-star">★${r.rating ?? "—"}</span> ${escape(clip(r.snippet || "내용 없음", flag ? 22 : 30))}`
             + (flag ? " · 답글 미수집" : "");
     }
-    case "no_sales":
-        return r.last_day ? `마지막 매출 ${escape(String(r.last_day))}` : "매출 기록 없음";
+    case "no_sales": {
+        const call = svCallHtml(r.store_id);
+        return (r.last_day ? `마지막 매출 ${escape(String(r.last_day))}` : "매출 기록 없음")
+            + (call ? ` · ${call}` : "");
+    }
     case "drops":
         return `${won(r.amount)} · 전주 같은 요일 ${won(r.prev_amount)} (${pctText(r.pct)})`;
     case "open_tasks":
@@ -1673,6 +1709,8 @@ function renderSv() {
 function initHomeSv() {
     // 헤더 담당자를 바꾸면 이 카드도 다시 그립니다.
     document.addEventListener("mitaly:sv-changed", renderSv);
+    // 전화번호는 한 번만 받아 둡니다(연락처 반입은 하루 한 번이라 홈 안에서는 안 바뀝니다).
+    loadHomePhones();
     // 숫자 타일 → 아래 그 항목의 첫 목록으로(같은 화면 안, 화면 이동 없음).
     $("home-sv-summary").addEventListener("click", (e) => {
         const tile = e.target.closest(".sv-tile");
