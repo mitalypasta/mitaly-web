@@ -312,7 +312,8 @@ function hookBarHover(svg) {
             const [label, value] = mark.dataset.tip.split("|");
             const shown = mark.dataset.suffix
                 ? `${value}${mark.dataset.suffix}` : wonFull(value);
-            showTip(event, `<strong>${label}</strong><div>${shown}</div>`);
+            // data-tip 은 속성으로 읽히며 escape 가 풀립니다 — 넣을 때 다시 굳힙니다(2026-09-22 XSS 점검).
+            showTip(event, `<strong>${escape(label)}</strong><div>${escape(shown)}</div>`);
         });
         mark.addEventListener("mouseleave", hideTip);
     });

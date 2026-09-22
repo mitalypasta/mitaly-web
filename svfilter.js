@@ -75,6 +75,7 @@
 //     표와 같은 배열에서 그리므로 표를 거르면 카드도 같이 걸러집니다).
 // 새 카드 목록을 만들면 여기에 한 줄 더하고 그 화면에서 거르세요.
 
+import { escape } from "./util.js";
 import { fetchAllStores } from "./client.js";
 
 const STORAGE_KEY = "mitaly.svFilter";
@@ -483,7 +484,7 @@ function fillControl() {
     const names = [...svNames];
     if (counts.has(UNASSIGNED)) names.push(UNASSIGNED);
     const html = '<option value="">전체</option>'
-        + names.map((n) => `<option value="${n.replace(/"/g, "&quot;")}">${n} (${counts.get(n) || 0})</option>`).join("");
+        + names.map((n) => `<option value="${escape(n)}">${escape(n)} (${counts.get(n) || 0})</option>`).join("");
     for (const select of all) {
         select.innerHTML = html;
         select.value = current;

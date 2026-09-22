@@ -8,7 +8,7 @@
 //
 // 순수 헬퍼·표·차트는 별도 모듈로 빠졌습니다 — docs/web-split-plan.md.
 import { won, wonFull, int, ymLabel, catLabel, ymDash } from "./format.js";
-import { escape, clip, debounce, niceTicks, monthsBetween } from "./util.js";
+import { escape, clip, debounce, niceTicks, monthsBetween, safeUrl } from "./util.js";
 import { S } from "./state.js";
 import { table, $, monthPicker, searchify, loadSheetJS, showTip, hideTip,
          setHero, trapFocus } from "./dom.js";
@@ -2700,7 +2700,7 @@ function drawNonstandard(d, c) {
 
     table($("t-nonstd"), ["매장", "비정규 비율", "비정규 매출", "매장 총매출", "비정규 메뉴"],
         rows.map((r) => [
-            r.store + (r.ratio >= NONSTANDARD_WARN
+            escape(r.store) + (r.ratio >= NONSTANDARD_WARN
                 ? '<span class="flag">경고</span>' : ""),
             `${(r.ratio * 100).toFixed(1)}%`,
             wonFull(r.amount), wonFull(r.food), `${r.menus}종`,
@@ -3631,8 +3631,8 @@ function dboRender() {
 
     root.innerHTML = `
       <div class="dbo-info">
-        <div class="dbo-info-row">▪ 게시판 주소 : <a href="${escape(board.url || "#")}" target="_blank" rel="noopener">${escape(board.url || "")}</a> <button type="button" class="dbo-mini" data-act="dbo-copy">복사</button></div>
-        <div class="dbo-info-row">▪ 이메일 수신 : <a href="${escape(board.url || "#")}" target="_blank" rel="noopener" class="dbo-mini dbo-mini-link">+ 신청하기</a></div>
+        <div class="dbo-info-row">▪ 게시판 주소 : <a href="${escape(safeUrl(board.url))}" target="_blank" rel="noopener">${escape(board.url || "")}</a> <button type="button" class="dbo-mini" data-act="dbo-copy">복사</button></div>
+        <div class="dbo-info-row">▪ 이메일 수신 : <a href="${escape(safeUrl(board.url))}" target="_blank" rel="noopener" class="dbo-mini dbo-mini-link">+ 신청하기</a></div>
         <div class="dbo-info-row dbo-managers">운영자 : ${managers || "—"}</div>
         <div class="dbo-info-row dbo-desc">${escape(board.description || "매장 방문·점검·미팅 내용을 기록하고, 주요 이슈 및 조치사항을 매장별로 누적 관리하기 위한 폴더입니다.")}</div>
       </div>
@@ -3645,7 +3645,7 @@ function dboRender() {
         ${dbo.notices.map((n) => `<tr class="dbo-notice">
             <td class="dbo-no"><span class="dbo-mega" title="공지">📢</span></td>
             <td class="dbo-hd"></td>
-            <td class="tl"><a class="dbo-title dbo-title-notice" href="${escape(n.url || "#")}" target="_blank" rel="noopener">[공지] ${escape(n.title || "")}</a></td>
+            <td class="tl"><a class="dbo-title dbo-title-notice" href="${escape(safeUrl(n.url))}" target="_blank" rel="noopener">[공지] ${escape(n.title || "")}</a></td>
             <td class="tl dbo-writer">${escape(n.writer || "")}${n.writer_position ? ` ${escape(n.writer_position)}` : ""}</td>
             <td class="dbo-date">${dboMd(n.posted_at)}</td>
             <td class="dbo-num">${int(n.read_count || 0)}</td>
@@ -3698,7 +3698,7 @@ async function dboRenderPost() {
             <span>조회 ${int((v.meta && v.meta.read_count) || 0)}</span>
             <span>좋아요 ${int((v.meta && v.meta.like_count) || 0)}</span>
             <span>댓글 ${int((v.meta && v.meta.comments) || 0)}</span>
-            ${v.url ? `<a href="${escape(v.url)}" target="_blank" rel="noopener" class="linkish">다우오피스 원문 ↗</a>` : ""}
+            ${v.url ? `<a href="${escape(safeUrl(v.url))}" target="_blank" rel="noopener" class="linkish">다우오피스 원문 ↗</a>` : ""}
           </div>
         </div>
         <div class="dbo-attach" id="dbo-attach">📎 첨부 ${int(v.photo_count)}개${v.photo_bytes ? ` (${dboBytes(v.photo_bytes)})` : ""}${v.photo_count ? ' <span class="hint">불러오는 중…</span>' : ""}</div>
@@ -4244,7 +4244,7 @@ function visitSourceTag(v) {
     if (v.source !== "daou") return "";
     const kind = v.visit_kind && v.visit_kind !== "방문" ? ` ${escape(v.visit_kind)}` : "";
     const link = v.external_url
-        ? ` <a class="vs-src-link" href="${escape(v.external_url)}" target="_blank" rel="noopener">원문 ↗</a>`
+        ? ` <a class="vs-src-link" href="${escape(safeUrl(v.external_url))}" target="_blank" rel="noopener">원문 ↗</a>`
         : "";
     return ` <span class="tag vs-src">다우${kind}</span>${link}`;
 }

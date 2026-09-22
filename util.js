@@ -8,6 +8,14 @@ export function escape(value) {
         (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 }
 
+// 링크 주소 안전판 — http(s) 로 시작하는 주소만 그대로 두고, 그 밖(javascript: 등
+// 스크립트 스킴·빈 값)은 "#" 으로 바꿉니다. DB·외부(다우오피스)에서 온 주소를
+// href 에 넣을 때 씁니다. escape() 는 글자만 굳히고 스킴은 못 거르기 때문입니다.
+export function safeUrl(value) {
+    const url = String(value ?? "").trim();
+    return /^https?:\/\//i.test(url) ? url : "#";
+}
+
 export const clip = (text, n) =>
     String(text).length > n ? String(text).slice(0, n - 1) + "…" : String(text);
 

@@ -467,7 +467,7 @@ function drawStackedBars(svg, c, bars) {
     svg.querySelectorAll("[data-tip]").forEach((mark) => {
         mark.addEventListener("mousemove", (event) => {
             const [label, value] = mark.dataset.tip.split("|");
-            showTip(event, `<strong>${label}</strong><div>${wonFull(value)}</div>`);
+            showTip(event, `<strong>${escape(label)}</strong><div>${escape(wonFull(value))}</div>`);
         });
         mark.addEventListener("mouseleave", hideTip);
     });

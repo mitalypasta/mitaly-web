@@ -375,10 +375,10 @@ async function refreshResolvedViolations() {
     table($("t-violations-resolved"),
         ["매장", "위반유형", "발생일", "종료일", "메모", "첨부", "처리"],
         list.map((v) => [
-            v.store_name,
-            v.violation_type,
-            v.occurred_on,
-            v.resolved_on,
+            escape(v.store_name),
+            escape(v.violation_type),
+            escape(v.occurred_on),
+            escape(v.resolved_on),
             v.note ? escape(v.note) : "—",
             attachmentCell(atts.get(v.event_id)),
             `<button type="button" class="ghost" data-act="reopen" data-event-id="${v.event_id}">다시 열기</button>`,
@@ -583,9 +583,9 @@ export async function refreshViolations() {
     table($("t-violations"),
         ["매장", "위반유형", "발생일", "경과일", "단계", "확인 필요", "메모", "첨부", "처리"],
         list.map((v) => [
-            v.store_name,
-            v.violation_type,
-            v.occurred_on,
+            escape(v.store_name),
+            escape(v.violation_type),
+            escape(v.occurred_on),
             int(v.days_elapsed),
             stageTag(v.stage, v.stage_label, v.requires_legal_review),
             v.needs_manual_review
