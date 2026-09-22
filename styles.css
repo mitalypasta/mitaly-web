@@ -3809,6 +3809,24 @@ tr.vs-drow td { white-space: normal; }
     }
 }
 
+/* 주변 변화 (tradearea_changes.js · 129) ------------------------------------ */
+#tac-card header select { margin-left: auto; }
+.tac-h { font-size: var(--sz-4); font-weight: 600; margin: var(--sp-5) 0 var(--sp-4); }
+.tac-cols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+    gap: var(--sp-7);
+    margin-bottom: var(--sp-6);
+}
+.tac-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.tac-list li { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: baseline; font-size: var(--sz-3); }
+.tac-name { font-weight: 600; }
+.tac-cat { color: var(--text-muted); font-size: var(--sz-2); }
+.tac-est { margin-left: auto; color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tac-table tr.tac-row { cursor: pointer; }
+.tac-table tr.tac-row:hover td { background: var(--action-soft); }
+.tac-names { color: var(--text-secondary); font-size: var(--sz-2); }
+
 /* 상권 진단 (tradearea_diag.js · 큐 #185) ---------------------------------- */
 #tad-card header select { margin-left: auto; }
 .tad-quads {

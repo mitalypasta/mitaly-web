@@ -568,6 +568,27 @@
         </div>
     </section>
 
+    <!-- 주변 변화(129 api_trade_area_changes, 담당자 요구 2026-09-22) — 매장 드롭다운 →
+         300m 안 새로 잡힌 가게·사라진 가게(마이프차 달 대조) + 홀매출 3개월. 개업·폐업이
+         아니라 목록의 등락이라 문구를 그렇게 씁니다. 그리기 web/tradearea_changes.js. -->
+    <section data-area="tradediag" class="card full" id="tac-card">
+        <header>
+            <h2>주변 변화</h2>
+            <span class="meta" id="tac-meta"></span>
+            <select id="tac-ym" aria-label="수집 달"></select>
+        </header>
+        <p class="notice" id="tac-status" hidden></p>
+        <div id="tac-body" hidden>
+            <div class="filters">
+                <div class="field">
+                    <label for="tac-store">매장</label>
+                    <select id="tac-store" data-sv-store-select><option value="">변화 있는 매장 전체</option></select>
+                </div>
+            </div>
+            <div id="tac-result"></div>
+        </div>
+    </section>
+
     <!-- 상권 분석 — 옛 구글시트 '예상매출 계산기'의 주소→반경 분석 이식
          (2026-08-29, 담당자 지시 "실시간 검색"). 수집은 Cloudflare Worker
          (/analyze — 카카오 지오코딩 + 마이프차)가 대신하고, 계산 모델은
@@ -1177,6 +1198,12 @@
             <div class="home-anom-col">
                 <div class="home-anom-h">새 부정 리뷰 <span class="home-anom-sub" id="home-reviews-h"></span></div>
                 <div class="home-anom-list" id="home-anom-reviews"><p class="home-anom-empty">불러오는 중…</p></div>
+            </div>
+            <!-- 주변 상권 변화(129) — 담당 매장 반경 300m 에 새로 잡힌/사라진 가게가 있는 매장.
+                 누르면 상권 진단 탭 '주변 변화' 카드에 그 매장으로(nav.js kind=tradechange). -->
+            <div class="home-anom-col">
+                <div class="home-anom-h">주변 상권 변화 <span class="home-anom-sub" id="home-tradechange-h"></span></div>
+                <div class="home-anom-list" id="home-anom-tradechange"><p class="home-anom-empty">불러오는 중…</p></div>
             </div>
         </div>
     </section>
@@ -3007,6 +3034,6 @@
      v= 가 바뀌면 브라우저가 옛 파일을 아예 안 씁니다.
      ⚠️ 모듈 34개는 맨 경로로 불려 이 쿼리가 안 걸립니다 — 모듈의 export 를
         없애거나 이름을 바꾸는 배포라면 그것만으로 부족합니다(카드 #181). -->
-<script type="module" src="app.js?v=20260922b"></script>
+<script type="module" src="app.js?v=20260922c"></script>
 </body>
 </html>

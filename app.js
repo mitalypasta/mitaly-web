@@ -51,6 +51,7 @@ import { initDailyStore } from "./daily.js";
 import { initSettings } from "./settings.js";
 import { initTradeArea } from "./tradearea.js";
 import { initTradeAreaDiag } from "./tradearea_diag.js";
+import { initTradeAreaChanges, fetchTradeAreaChanges } from "./tradearea_changes.js";
 
 // 폼 밖 비밀번호 칸(매장 정보 탭 암호 게이트·계정 편집)을 제 폼에 가둔 대신,
 // 그 폼은 제출(새로고침)하지 않습니다 — Enter 는 각 모듈의 keydown 이 처리.
@@ -414,7 +415,7 @@ async function initDashboard() {
         initLifecycle, initKakaoStats, initNotifications, initRecipients,
         initConsents, initSettlement, initAds, initIngredients,
         initOurhome, initIngStore, initPosMenu, initComms, initKpiSettings,
-        initSettings, initSvAdmin, initTradeArea, initTradeAreaDiag,
+        initSettings, initSvAdmin, initTradeArea, initTradeAreaDiag, initTradeAreaChanges,
     ]));
     loadLastUpdated();
 }
@@ -1326,7 +1327,7 @@ async function loadHome() {
     // 담당자별 오늘 할 일(#168) — 다른 홈 조회와 독립이라 따로 던지고 따로 그립니다.
     loadHomeSv();
 
-    const [cmpRes, alertRes, negRes, negSumRes, covRes] = await Promise.all([
+    const [cmpRes, alertRes, negRes, negSumRes, covRes, tacRes] = await Promise.all([
         db.rpc("api_sales_compare", { p_ym: baseYm, p_store: null }),
         db.rpc("api_sales_alerts", { p_ym: baseYm, p_store: null }),
         // 서버가 ≤3 만 골라 주므로 limit 이 부정 리뷰 자체에 걸립니다.
@@ -1344,6 +1345,8 @@ async function loadHome() {
         // 받습니다 — 117 적용 전에는 그냥 아무 말도 안 하면 됩니다.
         db.rpc("api_review_coverage", { p_store: null })
             .then((r) => r, (e) => ({ error: e })),
+        // 주변 상권 변화(129) — 실패해도 홈은 그대로 떠야 하므로 error 를 값으로 받습니다.
+        fetchTradeAreaChanges().then((r) => r, (e) => ({ error: e })),
     ]);
     // 실패한 채로 10분을 묵히지 않습니다 — 다음 홈 진입이 다시 시도합니다.
     // (수집 범위는 '있으면 좋은 것' 이라 재시도 사유에 넣지 않습니다.)
@@ -1357,6 +1360,7 @@ async function loadHome() {
     drawHomeSales(cmpRes, baseYm);
     drawHomeDeclining(alertRes, baseYm);
     drawHomeNegReviews(negRes, negSumRes, reviewFromYm, nowYm);
+    drawHomeTradeChange(tacRes);
     // 담당자 카드는 따로 도착합니다 — 이미 그려져 있으면 수집 범위를 반영해
     // 한 번 다시 그립니다('미답변' 행 표시가 여기에 걸려 있습니다).
     if (svData) renderSv();
@@ -1387,6 +1391,51 @@ function drawHomeSales(res, baseYm) {
         + `<span class="hs-cmp">전년동월 대비 <b class="${pctClass(co.yoy_pct_change)}">${pctText(co.yoy_pct_change)}</b></span>`
         + `<span class="hs-go">매출 탭에서 자세히 →</span>`;
 }
+
+// 주변 상권 변화(129) — 담당 매장 300m 안에 새로 잡힌/사라진 가게가 있는 매장. 담당자
+// 필터는 세기 전에 겁니다. 전월 자료가 없는 첫 달은 '다음 달 수집부터' 한 줄.
+let homeTradeChange = null;
+function drawHomeTradeChange(res) {
+    const listEl = $("home-anom-tradechange");
+    const head = $("home-tradechange-h");
+    if (!listEl) return;
+    if (res.error) {
+        head.textContent = "";
+        listEl.innerHTML = `<p class="home-anom-empty">불러오지 못했습니다: ${escape(res.error.message || res.error)}</p>`;
+        return;
+    }
+    homeTradeChange = res.data;
+    renderHomeTradeChange();
+}
+function renderHomeTradeChange() {
+    const d = homeTradeChange;
+    const listEl = $("home-anom-tradechange");
+    const head = $("home-tradechange-h");
+    if (!d || !listEl) return;
+    const ymText = (ym) => `${String(ym).slice(0, 4)}-${String(ym).slice(4, 6)}`;
+    if (!d.has_prev) {
+        head.textContent = `수집 ${ymText(d.ym)}`;
+        listEl.innerHTML = '<p class="home-anom-empty">첫 대조는 다음 달 수집 뒤에 생깁니다.</p>';
+        return;
+    }
+    const rows = svFilterRows((d.stores || []).filter((s) => (Number(s.n_new) || 0) + (Number(s.n_gone) || 0) > 0),
+                              (s) => s.store_name);
+    head.textContent = `${int(rows.length)}곳 · 수집 ${ymText(d.ym)} · 전월 대조`;
+    if (!rows.length) {
+        listEl.innerHTML = '<p class="home-anom-empty">주변에 변화가 잡힌 매장이 없습니다.</p>';
+        return;
+    }
+    const LIMIT = 8;
+    listEl.innerHTML = rows.slice(0, LIMIT).map((s) =>
+        `<button type="button" class="home-anom-row" data-go="tradediag" data-kind="tradechange" data-store="${escape(s.store_name)}" data-card="tac-card">
+           <span class="ar-main">${escape(s.store_name)}</span>
+           <span class="ar-side">새로 잡힘 ${int(s.n_new)} · 사라짐 ${int(s.n_gone)}</span>
+         </button>`).join("")
+        + (rows.length > LIMIT
+            ? `<button type="button" class="home-anom-row home-anom-more" data-go="tradediag" data-kind="tradechange" data-card="tac-card">외 ${int(rows.length - LIMIT)}곳 더 보기 →</button>`
+            : "");
+}
+document.addEventListener("mitaly:sv-changed", renderHomeTradeChange);
 
 function drawHomeDeclining(res, baseYm) {
     const listEl = $("home-anom-declining");

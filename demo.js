@@ -3073,6 +3073,30 @@ const HANDLERS = {
     },
 
     // 126 후보지 신호 — 데모 Worker 응답(tradearea.js demoRaw)의 가게 이름으로 조합을 정합니다.
+    // 주변 변화 — 129_trade_area_changes.sql(api_trade_area_changes)과 같은 모양.
+    // 5의 배수 매장은 새로 잡힘, 7의 배수 매장은 사라짐(둘 다인 매장 = 35의 배수).
+    api_trade_area_changes: ({ p_ym } = {}) => {
+        const ym = p_ym || 202609;
+        const prevYm = ym % 100 === 1 ? ym - 89 : ym - 1;
+        const h1 = prevYm, h2 = h1 % 100 === 1 ? h1 - 89 : h1 - 1, h3 = h2 % 100 === 1 ? h2 - 89 : h2 - 1;
+        const NEW = [["온더보더 타코", "멕시칸", 8_400_000], ["컴포즈커피", "커피", 21_000_000], ["역전할머니맥주", "호프", 0]];
+        const GONE = [["옛날손칼국수", "한식", 6_100_000], ["파스타집", "양식", 0]];
+        const stores = STORES.slice(0, 40).map((st, i) => {
+            const n = i + 1;
+            const news = n % 5 === 0 ? NEW.slice(0, 1 + (n % 3)) : [];
+            const gones = n % 7 === 0 ? GONE.slice(0, 1 + (n % 2)) : [];
+            const base = 9_000_000 + (i * 2_300_000) % 30_000_000;
+            return {
+                store_id: n, store_name: st.name, sv_name: null,
+                n_new: news.length, n_gone: gones.length,
+                new: news.map(([name, cat, est]) => ({ name, address: `데모시 데모로 ${n}`, brand: null, category: "외식", category_raw: cat, est_sale: est })),
+                gone: gones.map(([name, cat, est]) => ({ name, address: `데모시 데모로 ${n + 100}`, brand: null, category: "외식", category_raw: cat, est_sale: est })),
+                hall: [{ ym: h3, hall: base }, { ym: h2, hall: Math.round(base * 1.08) }, { ym: h1, hall: Math.round(base * 0.93) }],
+            };
+        }).sort((a, b) => (b.n_new + b.n_gone) - (a.n_new + a.n_gone) || a.store_name.localeCompare(b.store_name, "ko"));
+        return { ok: true, ym, prev_ym: prevYm, has_prev: true, hall_yms: [h3, h2, h1], yms: [202609, 202608], stores };
+    },
+
     api_trade_area_signal: ({ p_sales } = {}) => {
         const diag = HANDLERS.api_store_diagnosis({});
         const sales = (p_sales || []).filter((s) => Number(s.estSale) > 0 && !String(s.name).includes("미태리"));

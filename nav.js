@@ -325,8 +325,13 @@ export function initHomeTiles() {
                 $("alerts-only").dispatchEvent(new Event("change"));
             }
             const store = row.dataset.store || "";
+            if (row.dataset.kind === "tradechange") {
+                // 홈 '주변 상권 변화' 행 — 상권 진단 탭 '주변 변화' 카드에 그 매장으로.
+                // 카드가 자료를 아직 안 받았으면 모듈이 이름을 들고 있다가 받은 뒤 고릅니다.
+                document.dispatchEvent(new CustomEvent("mitaly:tradechange-store", { detail: { store } }));
+            }
             const storeSelect = $("f-store");
-            const known = row.dataset.kind !== "storedash" && store &&
+            const known = row.dataset.kind !== "storedash" && row.dataset.kind !== "tradechange" && store &&
                 [...storeSelect.options].some((o) => o.value === store);
             if (known) {
                 storeSelect.value = store;
