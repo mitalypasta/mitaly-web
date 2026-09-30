@@ -2622,6 +2622,33 @@ const HANDLERS = {
         })) }];
     },
 
+    // 홈에서 연 목록(131 api_reviews_focus) — 실제 함수와 같은 {total, drafts, items}.
+    // 담당자는 데모 프로필(storeProfiles.sv_name)로, 날짜는 KST 달력 날짜로 자릅니다.
+    api_reviews_focus: (args) => {
+        const kstDay = (iso) => new Date(new Date(iso).getTime() + 9 * 3600000).toISOString().slice(0, 10);
+        const svStores = args.p_sv
+            ? new Set(storeProfiles.filter((p) => p.sv_name === args.p_sv).map((p) => p.store_name))
+            : null;
+        let rows = DEMO_REVIEWS.filter((r) => (args.p_drafts_only || !r.hidden_at)
+            && (!svStores || svStores.has(r.store))
+            && (!args.p_store || r.store === args.p_store)
+            && (!args.p_day_from || (r.written_at && kstDay(r.written_at) >= args.p_day_from))
+            && (!args.p_day_to || (r.written_at && kstDay(r.written_at) <= args.p_day_to))
+            && (args.p_max_rating == null || r.rating <= args.p_max_rating)
+            && (!args.p_unanswered_only || !r.replies.length)
+            && (!args.p_drafts_only || (r.drafts || []).some((d) => d.status === "draft")));
+        rows = rows.sort((a, b) => String(b.written_at || "").localeCompare(String(a.written_at || "")));
+        const off = args.p_offset || 0;
+        return {
+            total: rows.length,
+            drafts: args.p_drafts_only
+                ? rows.reduce((n, r) => n + (r.drafts || []).filter((d) => d.status === "draft").length, 0) : null,
+            items: rows.slice(off, off + (args.p_limit || 300)).map((r) => ({
+                ...r, drafts: (r.drafts || []).filter((d) => d.status !== "rejected"),
+            })),
+        };
+    },
+
     api_review_summary: (args) => {
         const rows = HANDLERS.api_reviews({ ...args, p_unanswered_only: false })[0].items;
         const byRating = new Map();

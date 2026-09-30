@@ -2223,6 +2223,31 @@ tr.diag-drow td { white-space: normal; }
     padding-left: var(--sp-5);
 }
 
+/* 홈에서 연 목록(131) — 어떤 조건으로 열렸는지 한 줄 + 평소 목록으로 돌아가는 버튼.
+   이 동안 평소 필터줄·별점 막대는 목록과 조건이 달라 감춥니다(app.js renderReviewFocus). */
+.rv-focus {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    margin-bottom: var(--sp-4);
+    padding: var(--sp-4) var(--sp-5);
+    border-radius: var(--r-md);
+    background: var(--action-soft);
+    color: var(--action-soft-fg);
+}
+.rv-focus[hidden] { display: none; }
+.rv-focus-text { min-width: 0; overflow-wrap: anywhere; }
+#review-card.is-focus .cardsearch,
+#review-card.is-focus #rv-bars { display: none; }
+/* 홈에서 행 하나를 눌러 왔으면 그 리뷰를 표시합니다(색만이 아니라 굵은 왼쪽 선). */
+.rvitem.is-target {
+    border-left: 3px solid var(--border-focus);
+    padding-left: var(--sp-5);
+    background: var(--bg-subtle);
+}
+
 .rvhead {
     display: flex;
     align-items: center;

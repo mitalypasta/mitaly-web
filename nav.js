@@ -302,6 +302,16 @@ export function initHomeTiles() {
             const row = e.target.closest(".home-anom-row");
             if (!row) return;
             showArea(row.dataset.go);
+            // 리뷰 항목(미답변·악성/저평점·AI 초안·새 부정 리뷰)은 홈이 센 그 목록을
+            // 그대로 엽니다(app.js openReviewFocus · 131). 예전에는 종류와 무관하게
+            // '3점 이하' 만 켜서, ★5 미답변을 눌러도 목록에 없었습니다(담당자 제보
+            // 2026-09-30). 조건을 못 세우면(담당자 미선택 등) 아래 예전 길로 갑니다.
+            if (row.dataset.rvKind) {
+                const detail = { kind: row.dataset.rvKind, store: row.dataset.store || "",
+                                 ref: row.dataset.ref || "" };
+                document.dispatchEvent(new CustomEvent("mitaly:review-focus", { detail }));
+                if (detail.opened) return;
+            }
             if (row.dataset.kind === "review") {
                 // 값만 바꿔 둡니다 — 아래 매장 필터 change 가 조회를 다시 부르면
                 // 그 조회가 이 값을 읽습니다(두 번 조회하지 않으려고).

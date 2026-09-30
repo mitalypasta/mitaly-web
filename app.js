@@ -1323,11 +1323,12 @@ async function loadHome() {
     const baseYm = (range.max >= nowYm && range.max > range.min)
         ? shiftYm(range.max, -1) : range.max;
     const reviewFromYm = shiftYm(nowYm, -1);
+    homeNegFromDay = `${Math.floor(reviewFromYm / 100)}-${String(reviewFromYm % 100).padStart(2, "0")}-01`;
 
     // 담당자별 오늘 할 일(#168) — 다른 홈 조회와 독립이라 따로 던지고 따로 그립니다.
     loadHomeSv();
 
-    const [cmpRes, alertRes, negRes, negSumRes, covRes, tacRes] = await Promise.all([
+    const [cmpRes, alertRes, negRes, negSumRes, negFocusRes, covRes, tacRes] = await Promise.all([
         db.rpc("api_sales_compare", { p_ym: baseYm, p_store: null }),
         db.rpc("api_sales_alerts", { p_ym: baseYm, p_store: null }),
         // 서버가 ≤3 만 골라 주므로 limit 이 부정 리뷰 자체에 걸립니다.
@@ -1341,6 +1342,12 @@ async function loadHome() {
             p_ym_from: reviewFromYm, p_ym_to: nowYm,
             p_store: null, p_platform: null,
         }),
+        // 건수는 눌러서 도착하는 목록(131)과 같은 함수로 셉니다. 위 요약(by_rating)은
+        // 내려간 리뷰까지 세어 목록보다 많았습니다(9/30 prod: 187 vs 179). 131 적용 전이면
+        // 요약으로 물러납니다 — 그래서 error 를 값으로 받습니다.
+        db.rpc("api_reviews_focus", {
+            p_day_from: homeNegFromDay, p_max_rating: 3, p_limit: 1,
+        }).then((r) => r, (e) => ({ error: e })),
         // 수집 범위(117). 실패해도 홈은 그대로 떠야 하므로 error 를 값으로
         // 받습니다 — 117 적용 전에는 그냥 아무 말도 안 하면 됩니다.
         db.rpc("api_review_coverage", { p_store: null })
@@ -1359,7 +1366,7 @@ async function loadHome() {
 
     drawHomeSales(cmpRes, baseYm);
     drawHomeDeclining(alertRes, baseYm);
-    drawHomeNegReviews(negRes, negSumRes, reviewFromYm, nowYm);
+    drawHomeNegReviews(negRes, negSumRes, negFocusRes, reviewFromYm, nowYm);
     drawHomeTradeChange(tacRes);
     // 담당자 카드는 따로 도착합니다 — 이미 그려져 있으면 수집 범위를 반영해
     // 한 번 다시 그립니다('미답변' 행 표시가 여기에 걸려 있습니다).
@@ -1368,9 +1375,9 @@ async function loadHome() {
 
 // 6행 넘으면 '외 N건 더 보기'로 잘렸음을 알립니다(조용한 잘림 방지).
 // 클릭 규칙은 행과 같고(nav.js 위임) data-store 가 없어 전체 목록으로 갑니다.
-function homeMoreRow(n, go, kind, card) {
+function homeMoreRow(n, go, kind, card, extra = "") {
     return n > 0
-        ? `<button type="button" class="home-anom-row home-anom-more" data-go="${go}" data-kind="${kind}" data-card="${card}">외 ${int(n)}건 더 보기</button>`
+        ? `<button type="button" class="home-anom-row home-anom-more" data-go="${go}" data-kind="${kind}" data-card="${card}"${extra}>외 ${int(n)}건 더 보기</button>`
         : "";
 }
 
@@ -1481,7 +1488,7 @@ function drawHomeDeclining(res, baseYm) {
         : '<p class="home-anom-empty">급감으로 판정된 매장이 없습니다.</p>';
 }
 
-function drawHomeNegReviews(negRes, sumRes, fromYm, toYm) {
+function drawHomeNegReviews(negRes, sumRes, focusRes, fromYm, toYm) {
     const listEl = $("home-anom-reviews");
     if (negRes.error) {
         $("home-reviews-h").textContent = "";
@@ -1489,18 +1496,23 @@ function drawHomeNegReviews(negRes, sumRes, fromYm, toYm) {
         return;
     }
     // 부정 리뷰 = 별점 3점 이하(앱 공통 정의). 새로 들어온 순으로 보입니다.
-    // 플랫폼에서 내려간 리뷰(hidden_at, #154)는 요약 by_rating 이 빼므로 목록도 뺍니다.
+    // 플랫폼에서 내려간 리뷰(hidden_at, #154)는 뺍니다 — 건수(131)도 같이 뺍니다.
+    // (예전 주석은 '요약 by_rating 이 뺀다' 였는데 실측으로 안 뺐습니다 — 9/30 187 vs 179.)
     const rows = (((negRes.data || [])[0] || {}).items || [])
         .filter((r) => Number(r.rating) <= 3 && !r.hidden_at)
         .sort((a, b) => String(b.written_at || "").localeCompare(String(a.written_at || "")));
 
-    // 전수는 요약(by_rating)으로 셉니다 — 목록은 limit 에 걸릴 수 있습니다.
-    // 요약이 실패하면 목록 수로라도 채웁니다(없는 것보다 낫습니다).
+    // 전수는 131(도착 목록과 같은 함수 — 내려간 리뷰 제외)로 셉니다. 목록은 limit 에
+    // 걸릴 수 있습니다. 131 이 없으면 요약(by_rating — 내려간 리뷰 포함이라 조금 많음),
+    // 그것도 실패하면 목록 수로라도 채웁니다(없는 것보다 낫습니다).
+    const focusBody = focusRes && !focusRes.error
+        ? (Array.isArray(focusRes.data) ? (focusRes.data[0] || {}) : (focusRes.data || {})) : null;
     const byRating = (sumRes.error ? []
         : (((sumRes.data || [])[0] || {}).summary || {}).by_rating) || [];
-    const negative = byRating
-        .filter((r) => Number(r.rating) <= 3)
-        .reduce((sum, r) => sum + (Number(r.count) || 0), 0) || rows.length;
+    const negative = (focusBody && focusBody.total != null) ? Number(focusBody.total)
+        : byRating
+            .filter((r) => Number(r.rating) <= 3)
+            .reduce((sum, r) => sum + (Number(r.count) || 0), 0) || rows.length;
 
     // 이 타일도 '수집 안 된 것' 을 0·"없습니다" 로 말할 수 있는 자리입니다
     // (리뷰 화면과 같은 병 — 제보 2026-09-11). 최근 두 달 중 수집 전 구간이
@@ -1526,11 +1538,11 @@ function drawHomeNegReviews(negRes, sumRes, fromYm, toYm) {
         ? `리뷰는 ${covFacts.lastDay} 까지 받았습니다.` : "";
     listEl.innerHTML = (rows.length
         ? rows.slice(0, 6).map((r) =>
-            `<button type="button" class="home-anom-row" data-go="reviews" data-kind="review" data-card="review-card" data-store="${escape(r.store || "")}">
+            `<button type="button" class="home-anom-row" data-go="reviews" data-kind="review" data-card="review-card" data-rv-kind="neg" data-ref="${Number(r.id) || ""}" data-store="${escape(r.store || "")}">
                <span class="ar-main">${escape(r.store || "")} — ${md(r.written_at)} <span class="ar-star">★${r.rating ?? "—"}</span> 새 리뷰</span>
                <span class="ar-side ar-text">${escape(clip(r.contents || "내용 없음", 34))}</span>
              </button>`).join("")
-          + homeMoreRow(negative - Math.min(6, rows.length), "reviews", "review", "review-card")
+          + homeMoreRow(negative - Math.min(6, rows.length), "reviews", "review", "review-card", ' data-rv-kind="neg"')
         : (emptyText ? `<p class="home-anom-empty">${escape(emptyText)}</p>` : "")) + covNote;
 }
 
@@ -1709,10 +1721,12 @@ function renderSv() {
         const lines = it.rows || [];
         const extra = n - lines.length;
         const unchecked = checkable ? (Number(it.unchecked) || 0) : null;
+        // 리뷰 항목은 홈이 센 그 목록으로 엽니다(131 — nav.js 가 mitaly:review-focus 로).
+        const rvKind = ["unanswered", "bad_reviews", "drafts"].includes(key) ? ` data-rv-kind="${key}"` : "";
         blocks.push(
             `<div class="sv-item${backlog ? " sv-backlog" : ""}" data-sv-key="${key}">
                <div class="sv-item-h">
-                 <button type="button" class="home-anom-row sv-item-go" data-go="${go}" data-kind="${kind}" data-card="${card}">
+                 <button type="button" class="home-anom-row sv-item-go" data-go="${go}" data-kind="${kind}" data-card="${card}"${rvKind}>
                    <span class="ar-main">${escape(title)}</span>
                    <span class="ar-side sv-count">${int(n)}건${unchecked != null ? ` · 미확인 ${int(unchecked)}` : ""}${key === "overdue" && it.amount ? ` · ${won(it.amount)}` : ""} · 화면으로 →</span>
                  </button>
@@ -1720,14 +1734,14 @@ function renderSv() {
                <table class="sv-table"><tbody>
                ${lines.map((r) =>
                    `<tr class="sv-line${r.checked ? " is-checked" : ""}">
-                      <td class="sv-store"><button type="button" class="home-anom-row sv-row" data-go="${go}" data-kind="${kind}" data-card="${card}" data-store="${escape(r.store || "")}"><span class="ar-main">${escape(r.store || "")}</span></button></td>
+                      <td class="sv-store"><button type="button" class="home-anom-row sv-row" data-go="${go}" data-kind="${kind}" data-card="${card}"${rvKind}${rvKind && r.ref_id ? ` data-ref="${Number(r.ref_id)}"` : ""} data-store="${escape(r.store || "")}"><span class="ar-main">${escape(r.store || "")}</span></button></td>
                       <td class="sv-detail">${svRowText(key, r)}</td>
                       <td class="sv-act">${checkable
                           ? `<button type="button" class="sv-check${r.checked ? " is-on" : ""}"
                                data-day="${escape(day)}" data-kind="${key}" data-store-id="${r.store_id}" data-ref-id="${r.ref_id || 0}" data-done="${r.checked ? "0" : "1"}">${r.checked ? "✓ 확인됨" : "확인"}</button>`
                           : ""}</td>
                     </tr>`).join("")}
-               ${extra > 0 ? `<tr><td colspan="3"><button type="button" class="home-anom-row home-anom-more sv-row" data-go="${go}" data-kind="${kind}" data-card="${card}">외 ${int(extra)}건 더 보기 →</button></td></tr>` : ""}
+               ${extra > 0 ? `<tr><td colspan="3"><button type="button" class="home-anom-row home-anom-more sv-row" data-go="${go}" data-kind="${kind}" data-card="${card}"${rvKind}>외 ${int(extra)}건 더 보기 →</button></td></tr>` : ""}
                </tbody></table>
              </div>`);
     }
@@ -2276,6 +2290,10 @@ function drawReviews(d, c) {
     // (초안 승인·전송이 load() 로 전체를 다시 받아 오기 때문)
     // load() 의 1차 그리기는 리뷰가 빈 상태로 지나가므로(위 FIRST 4칸),
     // 진짜 목록이 그려져 있을 때의 값만 기억해 2차에서 되살립니다.
+    // 홈에서 연 목록(131)이 떠 있으면 목록 자리는 그 목록 몫입니다. 위 요약은 평소대로
+    // 그리고, 목록만 받아 둔 것으로 다시 그립니다(창 크기·재그리기에 다시 묻지 않음).
+    if (rvFocus) { renderReviewFocus(); return; }
+
     const listEl = $("rv-list");
     if (listEl.querySelector(".rvitem")) rvListScroll = listEl.scrollTop;
 
@@ -2294,45 +2312,48 @@ function drawReviews(d, c) {
         return;
     }
 
-    listEl.innerHTML = rows.map((r) => {
-        const when = r.written_at
-            ? new Date(r.written_at).toLocaleDateString("ko-KR",
-                { year: "2-digit", month: "2-digit", day: "2-digit" })
-            : "";
-        const menus = (r.menus || []).map((m) => escape(m.name || "")).filter(Boolean);
-        const repeat = Number(r.order_count) || 0;
-        const replies = r.replies || [];
-        const low = Number(r.rating) <= 3;
-        // 플랫폼에서 내려간 리뷰 — 답글을 달 수 없으니 '미답변' 배지 대신 회색
-        // 배지, 'AI 시안 준비 전' 도 붙이지 않습니다(#154).
-        const hidden = !!r.hidden_at;
-        // 답글이 한 건도 수집된 적 없는 매장이면 '미답변' 은 단정입니다 —
-        // 답글을 안 단 것인지 못 걷은 것인지 모릅니다(117 stores_no_reply).
-        const replyUnknown = !!(facts && facts.noReplyStores.has(r.store));
-
-        return `<article class="rvitem${low ? " low" : ""}">
-            <div class="rvhead">
-              <span class="rvstars">${ratingStars(r.rating)}</span>
-              <span class="rvscore">${r.rating ?? "—"}</span>
-              <span class="rvmeta">${escape(r.store || "")} · ${escape(r.platform || "")} · ${when}</span>
-              ${repeat > 1 ? `<span class="tag">재주문 ${repeat}회</span>` : ""}
-              ${hidden ? '<span class="tag">플랫폼에서 내려감</span>'
-                       : replies.length ? ""
-                       : replyUnknown ? '<span class="tag">답글 미수집</span>'
-                       : '<span class="tag warn">미답변</span>'}
-            </div>
-            ${r.contents ? `<p class="rvbody">${escape(r.contents)}</p>` : ""}
-            ${menus.length ? `<p class="rvmenus">${menus.join(" · ")}</p>` : ""}
-            ${replies.map((x) => `<div class="rvreply"><b>답글</b> ${escape(x.contents || "")}</div>`).join("")}
-            ${(r.drafts || []).length
-                ? `<div class="rvopen-wrap"><button type="button" class="ghost rvopen"
-                       data-review="${Number(r.id)}">AI 답변 시안 보기${r.drafts.length > 1 ? ` · ${r.drafts.length}건` : ""}</button></div>`
-                : hidden ? "" : draftStateNote(r, replies)}
-          </article>`;
-    }).join("");
+    listEl.innerHTML = rows.map((r) => reviewItemHtml(r, facts)).join("");
 
     listEl.scrollTop = rvListScroll;
     refreshDraftPanel();
+}
+
+// 리뷰 한 건 — 평소 목록(drawReviews)과 홈에서 연 목록(renderReviewFocus)이 같이 씁니다.
+function reviewItemHtml(r, facts) {
+    const when = r.written_at
+        ? new Date(r.written_at).toLocaleDateString("ko-KR",
+            { year: "2-digit", month: "2-digit", day: "2-digit" })
+        : "";
+    const menus = (r.menus || []).map((m) => escape(m.name || "")).filter(Boolean);
+    const repeat = Number(r.order_count) || 0;
+    const replies = r.replies || [];
+    const low = Number(r.rating) <= 3;
+    // 플랫폼에서 내려간 리뷰 — 답글을 달 수 없으니 '미답변' 배지 대신 회색
+    // 배지, 'AI 시안 준비 전' 도 붙이지 않습니다(#154).
+    const hidden = !!r.hidden_at;
+    // 답글이 한 건도 수집된 적 없는 매장이면 '미답변' 은 단정입니다 —
+    // 답글을 안 단 것인지 못 걷은 것인지 모릅니다(117 stores_no_reply).
+    const replyUnknown = !!(facts && facts.noReplyStores.has(r.store));
+
+    return `<article class="rvitem${low ? " low" : ""}" data-review-id="${Number(r.id)}">
+        <div class="rvhead">
+          <span class="rvstars">${ratingStars(r.rating)}</span>
+          <span class="rvscore">${r.rating ?? "—"}</span>
+          <span class="rvmeta">${escape(r.store || "")} · ${escape(r.platform || "")} · ${when}</span>
+          ${repeat > 1 ? `<span class="tag">재주문 ${repeat}회</span>` : ""}
+          ${hidden ? '<span class="tag">플랫폼에서 내려감</span>'
+                   : replies.length ? ""
+                   : replyUnknown ? '<span class="tag">답글 미수집</span>'
+                   : '<span class="tag warn">미답변</span>'}
+        </div>
+        ${r.contents ? `<p class="rvbody">${escape(r.contents)}</p>` : ""}
+        ${menus.length ? `<p class="rvmenus">${menus.join(" · ")}</p>` : ""}
+        ${replies.map((x) => `<div class="rvreply"><b>답글</b> ${escape(x.contents || "")}</div>`).join("")}
+        ${(r.drafts || []).length
+            ? `<div class="rvopen-wrap"><button type="button" class="ghost rvopen"
+                   data-review="${Number(r.id)}">AI 답변 시안 보기${r.drafts.length > 1 ? ` · ${r.drafts.length}건` : ""}</button></div>`
+            : hidden ? "" : draftStateNote(r, replies)}
+      </article>`;
 }
 
 // 초안이 없는 리뷰의 시안 상태 한 줄 (#143 — 담당자: "미답변인 모든 리뷰에서
@@ -2368,6 +2389,172 @@ function draftStateNote(r, replies) {
 // drawReviews() 가 받은 리뷰를 id 로 다시 찾는 색인과, 지금 패널이 보여 주는
 // 리뷰 id. load() 가 목록을 다시 그려도 이 둘로 패널 내용을 이어 갑니다.
 let reviewIndex = new Map();
+
+// ---- 홈에서 연 리뷰 목록 (131 api_reviews_focus) -----------------------
+//
+// 담당자 제보 2026-09-30: 홈의 '화면으로 →' · '외 N건 더 보기' 를 누르면 리뷰 탭 첫
+// 화면에 떨어져 다시 찾아야 했습니다. 홈 담당자 카드(108)는 '어제 하루 · 담당 운영
+// 매장' 을 세는데 리뷰 탭은 월 단위·매장 하나로만 걸러 같은 목록을 만들 길이 없었고,
+// 링크마다 '3점 이하' 만 켜서 '미답변 리뷰'(★5 가 대부분)를 누르면 그 리뷰가 목록에
+// 없었습니다. 이제 홈 행이 무엇을 셌는지(kind)를 넘기면 서버가 같은 조건으로 다시
+// 뽑고(건수가 홈과 같음 — 9/30 prod 실측, 131 머리주석), 리뷰 카드 위 한 줄이 그
+// 조건을 적습니다. 위 필터(기간·매장·담당자)를 바꾸거나 '전체 리뷰 보기' 를 누르거나
+// 다른 탭으로 가면 평소 목록으로 돌아갑니다.
+const RV_FOCUS_PAGE = 300;
+let rvFocus = null;          // { kind, label, args, ref, items, total, drafts, error, loading }
+let rvFocusSeq = 0;
+let homeNegFromDay = null;   // 홈 '새 부정 리뷰' 가 세는 첫날(loadHome 이 채움)
+
+const focusDay = (iso) => {
+    const [, m, d] = String(iso).split("-");
+    return `${Number(m)}/${Number(d)}`;
+};
+
+// 홈 카드의 항목(kind)을 서버 조건으로. 108 과 같은 담당자·날짜라야 건수가 맞습니다.
+function reviewFocusSpec(kind, store) {
+    const sv = svCurrent();
+    const day = svData && svData.day ? String(svData.day).slice(0, 10) : null;
+    const who = store || (sv ? `${sv} 담당` : "");
+    switch (kind) {
+    case "unanswered":
+        if (!sv || !day) return null;
+        return { label: `${who} · ${focusDay(day)} 들어온 리뷰 중 답글 없는 것`,
+                 args: { p_sv: sv, p_day_from: day, p_day_to: day, p_unanswered_only: true } };
+    case "bad_reviews":
+        if (!sv || !day) return null;
+        return { label: `${who} · ${focusDay(day)} 들어온 별점 2점 이하`,
+                 args: { p_sv: sv, p_day_from: day, p_day_to: day, p_max_rating: 2 } };
+    case "drafts":
+        if (!sv) return null;
+        return { label: `${who} · AI 답글 초안 검토 대기`,
+                 args: { p_sv: sv, p_drafts_only: true } };
+    case "neg":
+        if (!homeNegFromDay) return null;
+        return { label: `${store || "전 매장"} · ${focusDay(homeNegFromDay)} 이후 별점 3점 이하`,
+                 args: { p_day_from: homeNegFromDay, p_max_rating: 3 } };
+    default:
+        return null;
+    }
+}
+
+// 조건을 못 세우면(담당자 미선택 등) false — nav.js 가 평소 목록으로 보냅니다.
+function openReviewFocus({ kind, store, ref }) {
+    const spec = reviewFocusSpec(kind, store);
+    if (!spec) return false;
+    if (store) spec.args.p_store = store;
+    rvFocus = { kind, ...spec, ref: Number(ref) || null,
+                items: [], total: null, drafts: null, error: null, loading: false };
+    rvListScroll = 0;
+    renderReviewFocus();
+    loadReviewFocus().then(() => {
+        // 행 하나를 눌러 왔으면 그 리뷰로, 아니면 목록 머리로.
+        const hit = rvFocus && rvFocus.ref
+            && $("rv-list").querySelector(`[data-review-id="${rvFocus.ref}"]`);
+        requestAnimationFrame(() => (hit || $("review-card"))
+            .scrollIntoView({ behavior: "smooth", block: hit ? "center" : "start" }));
+    });
+    return true;
+}
+
+async function loadReviewFocus({ more = false, refresh = false } = {}) {
+    const f = rvFocus;
+    if (!f) return;
+    const seq = ++rvFocusSeq;
+    // 초안 승인 뒤 다시 받을 때(refresh)는 이미 펼쳐 둔 만큼 다시 받습니다.
+    const limit = refresh ? Math.min(1000, Math.max(RV_FOCUS_PAGE, f.items.length)) : RV_FOCUS_PAGE;
+    const offset = more ? f.items.length : 0;
+    f.loading = true;
+    renderReviewFocus();
+    let res;
+    try {
+        res = await db.rpc("api_reviews_focus", { ...f.args, p_limit: limit, p_offset: offset });
+    } catch (e) {
+        res = { error: e };
+    }
+    if (seq !== rvFocusSeq || rvFocus !== f) return;   // 그 사이 해제·다른 목록
+    f.loading = false;
+    if (res.error) {
+        f.error = res.error.message || String(res.error);
+        renderReviewFocus();
+        return;
+    }
+    // jsonb 한 줄 함수 — data 가 객체 그대로 옵니다(배열로 오면 첫 요소).
+    const body = Array.isArray(res.data) ? (res.data[0] || {}) : (res.data || {});
+    f.error = null;
+    f.total = Number(body.total) || 0;
+    f.drafts = body.drafts == null ? null : Number(body.drafts);
+    f.items = more ? f.items.concat(body.items || []) : (body.items || []);
+    renderReviewFocus();
+}
+
+function renderReviewFocus() {
+    const f = rvFocus;
+    const bar = $("rv-focus");
+    $("review-card").classList.toggle("is-focus", !!f);
+    bar.hidden = !f;
+    if (!f) { bar.innerHTML = ""; return; }
+
+    const shown = f.items.length;
+    // 초안 행 수와 리뷰 수가 다르면(한 리뷰에 시안 여럿) 둘 다 적습니다 — 홈은 초안 행을 셉니다.
+    const count = f.total == null ? ""
+        : ` · ${int(f.total)}건`
+          + (shown < f.total ? ` 중 최근 ${int(shown)}건` : "")
+          + (f.drafts != null && f.drafts !== f.total ? ` (초안 ${int(f.drafts)}건)` : "");
+    bar.innerHTML = `<span class="rv-focus-text"><b>홈에서 연 목록</b> ${escape(f.label)}${escape(count)}</span>`
+        + '<button type="button" class="ghost" id="rv-focus-clear">전체 리뷰 보기</button>';
+
+    const listEl = $("rv-list");
+    if (f.error) {
+        listEl.innerHTML = `<p class="hint">불러오지 못했습니다: ${escape(f.error)}</p>`;
+        return;
+    }
+    if (f.total == null) {
+        listEl.innerHTML = '<p class="hint">불러오는 중…</p>';
+        return;
+    }
+    const facts = reviewCoverageFacts(
+        homeCoverage || (S.lastData && S.lastData.reviewCoverage), currentFilters(), null);
+    const rest = f.total - shown;
+    listEl.innerHTML = shown
+        ? f.items.map((r) => reviewItemHtml(r, facts)).join("")
+          + (rest > 0
+              ? `<div class="rvopen-wrap"><button type="button" class="ghost" id="rv-focus-more"${f.loading ? " disabled" : ""}>`
+                + (f.loading ? "불러오는 중…" : `다음 ${int(Math.min(RV_FOCUS_PAGE, rest))}건 더 보기`)
+                + "</button></div>"
+              : "")
+        : '<p class="hint">조건에 맞는 리뷰가 없습니다.</p>';
+    if (f.ref) {
+        listEl.querySelector(`[data-review-id="${f.ref}"]`)?.classList.add("is-target");
+    }
+    reviewIndex = new Map(f.items.map((r) => [Number(r.id), r]));
+    refreshDraftPanel();
+}
+
+function clearReviewFocus() {
+    if (!rvFocus) return;
+    rvFocus = null;
+    rvFocusSeq++;
+    rvListScroll = 0;
+    renderReviewFocus();
+    if (S.lastData) draw(S.lastData);
+}
+
+// 홈(nav.js)이 행 클릭으로 부릅니다. 열었는지를 detail.opened 로 돌려줍니다.
+document.addEventListener("mitaly:review-focus", (e) => {
+    const detail = e.detail || {};
+    detail.opened = openReviewFocus(detail);
+});
+document.addEventListener("click", (e) => {
+    if (e.target.closest("#rv-focus-clear")) clearReviewFocus();
+    else if (e.target.closest("#rv-focus-more")) loadReviewFocus({ more: true });
+});
+// 조건이 바뀌면 평소 목록으로 — 기간·매장을 손으로 바꾸거나, 담당자를 바꾸거나, 탭을 떠날 때.
+for (const id of ["f-from", "f-to", "f-store"]) {
+    document.getElementById(id)?.addEventListener("change", clearReviewFocus);
+}
+document.addEventListener("mitaly:sv-changed", clearReviewFocus);
+window.addEventListener("mitaly:area", (e) => { if (e.detail !== "reviews") clearReviewFocus(); });
+
 let panelReviewId = null;
 let rvListScroll = 0;      // 마지막으로 실제 목록이 있던 때의 스크롤 위치
 let rvReleaseFocus = null; // trapFocus 해제 함수 — 닫을 때 원래 자리로 돌려줍니다
@@ -2578,6 +2765,7 @@ function initDrafts() {
         message.textContent = doneText;
 
         await load();     // 목록·요약을 다시 받습니다 (패널도 같이 다시 그려짐)
+        if (rvFocus) await loadReviewFocus({ refresh: true });
 
         // 다시 그린 패널에 결과를 남깁니다. 반려처럼 시안 상자가 사라진
         // 경우는 패널 머리의 공용 자리에 씁니다.
