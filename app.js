@@ -1830,14 +1830,26 @@ const HOME_CHANNEL_NAMES = {
     coupangeats: "쿠팡이츠", yogiyo: "요기요", naver: "네이버",
 };
 
+// 마지막 업로드가 이만큼 지나면 매출 숫자가 멈춘 것입니다. 새벽 매출 작업이
+// 매일 한 번 올리므로 하루 + 여유 6시간.
+const UPLOAD_STALE_HOURS = 30;
+
 async function loadHomeHealth() {
     const el = $("home-warn");
-    const [healthRes, runnerRes] = await Promise.all([
+    const [healthRes, runnerRes, uploadRes, salesRes] = await Promise.all([
         // PostgrestBuilder 는 thenable 이지만 .catch 가 없어 TypeError 로 홈 경고
         // 타일이 통째로 안 그려졌다(2026-09-09 실측: 콘솔 "db.rpc(...).catch is not
         // a function"). 아래 runner_status 줄과 같은 then(성공, 실패) 꼴로.
         db.rpc("api_account_health").then((r) => r, (e) => ({ error: e })),
         db.from("runner_status").select("last_seen_at").limit(1)
+            .then((r) => r, (e) => ({ error: e })),
+        db.from("upload_batches").select("uploaded_at")
+            .order("uploaded_at", { ascending: false }).limit(1)
+            .then((r) => r, (e) => ({ error: e })),
+        // 매출 요청만 거르는 건 아래에서 — 리뷰 요청이 하루 두 번이라 20건이면
+        // 매출 요청이 며칠치 들어옵니다(데모 builder 에 eq·not 이 없기도 함).
+        db.from("collect_requests").select("kind,status,error,finished_at")
+            .order("id", { ascending: false }).limit(20)
             .then((r) => r, (e) => ({ error: e })),
     ]);
 
@@ -1859,6 +1871,24 @@ async function loadHomeHealth() {
             const ago = ageH >= 48
                 ? `${Math.floor(ageH / 24)}일째` : `${Math.round(ageH)}시간째`;
             msgs.push(`수집 PC가 ${ago} 응답 없음 — 숫자가 그날에 멈춰 있습니다`);
+        }
+    }
+
+    // 러너가 살아 있어도 매출 작업이 매일 실패하면 업로드가 멈춥니다
+    // (2026-09-23~10-01: 겹침 가드가 대시보드 갱신을 9일 세웠는데 위 두 신호가
+    // 다 정상이라 아무도 몰랐음). 마지막 업로드 나이로 봅니다.
+    const uploadRow = (uploadRes && !uploadRes.error && (uploadRes.data || [])[0]) || null;
+    if (uploadRow && uploadRow.uploaded_at) {
+        const last = new Date(uploadRow.uploaded_at);
+        const ageH = (Date.now() - last.getTime()) / 3600_000;
+        if (ageH >= UPLOAD_STALE_HOURS) {
+            const when = last.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+            const sales = ((salesRes && !salesRes.error && salesRes.data) || [])
+                .find((r) => (r.kind || "sales") === "sales" && r.finished_at) || null;
+            const why = sales && sales.status === "failed" && sales.error
+                ? ` · 마지막 매출 작업 실패: ${String(sales.error).replace(/^\w+Error:\s*/, "").slice(0, 80)}` : "";
+            const days = Math.max(1, Math.round(ageH / 24));
+            msgs.push(`매출 숫자가 ${days}일째 갱신 안 됨 — ${when} 기준입니다${why}`);
         }
     }
 
