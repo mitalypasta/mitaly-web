@@ -1863,6 +1863,87 @@ button.ghost:active { transform: translateY(0.5px); }
     cursor: pointer;
 }
 
+/* 엑셀 내보내기 고르기 창(dom.js pickExport) — 세 갈래 내보내기가 같이 씁니다.
+   기간 · 매장 · 시트(열)를 한 창에서. 몸통만 스크롤하고 머리·발은 고정입니다. */
+.xlsx-pick .xp-box { width: min(760px, 100%); }
+.xp-sub { margin: 0 0 var(--sp-4); }
+.xp-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-6);
+}
+.xp-sec {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+}
+.xp-sec legend {
+    font-weight: var(--fw-semibold);
+    margin-bottom: var(--sp-3);
+    padding: 0;
+}
+.xp-period { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+.xp-period input {
+    font: inherit;
+    padding: var(--sp-3) var(--sp-4);
+    color: var(--text-primary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+}
+.xp-bar { display: flex; align-items: center; gap: var(--sp-5); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+.xp-bar input[type="search"] { flex: 1 1 200px; width: auto; }
+.xp-body, .xp-list { overflow-x: hidden; }
+.xp-list { max-height: 28vh; }
+.xp-cols.xp-store-fold { margin-left: 0; }
+.xp-stores { max-height: 24vh; }
+.xp-list label[hidden] { display: none; }   /* .modal-list label 의 flex 가 hidden 을 이김 */
+.xp-sheet {
+    padding: var(--sp-3) 0;
+    border-top: 1px solid var(--border-subtle);
+}
+.xp-sheet:first-of-type { border-top: 0; }
+.xp-sheet-name {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    font-weight: var(--fw-medium);
+    cursor: pointer;
+}
+.xp-sheet.is-off .xp-cols { opacity: 0.5; }
+.xp-cols { margin: var(--sp-2) 0 0 var(--sp-8); }
+.xp-cols > summary {
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: var(--sz-2);
+    padding: var(--sp-1) 0;
+}
+.xp-cols[open] > summary { margin-bottom: var(--sp-3); }
+.xp-warn { min-height: 1.4em; margin: var(--sp-4) 0 0; color: var(--status-critical-on-tint); }
+.xp-foot { gap: var(--sp-4); margin-top: var(--sp-4); }
+.xp-foot button:disabled { opacity: 0.55; cursor: default; }
+/* .modal-foot button 은 전부 채움 버튼이라, 취소는 보조 버튼 모양으로 되돌립니다. */
+.xp-foot button.ghost {
+    background: var(--btn-secondary-bg);
+    color: var(--btn-secondary-fg);
+    border: var(--bw-hair) solid var(--btn-secondary-bd);
+    font-weight: var(--fw-medium);
+}
+.xp-foot button.ghost:hover {
+    background: var(--action-soft);
+    color: var(--action-primary-hover);
+    border-color: var(--action-primary);
+}
+@media (max-width: 560px) {
+    .modal.xlsx-pick { padding: var(--sp-4); }
+    .xlsx-pick .xp-box { padding: var(--sp-6); max-height: 92vh; }
+    .xp-cols { margin-left: var(--sp-5); }
+}
+
 /* 로열티 수정 플로팅 — 매장 줄은 버튼(클릭 = 선택)이고 오른쪽에 지금 요율.
    매장 선택창의 modal-list 격자를 한 줄짜리 목록으로 좁혀 씁니다. */
 .modal-list.rate-list {

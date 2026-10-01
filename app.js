@@ -12,6 +12,11 @@ import { escape, clip, debounce, niceTicks, monthsBetween, safeUrl } from "./uti
 import { S } from "./state.js";
 import { table, $, monthPicker, searchify, loadSheetJS, showTip, hideTip,
          setHero, trapFocus } from "./dom.js";
+// 고르기 창(pickExport 등)은 이름 import 가 아니라 모듈 통째(domx)로 꺼냅니다. 웹 모듈은
+// 캐시 버전(?v=)이 안 걸려, 배포 직후 10분 동안 '새 이 파일 + 캐시된 옛 dom.js' 가 섞일 수
+// 있습니다 — 이름 import 면 그때 화면 전체가 안 뜹니다(없는 export 연결 오류). 통째로
+// 받으면 내보내기 버튼만 '새로고침' 을 청합니다.
+import * as domx from "./dom.js";
 import { palette, renderHeat, drawLine, drawBars } from "./charts.js";
 import { initSvFilter, svCurrent, svAllows, svFilterRows } from "./svfilter.js";
 
@@ -3289,19 +3294,36 @@ async function runSalesExport() {
     const msg = $("sales-export-msg");
     const { p_ym_from: ymFrom, p_ym_to: ymTo, p_store: store } = currentFilters();
 
-    if (!ymFrom || !ymTo) {
-        msg.textContent = "시작·종료 월을 먼저 고르세요.";
+    // 고를 수 있는 매장 = 필터 줄 매장 콤보에 지금 보이는 매장(담당자·폐점 조건이
+    // 이미 걸린 목록). 콤보에서 고른 매장이 있으면 그 한 곳이 기본입니다.
+    const options = [...$("f-store").options].filter((o) => o.value);
+    const visible = options.filter((o) => !o.hidden).map((o) => o.value);
+
+    if (!domx.pickExport) {
+        msg.textContent = "화면을 새로고침한 뒤 다시 눌러 주세요.";
         return;
     }
+    const pick = await domx.pickExport({
+        id: "sales",
+        title: "매출 — 고른 기간·매장의 집계",
+        period: { from: ymFrom, to: ymTo },
+        stores: { names: visible, selected: store ? [store] : null },
+        sheets: SALES_SHEETS.map((sh) => ({
+            key: sh.key, label: sh.label,
+            columns: sh.columns ? sh.columns.map(([, label]) => label) : null,
+        })),
+    });
+    if (!pick) return;
 
-    // 필터 줄의 매장 콤보를 그대로 씁니다 — 전체면 전 매장, 골랐으면 그 매장만.
-    const storeArg = store ? [store] : null;
-    const storeNames = store ? [store] : [];
+    // '전부' 를 골랐어도 콤보가 담당자·폐점으로 좁혀져 있으면 그 목록을 그대로 넘깁니다 —
+    // null(전 매장)로 보내면 화면에 안 보이던 매장까지 섞입니다.
+    const storeArg = pick.stores || (visible.length === options.length ? null : visible);
 
     button.disabled = true;
     msg.textContent = "엑셀을 만드는 중…";
     try {
-        await buildAndDownloadWorkbook(ymFrom, ymTo, storeArg, storeNames);
+        await buildAndDownloadWorkbook(pick.period.from, pick.period.to,
+            storeArg, storeArg || [], pick.sheets);
         msg.textContent = "엑셀을 내려받았습니다.";
     } catch (err) {
         msg.textContent = "엑셀을 만들지 못했습니다: " + String(err.message || err);
@@ -3349,101 +3371,104 @@ async function runLimited(thunks, limit) {
     return results;
 }
 
+// 매출 내보내기 시트 정의 — 고르기 창(시트·열)과 조회·시트 만들기가 이 표 하나를 봅니다.
+//   rpc(args)   고르면 부를 조회. 안 고른 시트는 서버에 묻지 않습니다(빨라짐).
+//   rows(res)   응답에서 행 꺼내기 — 대시보드 시트(16_export_dashboard.sql)는 jsonb
+//               한 줄로 옵니다(품목 2,600종 → 1,000행 상한, D10).
+//   columns     [키, 머리글] — 열 고르기 단위. matrix 시트는 축 값이 데이터마다 달라
+//               시트 단위로만 고릅니다.
+const SALES_SHEETS = [
+    { key: "cover", label: "요약정보" },
+    { key: "summary", label: "매장별",
+      rpc: (a) => db.rpc("api_export_store_summary", a), rows: (r) => r.data,
+      columns: [["store", "매장"], ["trade_area", "상권"], ["amount", "총매출"],
+                ["qty", "총수량"], ["avg_ticket", "객단가"], ["hall_amount", "홀매출"],
+                ["delivery_amount", "배달매출"], ["menu_count", "메뉴수"],
+                ["active_months", "활동월수"]] },
+    { key: "monthly", label: "월별추이",
+      rpc: (a) => db.rpc("api_export_monthly", a), rows: (r) => r.data,
+      columns: [["ym", "연월"], ["amount", "총매출"], ["qty", "총수량"],
+                ["hall_amount", "홀매출"], ["delivery_amount", "배달매출"],
+                ["store_count", "매장수"]] },
+    { key: "menu", label: "품목별",
+      rpc: (a) => db.rpc("api_export_menu", a), rows: (r) => r.data,
+      columns: [["menu", "메뉴"], ["category", "대분류"], ["amount", "매출"],
+                ["qty", "수량"], ["store_count", "판매매장수"], ["is_giveaway", "증정품"]] },
+    { key: "detail", label: "매장별상세",
+      rpc: (a) => db.rpc("api_export_store_detail", a), rows: (r) => oneRow(r),
+      columns: [["store", "매장"], ["trade_area", "상권"], ["amount", "총매출"],
+                ["qty", "총수량"], ["avg_ticket", "객단가"], ["hall_amount", "홀매출"],
+                ["delivery_amount", "배달매출"], ["delivery_ratio", "배달비중(%)"],
+                ["menu_count", "메뉴수"], ["active_months", "활동월수"],
+                ["source_count", "출처수"]] },
+    // 메뉴 × 축 3종. buckets 가 축마다 열이 달라져 시트를 그때그때 만듭니다.
+    { key: "m_area", label: "상권별_메뉴", matrix: null,
+      rpc: (a) => db.rpc("api_export_menu_matrix", { p_field: "trade_area", ...a }), rows: (r) => oneRow(r) },
+    { key: "m_week", label: "요일별_메뉴", matrix: ["월", "화", "수", "목", "금", "토", "일"],
+      rpc: (a) => db.rpc("api_export_menu_matrix", { p_field: "weekday", ...a }), rows: (r) => oneRow(r) },
+    { key: "m_day", label: "시간대별_메뉴", matrix: ["아침", "점심", "오후", "저녁"],
+      rpc: (a) => db.rpc("api_export_menu_matrix", { p_field: "daypart", ...a }), rows: (r) => oneRow(r) },
+    { key: "hour", label: "시간대",
+      rpc: (a) => db.rpc("api_export_by_hour", a), rows: (r) => oneRow(r),
+      columns: [["hour", "시"], ["amount", "매출"], ["qty", "수량"],
+                ["hall_amount", "홀매출"], ["delivery_amount", "배달매출"]] },
+    // 비정규는 제외 대상이 아니라 감시 대상입니다(CLAUDE.md).
+    { key: "nonstd", label: "비정규현황",
+      rpc: (a) => db.rpc("api_export_nonstandard", a), rows: (r) => oneRow(r),
+      columns: [["store", "매장"], ["trade_area", "상권"], ["total", "총매출"],
+                ["nonstandard", "비정규매출"], ["ratio", "비정규비율(%)"],
+                ["nonstandard_menus", "비정규품목수"]] },
+    // 미매핑은 보이기만 합니다. 담당자가 매핑표(엑셀)에서 직접 고칩니다. 매장과 무관(기간만).
+    { key: "unmapped", label: "미매핑",
+      rpc: (a) => db.rpc("api_export_unmapped", { p_ym_from: a.p_ym_from, p_ym_to: a.p_ym_to }),
+      rows: (r) => oneRow(r),
+      columns: [["name", "품목명"], ["first_ym", "처음본달"], ["last_ym", "마지막달"],
+                ["seen", "나온횟수"], ["sources", "출처"]] },
+    { key: "coverage", label: "수집현황",
+      rpc: (a) => db.rpc("api_export_coverage", a), rows: (r) => r.data,
+      columns: [["store", "매장"], ["ym", "연월"], ["amount", "매출"], ["has_data", "수집됨"]] },
+];
+
 // 선택 범위의 집계를 받아 여러 시트짜리 엑셀을 만들고 내려받습니다.
-async function buildAndDownloadWorkbook(ymFrom, ymTo, storeArg, storeNames) {
+// picked = Map(시트 key → Set(머리글) | null) — 고르기 창(dom.js pickExport) 결과.
+async function buildAndDownloadWorkbook(ymFrom, ymTo, storeArg, storeNames, picked) {
     const XLSX = await loadSheetJS();
 
     const args = { p_ym_from: ymFrom, p_ym_to: ymTo, p_stores: storeArg };
-    // 대시보드 시트(16_export_dashboard.sql)는 jsonb 한 줄로 옵니다 — 품목이
-    // 2,600종을 넘어 행으로 받으면 PostgREST 1,000행에서 조용히 잘립니다(D10).
-    //
-    // 11개를 한꺼번에 던지지 않고 load() 와 같은 이유로 3개씩만 돌립니다
-    // (큐 #107 F2). authenticated 는 쿼리당 8초 제한이라, 전 매장·넓은 기간에서
-    // 동시에 던지면 서로 밀려 통째로 실패합니다(2026-07-29 실측: 11개 동시 →
-    // 10개가 제한 초과 — runLimited 머리주석).
-    const [summary, monthly, menu, coverage,
-           mArea, mWeek, mDay, byHour, nonstd, detail, unmapped] =
-        await runLimited([
-            () => db.rpc("api_export_store_summary", args),
-            () => db.rpc("api_export_monthly", args),
-            () => db.rpc("api_export_menu", args),
-            () => db.rpc("api_export_coverage", args),
-            () => db.rpc("api_export_menu_matrix", { p_field: "trade_area", ...args }),
-            () => db.rpc("api_export_menu_matrix", { p_field: "weekday", ...args }),
-            () => db.rpc("api_export_menu_matrix", { p_field: "daypart", ...args }),
-            () => db.rpc("api_export_by_hour", args),
-            () => db.rpc("api_export_nonstandard", args),
-            () => db.rpc("api_export_store_detail", args),
-            () => db.rpc("api_export_unmapped",
-                   { p_ym_from: ymFrom, p_ym_to: ymTo }),
-        ], 3);
-    for (const r of [summary, monthly, menu, coverage, mArea, mWeek, mDay,
-                     byHour, nonstd, detail, unmapped]) {
-        if (r.error) throw new Error("집계 조회 실패: " + r.error.message);
-    }
+    const chosen = SALES_SHEETS.filter((sh) => picked.has(sh.key));
+    const fetched = chosen.filter((sh) => sh.rpc);
+    // 한꺼번에 던지지 않고 load() 와 같은 이유로 3개씩만 돌립니다(큐 #107 F2).
+    // authenticated 는 쿼리당 8초 제한이라, 전 매장·넓은 기간에서 동시에 던지면
+    // 서로 밀려 통째로 실패합니다(2026-07-29 실측: 11개 동시 → 10개가 제한 초과).
+    const results = await runLimited(fetched.map((sh) => () => sh.rpc(args)), 3);
+    const byKey = new Map();
+    fetched.forEach((sh, i) => {
+        if (results[i].error) throw new Error(`${sh.label} 조회 실패: ` + results[i].error.message);
+        byKey.set(sh.key, sh.rows(results[i]) || []);
+    });
 
     const wb = XLSX.utils.book_new();
-
-    // 표지 시트: 무엇을 뽑았는지
-    const cover = [
-        ["미태리 매출 내보내기"],
-        ["기간", `${ymDash(ymFrom)} ~ ${ymDash(ymTo)}`],
-        ["대상 매장", storeNames && storeNames.length ? storeNames.join(", ") : "전체 매장"],
-        ["만든 시각", new Date().toLocaleString("ko-KR")],
-        ["매출 기준", "배달=할인 전 / 홀=할인 후 (프로젝트 규칙)"],
-    ];
-    XLSX.utils.book_append_sheet(wb,
-        XLSX.utils.aoa_to_sheet(cover), "요약정보");
-
-    addSheet(XLSX, wb, "매장별", summary.data, [
-        ["store", "매장"], ["trade_area", "상권"], ["amount", "총매출"],
-        ["qty", "총수량"], ["avg_ticket", "객단가"], ["hall_amount", "홀매출"],
-        ["delivery_amount", "배달매출"], ["menu_count", "메뉴수"],
-        ["active_months", "활동월수"],
-    ]);
-    addSheet(XLSX, wb, "월별추이", monthly.data, [
-        ["ym", "연월"], ["amount", "총매출"], ["qty", "총수량"],
-        ["hall_amount", "홀매출"], ["delivery_amount", "배달매출"],
-        ["store_count", "매장수"],
-    ]);
-    addSheet(XLSX, wb, "품목별", menu.data, [
-        ["menu", "메뉴"], ["category", "대분류"], ["amount", "매출"],
-        ["qty", "수량"], ["store_count", "판매매장수"], ["is_giveaway", "증정품"],
-    ]);
-    addSheet(XLSX, wb, "매장별상세", oneRow(detail), [
-        ["store", "매장"], ["trade_area", "상권"], ["amount", "총매출"],
-        ["qty", "총수량"], ["avg_ticket", "객단가"], ["hall_amount", "홀매출"],
-        ["delivery_amount", "배달매출"], ["delivery_ratio", "배달비중(%)"],
-        ["menu_count", "메뉴수"], ["active_months", "활동월수"],
-        ["source_count", "출처수"],
-    ]);
-
-    // 메뉴 × 축 3종. buckets 가 축마다 열이 달라져 시트를 그때그때 만듭니다.
-    addMatrixSheet(XLSX, wb, "상권별_메뉴", oneRow(mArea));
-    addMatrixSheet(XLSX, wb, "요일별_메뉴", oneRow(mWeek),
-                   ["월", "화", "수", "목", "금", "토", "일"]);
-    addMatrixSheet(XLSX, wb, "시간대별_메뉴", oneRow(mDay),
-                   ["아침", "점심", "오후", "저녁"]);
-
-    addSheet(XLSX, wb, "시간대", oneRow(byHour), [
-        ["hour", "시"], ["amount", "매출"], ["qty", "수량"],
-        ["hall_amount", "홀매출"], ["delivery_amount", "배달매출"],
-    ]);
-    // 비정규는 제외 대상이 아니라 감시 대상입니다(CLAUDE.md).
-    addSheet(XLSX, wb, "비정규현황", oneRow(nonstd), [
-        ["store", "매장"], ["trade_area", "상권"], ["total", "총매출"],
-        ["nonstandard", "비정규매출"], ["ratio", "비정규비율(%)"],
-        ["nonstandard_menus", "비정규품목수"],
-    ]);
-    // 미매핑은 보이기만 합니다. 담당자가 매핑표(엑셀)에서 직접 고칩니다.
-    addSheet(XLSX, wb, "미매핑", oneRow(unmapped), [
-        ["name", "품목명"], ["first_ym", "처음본달"], ["last_ym", "마지막달"],
-        ["seen", "나온횟수"], ["sources", "출처"],
-    ]);
-
-    addSheet(XLSX, wb, "수집현황", coverage.data, [
-        ["store", "매장"], ["ym", "연월"], ["amount", "매출"], ["has_data", "수집됨"],
-    ]);
+    for (const sh of chosen) {
+        if (sh.key === "cover") {
+            // 표지 시트: 무엇을 뽑았는지
+            const cover = [
+                ["미태리 매출 내보내기"],
+                ["기간", `${ymDash(ymFrom)} ~ ${ymDash(ymTo)}`],
+                ["대상 매장", storeNames && storeNames.length
+                    ? `${storeNames.length}곳: ${storeNames.join(", ")}` : "전체 매장"],
+                ["시트", chosen.filter((x) => x.key !== "cover").map((x) => x.label).join(", ")],
+                ["만든 시각", new Date().toLocaleString("ko-KR")],
+                ["매출 기준", "배달=할인 전 / 홀=할인 후 (프로젝트 규칙)"],
+            ];
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cover), "요약정보");
+        } else if ("matrix" in sh) {
+            addMatrixSheet(XLSX, wb, sh.label, byKey.get(sh.key), sh.matrix || undefined);
+        } else {
+            const keep = picked.get(sh.key);
+            addSheet(XLSX, wb, sh.label, byKey.get(sh.key),
+                     sh.columns.filter(([, label]) => !keep || keep.has(label)));
+        }
+    }
 
     const fname =
         `미태리_매출_${ymDash(ymFrom)}_${ymDash(ymTo)}`
@@ -3484,6 +3509,7 @@ function addSheet(XLSX, wb, sheetName, rows, columns) {
         return v;
     }));
     const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+    if (domx.autoWidth) ws["!cols"] = domx.autoWidth([header, ...body]);
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
 }
 

@@ -473,6 +473,243 @@ function exportCell(v) {
     return text;
 }
 
+// ---------------------------------------------------------------- 내보내기 고르기 창
+//
+// 담당자 지시 2026-10-01: "엑셀 내보내기가 전체로만 가능 — 필요한 것만 받게, 내보내기가
+// 있는 **모든 곳**에, 곳마다 들어 있는 정보가 다르니 그걸 다 반영해서."
+// 내보내기는 세 갈래이고 셋 다 이 창 하나를 씁니다 — 곳마다 따로 만들면 네 번째가 또
+// 빠집니다.
+//   · 카드 '엑셀' 버튼(아래 exportCard) — 표 · 열 · (매장 열이 있으면) 매장
+//   · 매출 탭 '엑셀 내보내기'(app.js runSalesExport) — 기간 · 매장 · 시트 · 열
+//   · '선택 매장 엑셀 추출'(store_dash.js) — 시트 · 열
+// 고를 거리는 부르는 쪽이 넘깁니다(그 내보내기에 실제로 들어 있는 시트·열). 마지막
+// 선택은 내보내기마다 기억합니다(빼 둔 것만 — 열이 새로 생기면 기본으로 켜짐).
+//
+// spec = {
+//   id, title,
+//   period?: { from: YYYYMM, to: YYYYMM },
+//   stores?: { names: [...], selected?: [...] }      // selected 없으면 전부
+//   sheets: [{ key, label, columns?: [label...] }],  // columns 없으면 시트 단위로만
+// }
+// → Promise<null | { period, stores: [...] | null(전부), sheets: Map(key → Set(열 이름) | null) }>
+const PICK_KEY = "mitaly:xlsx-pick:";
+
+function readPickMemory(id) {
+    try { return JSON.parse(localStorage.getItem(PICK_KEY + id) || "null") || {}; }
+    catch (e) { return {}; }
+}
+function writePickMemory(id, memo) {
+    try { localStorage.setItem(PICK_KEY + id, JSON.stringify(memo)); } catch (e) { /* 사생활 모드 */ }
+}
+
+const ymInput = (ym) => (ym ? `${String(ym).slice(0, 4)}-${String(ym).slice(4, 6)}` : "");
+const ymFromInput = (v) => (v ? Number(String(v).replace("-", "")) : null);
+
+export function pickExport(spec) {
+    return new Promise((resolve) => {
+        const memo = readPickMemory(spec.id);
+        const offSheets = new Set(memo.offSheets || []);
+        const offCols = memo.offCols || {};
+
+        const root = document.createElement("div");
+        root.className = "modal xlsx-pick";
+        root.setAttribute("role", "dialog");
+        root.setAttribute("aria-modal", "true");
+        root.setAttribute("aria-labelledby", "xlsx-pick-title");
+
+        const storeNames = spec.stores ? spec.stores.names : [];
+        const storeOn = new Set(spec.stores && spec.stores.selected && spec.stores.selected.length
+            ? spec.stores.selected : storeNames);
+
+        const sheetHtml = spec.sheets.map((s, si) => {
+            const cols = s.columns || [];
+            const off = new Set(offCols[s.key] || []);
+            const colsHtml = cols.length > 1
+                ? `<details class="xp-cols">
+                     <summary><span class="xp-colcount" data-sheet="${si}"></span></summary>
+                     <div class="xp-bar">
+                       <button type="button" class="linkish" data-all-cols="${si}">모두</button>
+                       <button type="button" class="linkish" data-no-cols="${si}">해제</button>
+                     </div>
+                     <div class="modal-list xp-list">
+                       ${cols.map((c, ci) => `<label><input type="checkbox" data-col="${si}:${ci}"${off.has(c) ? "" : " checked"}> ${escape(c)}</label>`).join("")}
+                     </div>
+                   </details>`
+                : "";
+            return `<div class="xp-sheet">
+                      <label class="xp-sheet-name"><input type="checkbox" data-sheet-on="${si}"${offSheets.has(s.key) ? "" : " checked"}> ${escape(s.label)}</label>
+                      ${colsHtml}
+                    </div>`;
+        }).join("");
+
+        root.innerHTML = `
+          <div class="modal-box xp-box">
+            <header>
+              <h2 id="xlsx-pick-title">엑셀 내보내기</h2>
+              <button type="button" class="linkish" data-close>닫기</button>
+            </header>
+            <p class="meta xp-sub">${escape(spec.title || "")}</p>
+            <div class="xp-body">
+              ${spec.period ? `
+              <fieldset class="xp-sec">
+                <legend>기간</legend>
+                <div class="xp-period">
+                  <input type="month" data-from value="${ymInput(spec.period.from)}" aria-label="시작 월">
+                  <span>~</span>
+                  <input type="month" data-to value="${ymInput(spec.period.to)}" aria-label="종료 월">
+                </div>
+              </fieldset>` : ""}
+              ${spec.stores ? `
+              <fieldset class="xp-sec">
+                <legend>매장</legend>
+                <!-- 전부일 때는 접어 둡니다 — 매장 목록이 시트 고르기를 밀어내지 않게.
+                     일부만 고른 상태(필터에서 한 곳을 골라 왔거나 지난번에 좁힌 경우)면 펼침. -->
+                <details class="xp-cols xp-store-fold"${storeOn.size === storeNames.length ? "" : " open"}>
+                  <summary><span data-store-count></span> · 바꾸기</summary>
+                  <div class="xp-bar">
+                    <input type="search" data-store-q placeholder="매장 이름 일부" aria-label="매장 검색">
+                    <button type="button" class="linkish" data-all-stores>모두</button>
+                    <button type="button" class="linkish" data-no-stores>해제</button>
+                  </div>
+                  <div class="modal-list xp-list xp-stores">
+                    ${storeNames.map((n) => `<label><input type="checkbox" data-store="${escape(n)}"${storeOn.has(n) ? " checked" : ""}> ${escape(n)}</label>`).join("")}
+                  </div>
+                </details>
+              </fieldset>` : ""}
+              <fieldset class="xp-sec">
+                <legend>${spec.sheets.length > 1 ? "시트 · 열" : "열"}</legend>
+                ${sheetHtml}
+              </fieldset>
+            </div>
+            <p class="meta xp-warn" data-warn role="status"></p>
+            <div class="modal-foot xp-foot">
+              <button type="button" class="ghost" data-close>취소</button>
+              <button type="button" data-ok>내려받기</button>
+            </div>
+          </div>`;
+        document.body.append(root);
+        const release = trapFocus(root);
+        const q = (sel) => root.querySelector(sel);
+        const qa = (sel) => [...root.querySelectorAll(sel)];
+
+        // 시트 하나뿐이면 열 목록을 펼쳐 둡니다(고를 것이 열뿐이라).
+        if (spec.sheets.length === 1) q(".xp-sheet .xp-cols")?.setAttribute("open", "");
+
+        const sync = () => {
+            spec.sheets.forEach((s, si) => {
+                const boxes = qa(`[data-col^="${si}:"]`);
+                const on = boxes.filter((b) => b.checked).length;
+                const label = q(`.xp-colcount[data-sheet="${si}"]`);
+                if (label) label.textContent = `열 ${on}/${boxes.length}`;
+                const sheetBox = q(`[data-sheet-on="${si}"]`);
+                const wrap = sheetBox.closest(".xp-sheet");
+                wrap.classList.toggle("is-off", !sheetBox.checked);
+            });
+            const sc = q("[data-store-count]");
+            if (sc) {
+                const on = qa("[data-store]").filter((b) => b.checked).length;
+                sc.textContent = on === storeNames.length ? `전체 ${storeNames.length}곳` : `${on}/${storeNames.length}곳`;
+            }
+            const res = collect();
+            q("[data-warn]").textContent = res.warn || "";
+            q("[data-ok]").disabled = !!res.warn;
+        };
+
+        const collect = () => {
+            const out = { period: null, stores: null, sheets: new Map() };
+            if (spec.period) {
+                const from = ymFromInput(q("[data-from]").value);
+                const to = ymFromInput(q("[data-to]").value);
+                if (!from || !to) return { warn: "기간을 고르세요." };
+                if (from > to) return { warn: "시작 월이 종료 월보다 늦습니다." };
+                out.period = { from, to };
+            }
+            if (spec.stores) {
+                const picked = qa("[data-store]").filter((b) => b.checked).map((b) => b.dataset.store);
+                if (!picked.length) return { warn: "매장을 한 곳 이상 고르세요." };
+                out.stores = picked.length === storeNames.length ? null : picked;
+            }
+            spec.sheets.forEach((s, si) => {
+                if (!q(`[data-sheet-on="${si}"]`).checked) return;
+                const cols = s.columns || [];
+                if (cols.length > 1) {
+                    const keep = new Set(qa(`[data-col^="${si}:"]`).filter((b) => b.checked)
+                        .map((b) => cols[Number(b.dataset.col.split(":")[1])]));
+                    if (keep.size) out.sheets.set(s.key, keep);
+                } else {
+                    out.sheets.set(s.key, null);
+                }
+            });
+            if (!out.sheets.size) return { warn: "내려받을 시트(열)를 하나 이상 고르세요." };
+            return out;
+        };
+
+        const close = (result) => {
+            release();
+            root.remove();
+            document.removeEventListener("keydown", onEsc);
+            resolve(result);
+        };
+        const onEsc = (e) => { if (e.key === "Escape") close(null); };
+        document.addEventListener("keydown", onEsc);
+
+        root.addEventListener("click", (e) => {
+            const t = e.target;
+            if (t === root || t.closest("[data-close]")) { close(null); return; }
+            const setAll = (sel, on) => qa(sel).forEach((b) => {
+                if (!b.closest("label").hidden) b.checked = on;
+            });
+            if (t.closest("[data-all-stores]")) setAll("[data-store]", true);
+            else if (t.closest("[data-no-stores]")) setAll("[data-store]", false);
+            else if (t.dataset.allCols != null) setAll(`[data-col^="${t.dataset.allCols}:"]`, true);
+            else if (t.dataset.noCols != null) setAll(`[data-col^="${t.dataset.noCols}:"]`, false);
+            else if (t.closest("[data-ok]")) {
+                const res = collect();
+                if (res.warn) return;
+                // 빼 둔 것만 기억합니다 — 다음에 새로 생긴 시트·열은 켜진 채로 나옵니다.
+                writePickMemory(spec.id, {
+                    offSheets: spec.sheets.filter((s, si) => !q(`[data-sheet-on="${si}"]`).checked).map((s) => s.key),
+                    offCols: Object.fromEntries(spec.sheets.map((s, si) => [s.key,
+                        qa(`[data-col^="${si}:"]`).filter((b) => !b.checked)
+                            .map((b) => (s.columns || [])[Number(b.dataset.col.split(":")[1])])])),
+                });
+                close(res);
+                return;
+            }
+            sync();
+        });
+        root.addEventListener("change", sync);
+        q("[data-store-q]")?.addEventListener("input", (e) => {
+            const word = e.target.value.trim();
+            qa("[data-store]").forEach((b) => {
+                b.closest("label").hidden = !!word && !b.dataset.store.includes(word);
+            });
+        });
+        sync();
+        q("[data-ok]").focus();
+    });
+}
+
+// 고른 열만 남깁니다. keep 이 null 이면 그대로(시트 단위로만 고르는 시트).
+// aoa 첫 행이 머리글입니다.
+export function keepColumns(aoa, keep) {
+    if (!keep || !aoa.length) return aoa;
+    const idx = aoa[0].map((h, i) => (keep.has(String(h ?? "")) ? i : -1)).filter((i) => i >= 0);
+    return aoa.map((r) => idx.map((i) => (r[i] === undefined ? null : r[i])));
+}
+
+// 글자 수 기준 열 너비(한글 2칸), 8~40 — 카드 내보내기와 같은 규칙을 세 갈래가 같이 씁니다.
+export function autoWidth(aoa) {
+    const width = Math.max(0, ...aoa.map((r) => r.length));
+    return Array.from({ length: width }, (_, c) => {
+        const lens = aoa.map((r) => {
+            const t = r[c] == null ? "" : String(r[c]);
+            return [...t].reduce((n, ch) => n + (ch.charCodeAt(0) > 0x2000 ? 2 : 1), 0);
+        });
+        return { wch: Math.min(40, Math.max(8, Math.max(0, ...lens) + 2)) };
+    });
+}
+
 function sheetTitle(base, index, total) {
     const clean = base.replace(/[\\/\[\]*?:]/g, " ").replace(/\s+/g, " ").trim();
     const suffix = total > 1 ? `_${index + 1}` : "";
@@ -481,14 +718,14 @@ function sheetTitle(base, index, total) {
 
 async function exportCard(card) {
     const parts = [...(CARD_TABLES.get(card) || [])]
-        .map((el) => EXPORT_DATA.get(el))
-        .filter((d) => d && d.rows && d.rows.length);
+        .map((el) => ({ el, d: EXPORT_DATA.get(el) }))
+        .filter((x) => x.d && x.d.rows && x.d.rows.length);
     if (!parts.length) { alert("내보낼 표 데이터가 없습니다."); return; }
 
-    const XLSX = await loadSheetJS();
-    const wb = XLSX.utils.book_new();
     const title = (card.querySelector("h2")?.textContent || "표").trim();
-    parts.forEach((d, i) => {
+    // 고르기 창에 **실제로 나갈 것** 만 보이도록 먼저 다듬습니다 — 화면과 같은 행
+    // (담당자 필터) · 값이 하나도 없는 열(처리·삭제 버튼 열) 제거.
+    const prepared = parts.map(({ el, d }, i) => {
         // 전역 담당자 필터가 걸려 있으면 화면과 같은 행만 내보냅니다('매장' 열 기준).
         // 열 찾기는 svfilter.js 와 같은 함수를 씁니다 — 전에는 같은 글자 6개가
         // 여기 또 박혀 있어서 한쪽만 고치면 표와 엑셀이 어긋났습니다.
@@ -497,29 +734,83 @@ async function exportCard(card) {
             : d.rows.filter((r) => svAllows(String(exportCell(r[storeCol]) ?? "")));
         let aoa = [d.headers.map((h) => exportCell(h)),
                    ...rowsIn.map((r) => r.map(exportCell))];
-        // 값이 하나도 없는 열(처리·삭제 버튼 열, 이름 없는 열)은 빼서 빈 열이
-        // 시트에 남지 않게 합니다.
         const width = Math.max(...aoa.map((r) => r.length));
         const keep = [];
         for (let c = 0; c < width; c += 1) {
             if (aoa.slice(1).some((r) => r[c] != null && r[c] !== "")) keep.push(c);
         }
         aoa = aoa.map((r) => keep.map((c) => (r[c] == null ? null : r[c])));
+        // 머리글이 빈 열은 고르기 창에서 이름이 없으므로 '열 N' 으로 부릅니다.
+        aoa[0] = aoa[0].map((h, c) => (h == null || h === "" ? `열 ${c + 1}` : String(h)));
+        return { aoa, storeCol: keep.indexOf(storeCol), label: tableLabel(el, title, i, parts.length, aoa[0][0]) };
+    });
+
+    // 매장 열이 있는 표면 매장도 고릅니다(그 표에 실제로 있는 매장만).
+    const storeSet = new Set();
+    for (const p of prepared) {
+        if (p.storeCol < 0) continue;
+        for (const r of p.aoa.slice(1)) if (r[p.storeCol] != null) storeSet.add(String(r[p.storeCol]));
+    }
+    const storeNames = [...storeSet].sort((a, b) => a.localeCompare(b, "ko"));
+
+    const pick = await pickExport({
+        id: "card:" + (card.id || title),
+        title,
+        stores: storeNames.length > 1 ? { names: storeNames } : undefined,
+        sheets: prepared.map((p, i) => ({ key: `${i}:${p.label}`, label: p.label, columns: p.aoa[0] })),
+    });
+    if (!pick) return;
+
+    const XLSX = await loadSheetJS();
+    const wb = XLSX.utils.book_new();
+    const chosen = prepared.filter((p, i) => pick.sheets.has(`${i}:${p.label}`));
+    const used = new Set();
+    chosen.forEach((p) => {
+        const i = prepared.indexOf(p);
+        let aoa = p.aoa;
+        if (pick.stores && p.storeCol >= 0) {
+            const on = new Set(pick.stores);
+            aoa = [aoa[0], ...aoa.slice(1).filter((r) => on.has(String(r[p.storeCol])))];
+        }
+        aoa = keepColumns(aoa, pick.sheets.get(`${i}:${p.label}`));
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         // 열 너비: 글자 수 기준(한글 2칸), 8~40 사이 — 전에는 전부 13 이라
         // 긴 매장명·금액이 잘려 보였습니다.
-        ws["!cols"] = keep.map((_, c) => {
-            const lens = aoa.map((r) => {
-                const t = r[c] == null ? "" : String(r[c]);
-                return [...t].reduce((n, ch) => n + (ch.charCodeAt(0) > 0x2000 ? 2 : 1), 0);
-            });
-            return { wch: Math.min(40, Math.max(8, Math.max(...lens) + 2)) };
-        });
-        XLSX.utils.book_append_sheet(wb, ws, sheetTitle(title, i, parts.length));
+        ws["!cols"] = autoWidth(aoa);
+        // 시트 이름은 표 이름 — 겹치면(같은 소제목) 번호를 붙여 엑셀이 거부하지 않게.
+        let name = sheetTitle(chosen.length > 1 ? p.label : title, 0, 1);
+        for (let k = 2; used.has(name); k += 1) name = sheetTitle(p.label, k - 1, k);
+        used.add(name);
+        XLSX.utils.book_append_sheet(wb, ws, name);
     });
     const day = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const safe = title.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
     XLSX.writeFile(wb, `미태리_${safe}_${day}.xlsx`);
+}
+
+// 카드 안 표 하나의 이름 — 표 바로 앞 소제목(h3·h4·.subhead)이 있으면 그것. 없고 표가
+// 여럿이면 첫 열 이름으로 '채널별'·'월별'·'매장별'(데모 전수: 광고·발주량·재료 사용량 카드가
+// 소제목 없이 표 둘). 고르기 창과 시트 이름에 씁니다. 겹치면 exportCard 가 번호를 붙입니다.
+function tableLabel(el, title, i, total, firstHeader) {
+    let node = el;
+    for (let hop = 0; node && hop < 4; hop += 1) {
+        let prev = node.previousElementSibling;
+        while (prev) {
+            if (/^H[3-5]$/.test(prev.tagName) || prev.classList.contains("subhead")) {
+                const t = prev.textContent.replace(/\s+/g, " ").trim();
+                if (t) return t;
+            }
+            if (prev.querySelector && prev.querySelector("table")) break;
+            prev = prev.previousElementSibling;
+        }
+        if (node.parentElement && node.parentElement.matches("section.card, .card")) break;
+        node = node.parentElement;
+    }
+    if (total <= 1) return title;
+    const lead = String(firstHeader ?? "").trim();
+    if (!lead || /^열 \d+$/.test(lead)) return `${title} ${i + 1}`;
+    // 짧은 낱말(채널·월·매장)만 '~별' — '원가분석 없는 메뉴 (판매 상위)' 같은 긴 이름은 그대로.
+    return /^[^\s()]{1,6}$/.test(lead) ? `${lead}별` : lead;
 }
 
 /* ---------------------------------------------------------------- hero 카드

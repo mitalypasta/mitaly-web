@@ -19,6 +19,11 @@ import { won, wonFull, int, ymLabel, ymDash, catLabel } from "./format.js";
 import { escape, niceTicks } from "./util.js";
 import { S } from "./state.js";
 import { $, monthPicker, searchify, showTip, hideTip, table, loadSheetJS } from "./dom.js";
+// 고르기 창(pickExport 등)은 이름 import 가 아니라 모듈 통째(domx)로 꺼냅니다. 웹 모듈은
+// 캐시 버전(?v=)이 안 걸려, 배포 직후 10분 동안 '새 이 파일 + 캐시된 옛 dom.js' 가 섞일 수
+// 있습니다 — 이름 import 면 그때 화면 전체가 안 뜹니다(없는 export 연결 오류). 통째로
+// 받으면 내보내기 버튼만 '새로고침' 을 청합니다.
+import * as domx from "./dom.js";
 import { palette, drawBars } from "./charts.js";
 
 const DOW_KO = { 1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토", 7: "일" };
@@ -973,10 +978,11 @@ async function exportStoreDash() {
         const k = d.kpi || {};
         const p = d.pnl;
         const storeName = (d.store || {}).name;
-        const XLSX = await loadSheetJS();
-        const wb = XLSX.utils.book_new();
-        const sheet = (name, aoa) => XLSX.utils.book_append_sheet(
-            wb, XLSX.utils.aoa_to_sheet(aoa), name);
+        // 시트를 먼저 다 모은 뒤 고르기 창(dom.js pickExport)에서 시트·열을 고릅니다
+        // (담당자 지시 2026-10-01 — 필요한 것만). 요약정보는 머리글이 없는 표지라
+        // 시트 단위로만 고릅니다.
+        const sheets = [];
+        const sheet = (name, aoa, opts = {}) => sheets.push({ name, aoa, ...opts });
 
         sheet("요약정보", [
             ["미태리 매장 대시보드"],
@@ -985,7 +991,7 @@ async function exportStoreDash() {
             ["기준일", d.anchor_day || ""],
             ["만든 시각", new Date().toLocaleString("ko-KR")],
             ["매출 기준", "배달=할인 전 / 홀=할인 후 (프로젝트 규칙)"],
-        ]);
+        ], { noColumns: true });
 
         sheet("KPI", [
             ["지표", "값", "비고"],
@@ -1095,6 +1101,27 @@ async function exportStoreDash() {
         };
         matrixSheet("메뉴×요일", menuCards.mweek, WEEKDAY_ORDER);
         matrixSheet("메뉴×시간대", menuCards.mpart, DAYPART_ORDER);
+
+        msg.textContent = "";
+        if (!domx.pickExport) throw new Error("화면을 새로고침한 뒤 다시 눌러 주세요");
+        const pick = await domx.pickExport({
+            id: "storedash",
+            title: `선택 매장 — ${storeName} · ${ymDash(d.ym)}`,
+            sheets: sheets.map((x) => ({
+                key: x.name, label: x.name,
+                columns: x.noColumns ? null : (x.aoa[0] || []).map((h) => String(h ?? "")),
+            })),
+        });
+        if (!pick) return;
+        const XLSX = await loadSheetJS();
+        const wb = XLSX.utils.book_new();
+        for (const x of sheets) {
+            if (!pick.sheets.has(x.name)) continue;
+            const aoa = domx.keepColumns(x.aoa, pick.sheets.get(x.name));
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+            ws["!cols"] = domx.autoWidth(aoa);
+            XLSX.utils.book_append_sheet(wb, ws, x.name);
+        }
 
         const safe = String(storeName).replace(/[\\/:*?"<>|]/g, " ")
             .replace(/\s+/g, " ").trim();
