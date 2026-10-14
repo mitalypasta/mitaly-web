@@ -1274,7 +1274,17 @@ function updateHomeHero() {
     const numEl = $("home-hero-num");
     const badge = $("home-hero-badge");
     const facts = $("home-hero-facts");
-    const unchecked = heroTileValue("unchecked");
+    const pick = svCurrent();
+    let unchecked = heroTileValue("unchecked");
+    let countOf = heroTileValue;
+    if (unchecked == null && !pick && svData && Array.isArray(svData.svs)) {
+        // 담당자 '전체' — 타일은 한 명분만 그리므로(renderSv, 9/11 결정) 타일이
+        // 비어 있습니다. 그대로 두면 '집계 중…' 에 영영 멈춰 있어(2026-10-14 담당자
+        // 제보) 응답에서 전 담당자 합을 직접 셉니다.
+        const all = svData.svs;
+        unchecked = svSum(all, (v) => v.unchecked);
+        countOf = (key) => svSum(all, (v) => ((v.items || {})[key] || {}).count);
+    }
     if (unchecked == null) {
         numEl.textContent = "—";
         badge.hidden = true;
@@ -1284,11 +1294,10 @@ function updateHomeHero() {
     const parts = [];
     let urgent = false;
     for (const [key, label] of HOME_HERO_FACTS) {
-        const n = heroTileValue(key) || 0;
+        const n = countOf(key) || 0;
         if (n > 0) parts.push(`${escape(label)} <b>${int(n)}</b>`);
         if (n > 0 && (key === "no_sales" || key === "bad_reviews")) urgent = true;
     }
-    const pick = svCurrent();
     numEl.textContent = `${int(unchecked)}건`;
     badge.hidden = false;
     badge.className = "hero-badge "
@@ -1694,6 +1703,9 @@ function drawHomeSv(res) {
     // '#home-sv-filter' 는 헤더와 값이 갈려, 헤더가 '전체' 일 때 홈만 임의의
     // 한 명(all[0])을 보여 주는 원인이었습니다(2026-09-11 담당자 결정).
     renderSv();
+    // '전체' 면 타일이 빈 채 그대로라 hero 의 MutationObserver 가 안 깨어납니다 —
+    // 응답이 온 지금 직접 다시 셉니다.
+    updateHomeHero();
 }
 
 function renderSv() {
