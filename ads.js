@@ -64,7 +64,8 @@ function roasSub(result, total) {
 }
 
 // 안내문 — 어느 채널이 자동이고 어느 채널이 수기인지(#166 · #162 문구 대체).
-const AD_AUTO_NOTE = "배민·쿠팡이츠·요기요만 자동 수집 — 그 외는 수기 입력";
+// 쿠팡이츠는 2026-10-14 자동 수집 중단(channel_stop) — 이유는 화면에 적지 않습니다(담당자).
+const AD_AUTO_NOTE = "배민·요기요만 자동 수집 — 그 외는 수기 입력";
 
 async function loadAds() {
     const { data, error } = await db.rpc("api_ad_spend", {});
