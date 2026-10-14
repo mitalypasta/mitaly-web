@@ -501,7 +501,8 @@ async function load(onFirstPaint) {
     //    아래 runLimited() 가 3개씩만 돌립니다.
     const calls = [
         () => db.rpc("api_summary", args),
-        () => db.rpc("api_monthly", args),
+        // 월별 추이 — 율을 셀 짝(amount_cmp)이 붙은 132 판. 없으면 api_monthly(rpcMonthlyCmp).
+        () => rpcMonthlyCmp(args),
         () => db.rpc("api_by_store", args),
         () => db.rpc("api_by_menu", args),
         () => db.rpc("api_by_hour", args),
@@ -800,8 +801,8 @@ function ensureCompanyAllMonthly() {
     const range = S.filterRange || {};
     if (!range.max) { companyAllFailed = true; return; }
     companyAllLoading = true;
-    db.rpc("api_monthly", { p_ym_from: range.min, p_ym_to: range.max,
-                            p_store: null, p_channel: null })
+    rpcMonthlyCmp({ p_ym_from: range.min, p_ym_to: range.max,
+                    p_store: null, p_channel: null })
         .then((r) => {
             companyAllLoading = false;
             if (r.error) companyAllFailed = true;
@@ -822,8 +823,25 @@ function ensureCompanyAllMonthly() {
 // "2026-08-13" → "08/13" (옛 주차별 카드의 라벨 규칙 그대로).
 const companyMd = (iso) => `${String(iso).slice(5, 7)}/${String(iso).slice(8, 10)}`;
 
+// 월별 추이 조회 — 132 의 api_monthly_cmp 는 api_monthly 와 같은 행에 증감률 전용
+// 짝 amount_cmp(쿠팡이츠 제외 금액)를 붙여 줍니다. 132 적용 전이면 오류가 나므로
+// api_monthly 로 물러납니다(그때 율은 종전처럼 amount 로 셉니다 — cmpAmount).
+function rpcMonthlyCmp(args) {
+    return db.rpc("api_monthly_cmp", args)
+        .then((r) => (r.error ? db.rpc("api_monthly", args) : r));
+}
+
+// 증감률에 쓸 금액 — 쿠팡이츠 수집 중단(2026-10-21)으로 모든 기간 비교는 쿠팡이츠를
+// 뺀 금액끼리 합니다(담당자 결정 2026-10-14, 132). 화면에 보이는 금액은 그대로
+// amount 이고 율만 이 값으로 셉니다. 짝 필드(*_cmp)가 없으면(132 적용 전) 원래 금액.
+function cmpAmount(row, key = "amount") {
+    if (!row) return null;
+    const v = row[`${key}_cmp`];
+    return v !== undefined ? v : row[key];
+}
+
 // 전기 대비(%). 전기가 0이거나 없으면 null — 0 나눗셈·신규 기간 오탐 방지
-// (18·19·90 과 같은 규칙).
+// (18·19·90 과 같은 규칙). 넘기는 값은 cmpAmount(쿠팡이츠 제외)입니다.
 function companyPct(cur, prev) {
     if (prev == null || !(Number(prev) > 0)) return null;
     return Math.round((Number(cur) - Number(prev)) / Number(prev) * 1000) / 10;
@@ -842,9 +860,10 @@ function foldCompanyMonthly(rows, keyOf, labelOf) {
     const map = new Map();
     for (const r of rows || []) {
         const key = keyOf(Number(r.ym));
-        const slot = map.get(key) || { key, amount: 0, qty: 0, hall: 0, delivery: 0 };
+        const slot = map.get(key) || { key, amount: 0, qty: 0, hall: 0, delivery: 0, cmp: 0 };
         const amt = Number(r.amount) || 0;
         slot.amount += amt;
+        slot.cmp += Number(cmpAmount(r)) || 0;   // 증감률 전용(쿠팡이츠 제외)
         slot.qty += Number(r.qty) || 0;
         if (r.channel === "홀") slot.hall += amt;
         else slot.delivery += amt;
@@ -929,12 +948,12 @@ function companyBadge(pct, label) {
 // 표는 인접 행 대비 그대로(매장 대시보드 분기 카드 전례 — 각주가 진행 중
 // 가능성을 말합니다).
 function companyLongBadge(latest, prev) {
-    const whole = { pct: companyPct(latest.amount, prev && prev.amount) };
+    const whole = { pct: companyPct(latest.cmp, prev && prev.cmp) };
     const isYear = companyUnit === "year";
-    const byYm = new Map();
+    const byYm = new Map();   // 연월 → 쿠팡이츠 제외 합(율 전용)
     for (const r of companyAllMonthly) {
         const ym = Number(r.ym);
-        byYm.set(ym, (byYm.get(ym) || 0) + (Number(r.amount) || 0));
+        byYm.set(ym, (byYm.get(ym) || 0) + (Number(cmpAmount(r)) || 0));
     }
     const t = new Date();
     const nowYm = t.getFullYear() * 100 + (t.getMonth() + 1);
@@ -1081,7 +1100,7 @@ function drawCompanyTrend() {
         const latest = rows[rows.length - 1];
         const prev = rows.length > 1 ? rows[rows.length - 2] : null;
 
-        companyBadge(companyPct(latest.amount, prev && prev.amount));
+        companyBadge(companyPct(cmpAmount(latest), prev && cmpAmount(prev)));
         const dayLabel = (r) =>
             `${r.day} (${COMPANY_DOW_KO[r.dow] || "?"})`;
         stats.innerHTML =
@@ -1111,8 +1130,8 @@ function drawCompanyTrend() {
             desc.map((r, i) => [
                 escape(dayLabel(r)),
                 escape(wonFull(r.amount)),
-                companyPctCell(companyPct(r.amount,
-                    i + 1 < desc.length ? desc[i + 1].amount : null)),
+                companyPctCell(companyPct(cmpAmount(r),
+                    i + 1 < desc.length ? cmpAmount(desc[i + 1]) : null)),
                 escape(wonFull(r.hall_amount)),
                 escape(wonFull(r.delivery_amount)),
                 escape(int(r.orders)),
@@ -1150,7 +1169,7 @@ function drawCompanyTrend() {
         // 월 단위의 마지막 달이 진행 중이면(기본 종료월 = 이번 달, 2026-09-16) 완성된
         // 전월과 통비교하지 않습니다 — 배지를 감추고 표의 전월비는 '진행 중'.
         companyBadge(monthRunning
-            ? null : companyPct(latest.amount, prev && prev.amount));
+            ? null : companyPct(latest.cmp, prev && prev.cmp));
     }
     stats.innerHTML =
         companyHeroStat(`최근 ${unitName} 매출`, escape(won(latest.amount)),
@@ -1181,8 +1200,8 @@ function drawCompanyTrend() {
             escape(wonFull(r.amount)),
             (companyUnit === "month" && Number(r.key) === currentYm())
                 ? escape("진행 중")
-                : companyPctCell(companyPct(r.amount,
-                    i + 1 < desc.length ? desc[i + 1].amount : null)),
+                : companyPctCell(companyPct(r.cmp,
+                    i + 1 < desc.length ? desc[i + 1].cmp : null)),
             escape(wonFull(r.hall)),
             escape(wonFull(r.delivery)),
             escape(int(r.qty)),
@@ -3175,11 +3194,13 @@ function drawAlerts(d) {
 
         // 매장 합계와 그 증감률. 서버가 채널별 이전 금액(prev_*_amount)을
         // 주므로 합산 뒤 다시 계산합니다(퍼센트는 합산할 수 없음).
+        // 율은 쿠팡이츠 제외 짝(*_cmp, 132)끼리 — 보이는 매출은 amount 합 그대로.
         const amount = chs.reduce((a, c) => a + (Number(c.amount) || 0), 0);
-        const sumIf = (k) => (chs.some((c) => c[k] != null)
-            ? chs.reduce((a, c) => a + (Number(c[k]) || 0), 0) : null);
+        const amountCmp = chs.reduce((a, c) => a + (Number(cmpAmount(c)) || 0), 0);
+        const sumIf = (k) => (chs.some((c) => cmpAmount(c, k) != null)
+            ? chs.reduce((a, c) => a + (Number(cmpAmount(c, k)) || 0), 0) : null);
         const pct = (prev) => (prev && prev > 0
-            ? Math.round(((amount - prev) / prev) * 1000) / 10 : null);
+            ? Math.round(((amountCmp - prev) / prev) * 1000) / 10 : null);
         const momPct = pct(sumIf("prev_mom_amount"));
         const yoyPct = pct(sumIf("prev_yoy_amount"));
 

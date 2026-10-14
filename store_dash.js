@@ -62,6 +62,20 @@ function reanchorIfStale() {
 const pctText = (v, digits = 1) =>
     v == null ? "—" : `${(v * 100).toFixed(digits)}%`;
 
+// 증감률에 쓸 금액 — 쿠팡이츠 수집 중단(2026-10-21)으로 모든 기간 비교는 쿠팡이츠를
+// 뺀 금액끼리 합니다(담당자 결정 2026-10-14, 132). 보이는 금액은 그대로이고 율만
+// 이 값으로 셉니다. 짝 필드(*_cmp)가 없으면(132 적용 전) 원래 금액으로 물러납니다.
+// (app.js 의 cmpAmount 와 같은 규칙 — 모듈 export 를 늘리지 않으려고 여기 둡니다.)
+const cmpOf = (row, key = "amount") => {
+    if (!row) return null;
+    const v = row[`${key}_cmp`];
+    return v !== undefined ? v : row[key];
+};
+
+// 전기 대비(%) — 전기가 0이거나 없으면 null. cur·prev 는 cmpOf 값.
+const growthPct = (cur, prev) => (prev != null && Number(prev) > 0
+    ? Math.round((Number(cur) - Number(prev)) / Number(prev) * 1000) / 10 : null);
+
 // 일 단위 집계(fact_daily)가 아직 비어 있는가 — 소급 백필 전(#151).
 // 91 은 fact_daily 가 0행이어도 weekly 13행(amount 0)·daily 28행(amount null)
 // 을 항상 돌려주므로 length 로는 판정이 안 됩니다. 이 매장의 마지막 자료일
@@ -342,11 +356,9 @@ function renderYearly(d) {
 
     // 전월비 — 표시 연도 안에서만 잇습니다(1월은 전년 12월이 이 응답에 없어
     // "—"). 증감 색은 주간·일간·분기와 같은 시트 관례(diffCell).
-    const momOf = (r, i) => {
-        const prev = i > 0 ? Number(rows[i - 1].sales) || 0 : 0;
-        return i > 0 && prev > 0 && r.sales
-            ? Math.round((Number(r.sales) - prev) / prev * 1000) / 10 : null;
-    };
+    // 율은 쿠팡이츠 제외 짝(sales_cmp, 132)끼리 — 보이는 총매출은 sales 그대로.
+    const momOf = (r, i) => (i > 0 && r.sales
+        ? growthPct(cmpOf(r, "sales"), cmpOf(rows[i - 1], "sales")) : null);
     const body = rows.map((r, i) => `<tr>
         <td class="tl">${escape(String(r.ym % 100))}월</td>
         <td>${r.sales ? escape(wonFull(r.sales)) : "—"}</td>
@@ -496,10 +508,13 @@ async function renderQuarterly(storeName) {
         const range = S.filterRange || {};
         if (!range.max) return;
         $("sd-q-meta").textContent = "불러오는 중…";
-        const { data, error } = await db.rpc("api_monthly", {
+        // 132 의 api_monthly_cmp(증감률 짝 amount_cmp 포함). 적용 전이면 api_monthly.
+        const monthlyArgs = {
             p_ym_from: range.min, p_ym_to: range.max,
             p_store: storeName, p_channel: null,
-        });
+        };
+        let { data, error } = await db.rpc("api_monthly_cmp", monthlyArgs);
+        if (error) ({ data, error } = await db.rpc("api_monthly", monthlyArgs));
         if (error) {
             $("sd-q-meta").textContent = "";
             box.innerHTML = '<p class="hint">불러오지 못했습니다: '
@@ -510,12 +525,13 @@ async function renderQuarterly(storeName) {
         quarterRows = data || [];
     }
 
-    const sums = new Map();   // "2025|1" → { hall, delivery }
+    const sums = new Map();   // "2025|1" → { hall, delivery, cmp(율 전용) }
     for (const r of quarterRows) {
         const key = `${Math.floor(r.ym / 100)}|${Math.ceil((r.ym % 100) / 3)}`;
-        const slot = sums.get(key) || { hall: 0, delivery: 0 };
+        const slot = sums.get(key) || { hall: 0, delivery: 0, cmp: 0 };
         if (r.channel === "홀") slot.hall += Number(r.amount) || 0;
         else slot.delivery += Number(r.amount) || 0;
+        slot.cmp += Number(cmpOf(r)) || 0;
         sums.set(key, slot);
     }
     const list = [...sums.keys()]
@@ -529,10 +545,8 @@ async function renderQuarterly(storeName) {
             const v = sums.get(k);
             return { label: `${y}년 ${q}분기`, total: v.hall + v.delivery, ...v };
         });
-    list.forEach((r, i) => {
-        const prev = i > 0 ? list[i - 1].total : 0;
-        r.qoq = i > 0 && prev > 0
-            ? Math.round((r.total - prev) / prev * 1000) / 10 : null;
+    list.forEach((r, i) => {   // 전분기비 — 쿠팡이츠 제외 합(cmp)끼리
+        r.qoq = i > 0 ? growthPct(r.cmp, list[i - 1].cmp) : null;
     });
     quarterList = list;
 
@@ -606,11 +620,12 @@ function renderDaily(d) {
         `<td>${x.amount == null ? "" : escape(int(x.amount))}</td>`).join("");
     // 전일비 — 증감 색(시트 관례, 담당자 지시로 월간·주간·분기와 통일).
     // 미영업일(빈칸)이 끼면 그 칸과 다음 칸은 비교하지 않습니다.
+    // 율은 쿠팡이츠 제외 짝(amount_cmp, 132)끼리입니다.
     const diffs = days.map((x, i) => {
-        const prev = i > 0 ? days[i - 1].amount : null;
-        if (x.amount == null || prev == null || Number(prev) === 0) return "<td></td>";
-        const pct = Math.round((Number(x.amount) - Number(prev)) / Number(prev) * 1000) / 10;
-        return `<td>${diffCell(pct)}</td>`;
+        const prev = i > 0 ? days[i - 1] : null;
+        if (x.amount == null || !prev || prev.amount == null) return "<td></td>";
+        const pct = growthPct(cmpOf(x), cmpOf(prev));
+        return pct == null ? "<td></td>" : `<td>${diffCell(pct)}</td>`;
     }).join("");
     $("t-sd-daily").innerHTML =
         `<table><thead><tr><th scope="col" class="tl">날짜</th>${head}</tr></thead><tbody>`
@@ -789,11 +804,12 @@ function svtFoldMonthly() {
     const map = new Map();
     for (const r of quarterRows || []) {
         const key = keyOf(Number(r.ym));
-        const slot = map.get(key) || { key, hall: 0, delivery: 0, total: 0 };
+        const slot = map.get(key) || { key, hall: 0, delivery: 0, total: 0, cmp: 0 };
         const amt = Number(r.amount) || 0;
         if (r.channel === "홀") slot.hall += amt;
         else slot.delivery += amt;
         slot.total += amt;
+        slot.cmp += Number(cmpOf(r)) || 0;   // 증감률 전용(쿠팡이츠 제외)
         map.set(key, slot);
     }
     return [...map.values()]
@@ -823,10 +839,8 @@ function drawSvt() {
         }
         const rows = svtFoldMonthly();
         if (!rows.length) { meta.textContent = ""; svtEmpty("데이터가 없습니다."); return; }
-        rows.forEach((r, i) => {
-            const prev = i > 0 ? rows[i - 1].total : 0;
-            r.diff = i > 0 && prev > 0
-                ? Math.round((r.total - prev) / prev * 1000) / 10 : null;
+        rows.forEach((r, i) => {   // 율은 쿠팡이츠 제외 합(cmp)끼리
+            r.diff = i > 0 ? growthPct(r.cmp, rows[i - 1].cmp) : null;
         });
         const unitName = svtUnit === "year" ? "연도"
             : svtUnit === "quarter" ? "분기" : "월";
@@ -884,10 +898,10 @@ function drawSvt() {
         svtBars(days.map((x) => ({ label: md(x.day), value: Number(x.amount) || 0 })));
         // 전일비 — 미영업일이 끼면 비교하지 않습니다(일간 카드와 같은 규칙).
         const desc = [...days].reverse();
-        const diffOf = (x, i) => {
-            const prev = i + 1 < desc.length ? desc[i + 1].amount : null;
-            if (x.amount == null || prev == null || Number(prev) === 0) return null;
-            return Math.round((Number(x.amount) - Number(prev)) / Number(prev) * 1000) / 10;
+        const diffOf = (x, i) => {   // 율은 쿠팡이츠 제외 짝(amount_cmp)끼리
+            const prev = i + 1 < desc.length ? desc[i + 1] : null;
+            if (x.amount == null || !prev || prev.amount == null) return null;
+            return growthPct(cmpOf(x), cmpOf(prev));
         };
         table($("svt-table"), ["일자", "요일", "매출", "전일비"],
             desc.map((x, i) => [
@@ -1040,9 +1054,10 @@ async function exportStoreDash() {
             ["연월", "총매출", "전월비(%)", "홀", "배달", "아워홈 발주액",
              "식자재율(%)", "영업일수", "일평균"],
             ...yearly.map((r, i) => {
-                const prev = i > 0 ? Number(yearly[i - 1].sales) || 0 : 0;
-                const mom = i > 0 && prev > 0 && r.sales
-                    ? Math.round((Number(r.sales) - prev) / prev * 1000) / 10 : "";
+                // 화면 표와 같은 율(쿠팡이츠 제외 짝 sales_cmp 끼리, 132).
+                const momPct = i > 0 && r.sales
+                    ? growthPct(cmpOf(r, "sales"), cmpOf(yearly[i - 1], "sales")) : null;
+                const mom = momPct == null ? "" : momPct;
                 return [r.ym, Number(r.sales) || 0, mom,
                     Number(r.hall) || 0, Number(r.delivery) || 0,
                     r.ourhome != null ? Math.round(Number(r.ourhome)) : "",

@@ -2425,6 +2425,11 @@ const HANDLERS = {
             .sort((a, b) => a.ym - b.ym || a.channel.localeCompare(b.channel));
     },
 
+    // 132 — api_monthly 와 같은 행 + 증감률 전용 amount_cmp(쿠팡이츠 제외). 데모 행에는
+    // 출처 구분이 없어 amount 그대로입니다.
+    api_monthly_cmp: (args) =>
+        HANDLERS.api_monthly(args).map((r) => ({ ...r, amount_cmp: r.amount })),
+
     api_by_store: (args) => {
         const map = group(baseRows(args), (r) => r.store.name);
         return [...map.entries()]
