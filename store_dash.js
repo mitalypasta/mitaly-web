@@ -242,8 +242,8 @@ function renderKpis(k, store, backfilling) {
     tiles.push(tile("총매출", escape(wonFull(k.sales)), ""));
 
     if (k.target != null) {
-        const basis = k.target_source === "manual"
-            ? "직접 입력 목표" : (TARGET_BASIS_KO[k.target_basis] || "");
+        const basis = k.target_source === "manual" ? "직접 입력 목표"
+            : k.target_source === "sheet" ? "시트 목표" : (TARGET_BASIS_KO[k.target_basis] || "");
         tiles.push(tile("목표 · 달성률",
             escape(pctText(k.achievement, 1)),
             `목표 ${escape(wonFull(k.target))}${basis ? " · " + escape(basis) : ""}`));
@@ -1013,6 +1013,7 @@ async function exportStoreDash() {
             ["목표", k.target != null ? Number(k.target) : "",
                 k.target == null ? "목표 없음"
                     : k.target_source === "manual" ? "직접 입력 목표"
+                    : k.target_source === "sheet" ? "시트 목표"
                     : (TARGET_BASIS_KO[k.target_basis] || "")],
             ["달성률(%)", pctNum(k.achievement), ""],
             ["전월 매출", k.prev_sales != null ? Number(k.prev_sales) : "", ""],
